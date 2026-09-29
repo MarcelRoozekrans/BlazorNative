@@ -277,36 +277,38 @@ class HostEventTest {
     }
 
     /**
-     * KNOWN DEFECT, PINNED ON PURPOSE (#346 — split out of #339 alongside #345).
+     * #346, FIXED BY PHASE 16.1 and pinned the right way round.
      *
-     * MainActivity:522 (`handleBack`) calls [BlazorNativeRuntime.dispatchHostEventAndWait]
-     * from the main thread inside the predictive-back callback, and that method does an
-     * UNTIMED `future.get()` against the single `BlazorNative-Dispatch` lane
-     * (BlazorNativeRuntime.kt), a single-thread ExecutorService. #339's condition is a
-     * PRIOR async handler stuck mid-flight on an open host call — the unanswered-
-     * permission-sheet state — which already occupies that lane's one worker thread. A
-     * later dispatchHostEventAndWait Callable is queued strictly behind it (FIFO, one
-     * worker) and cannot start until the stuck call finishes, so future.get() blocks
-     * indefinitely. MEASURED, not reasoned: this test occupies the lane the same way
-     * DispatchLaneBlockingTests.cs (.NET) does, and the probe thread genuinely does not
-     * return within a bounded 10s wait — see docs/plans/2026-09-21-phase-14.1-conclusion.md
-     * for the recorded result.
+     * Until Phase 16.2, MainActivity's `handleBack` called
+     * [BlazorNativeRuntime.dispatchHostEventAndWait] from the main thread inside the
+     * predictive-back callback; since 16.2 it dispatches back fire-and-forget and this test
+     * drives the blocking method directly. That method does an untimed `future.get()`
+     * against the single `BlazorNative-Dispatch` lane. #339's
+     * condition is a PRIOR async handler suspended on an open host call: the unanswered-
+     * permission-sheet state. Until 16.1 that handler held the lane's one worker thread
+     * inside `blazornative_dispatch_event`, so the back Callable queued behind it and
+     * `future.get()` blocked indefinitely (measured in phase 14.1, see
+     * docs/plans/2026-09-21-phase-14.1-conclusion.md). Since 16.1 the export returns once
+     * the handler's synchronous part has run (#345), so the lane frees and back runs.
      *
-     * THIS TEST DELIBERATELY PINS THAT DEFECT: it asserts the probe thread STILL has not
-     * returned — i.e. it PASSES on today's (broken) behaviour and will FAIL the day #346
-     * (or its shared root cause, #345) is fixed. That is intentional — a fix changes the
-     * shape of this test, it does not delete it: flip the assertion back to
-     * `assertTrue(backReturned.get(), …)` when that lands, and close #346.
+     * The assertion is only that the call RETURNS within 2 s. It deliberately does NOT
+     * assert the rc: the JVM session is never reset between test classes, so the
+     * navigation history (`_previousRoute`) left by earlier classes decides whether back
+     * is handled, and the rc would depend on test order. The back verdict itself is
+     * pinned in phase 16.2.
      *
-     * Bounded throughout, per Task 1's rule that a hanging measurement is worse than no
-     * measurement: every wait here carries an explicit timeout, including the probe
-     * thread join (dispatchHostEventAndWait's own future.get() is untimed production
-     * code and is NOT modified by this task — the timeout lives entirely in the test).
+     * DOES NOT COVER: Android's OnBackInvokedCallback itself (the instrumented lane), or a
+     * handler that holds the render thread synchronously without ever yielding.
+     *
+     * Bounded throughout: every wait carries an explicit timeout, and the held host call
+     * is completed in a `finally`, so a failure here cannot leave the process-global
+     * session wedged for the test classes that run after this one.
      */
     @Test
-    fun dispatchHostEventAndWait_still_deadlocks_behind_a_held_dispatch_lane() {
+    fun dispatchHostEventAndWait_returns_while_a_handler_holds_a_host_call() {
+        // Phase 16.1: flipped from "still deadlocks behind a held dispatch lane" (#346): the lane now frees when the handler yields.
         val host = StallingCameraHost()
-        val frames = mutableListOf<RenderFrame>()
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
         val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
         runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
         assertTrue(frames.isNotEmpty(), "mount must deliver the first frame synchronously")
@@ -314,59 +316,52 @@ class HostEventTest {
         val mount = frames.first()
         val takePhoto = clickHandlerOn(mount, containerOfText(mount, "Take Photo"))
 
-        // Occupy the lane: fire-and-forget dispatch of Take Photo. Its handler awaits the
-        // host call StallingCameraHost never completes, so the lane thread blocks inside
-        // Exports.DispatchEventCore's GetAwaiter().GetResult() — the #345 root cause,
-        // reached here through the SAME published dll as DispatchLaneBlockingTests.cs.
-        runtime.dispatchEvent(takePhoto, "click")
-        assertTrue(
-            host.callReceived.await(10, TimeUnit.SECONDS),
-            "the camera host call never arrived — the lane never even started the dispatch, " +
-                "so this run cannot measure anything"
-        )
+        var backThread: Thread? = null
+        var drained = false
+        try {
+            // Fire-and-forget dispatch of Take Photo. Its handler awaits the host call
+            // StallingCameraHost never completes: the #339 state.
+            runtime.dispatchEvent(takePhoto, "click")
+            assertTrue(
+                host.callReceived.await(10, TimeUnit.SECONDS),
+                "the camera host call never arrived — the lane never even started the dispatch, " +
+                    "so this run cannot measure anything"
+            )
 
-        // From another thread — standing in for Android's main thread inside
-        // OnBackInvokedCallback — make the EXACT call MainActivity:522 makes.
-        val backReturned = AtomicBoolean(false)
-        var backRc = Int.MIN_VALUE
-        var backThrew: Throwable? = null
-        val backThread = Thread({
-            try {
-                backRc = runtime.dispatchHostEventAndWait(BnHostEvent.Back)
-            } catch (t: Throwable) {
-                backThrew = t
-            } finally {
-                backReturned.set(true)
+            // From another thread — standing in for Android's main thread inside
+            // OnBackInvokedCallback — make the call MainActivity's handleBack made until Phase 16.2.
+            val backReturned = AtomicBoolean(false)
+            var backThrew: Throwable? = null
+            backThread = Thread({
+                try {
+                    runtime.dispatchHostEventAndWait(BnHostEvent.Back)
+                } catch (t: Throwable) {
+                    backThrew = t
+                } finally {
+                    backReturned.set(true)
+                }
+            }, "back-probe").apply { isDaemon = true; start() }
+            backThread.join(2_000) // BOUNDED — never Thread.join() with no timeout
+
+            assertTrue(
+                backReturned.get(),
+                "dispatchHostEventAndWait did NOT return within 2 s while an async handler held a " +
+                    "host call open. This is #346: the dispatch lane is still held by the export, " +
+                    "so predictive back deadlocks behind it."
+            )
+            assertEquals(null, backThrew, "the back dispatch must return, not throw")
+            // Anchor: the camera call was received, and StallingCameraHost never completes it,
+            // so back was measured against a handler still suspended on it.
+            assertTrue(host.heldRequestId >= 0, "the held camera request id was never recorded")
+        } finally {
+            // Release the held call whatever happened above: it sits on the ONE process-global
+            // .NET session every JVM test class in this run shares.
+            if (host.heldRequestId >= 0) {
+                BridgeHostCallCompleter.complete(host.heldRequestId, CameraStatus.CANCELLED, null)
             }
-        }, "back-probe")
-        backThread.isDaemon = true
-        backThread.start()
-        backThread.join(10_000) // BOUNDED — never Thread.join() with no timeout
-
-        // KNOWN DEFECT, PINNED ON PURPOSE: inverted from what a healthy predictive-back
-        // path should do. Asserts the probe thread is STILL not back — i.e. passes on
-        // today's broken behaviour. rc/throwable are left at their sentinels: the probe
-        // never returns while the lane stays held, so there is nothing to assert on them.
-        assertFalse(
-            backReturned.get(),
-            "dispatchHostEventAndWait RETURNED within 10s (rc=$backRc, threw=$backThrew) " +
-                "while the dispatch lane was still held open by an async handler awaiting a " +
-                "host call. That is unexpected: this test pins the KNOWN #346 defect that " +
-                "Android's predictive back (MainActivity:522) deadlocks behind a held " +
-                "dispatch lane. If this test now fails, the defect has been fixed — invert " +
-                "this assertion back (assertTrue) instead of deleting the test, and close #346."
-        )
-
-        // CLEANUP, NOT PART OF THE MEASUREMENT: the blocked native call sits on the ONE
-        // process-global .NET session every JVM test class in this run shares (the
-        // InlineDispatcher/HostSession singleton the .NET-side [Collection("host-session")]
-        // tests also serialize against) — this instance's dispatchLane only serializes
-        // LOCAL submission, the actual block lives in the shared native runtime. Leaving
-        // it open would corrupt every test class that runs after this one in the same
-        // JVM, so complete it now (after the measurement, not during it) and let the
-        // queued "back" Callable — and this runtime's lane — drain normally.
-        BridgeHostCallCompleter.complete(host.heldRequestId, CameraStatus.CANCELLED, null)
-        backThread.join(10_000) // bounded — the lane should now free promptly
-        assertTrue(runtime.retire(), "the lane must drain once the held call is released")
+            backThread?.join(10_000) // bounded — the lane frees promptly once released
+            drained = runtime.retire()
+        }
+        assertTrue(drained, "the lane must drain once the held call is released")
     }
 }

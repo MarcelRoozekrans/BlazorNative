@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.3...v0.17.0) (2026-09-28)
+
+
+### Features
+
+* **16.1:** give the renderer its own thread, deliver late faults, quiesce shutdown ([#428](https://github.com/MarcelRoozekrans/BlazorNative/issues/428)) ([5634ed1](https://github.com/MarcelRoozekrans/BlazorNative/commit/5634ed1385a1668a387b68dd0fb5c3acd5fec4fa))
+* **16.2:** take back and navigation off the main thread ([#431](https://github.com/MarcelRoozekrans/BlazorNative/issues/431)) ([f249b7b](https://github.com/MarcelRoozekrans/BlazorNative/commit/f249b7b727d92f0fa55f78ec467cb7e134610e6f))
+* **16.3:** measure lane starvation and warn once on a slow synchronous handler ([#437](https://github.com/MarcelRoozekrans/BlazorNative/issues/437)) ([1397cf8](https://github.com/MarcelRoozekrans/BlazorNative/commit/1397cf8373226835c33e129e262a9961d0678e85))
+
+## [0.16.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.2...v0.16.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **15.4:** let the parse guard parse around a non-conventional subject ([#392](https://github.com/MarcelRoozekrans/BlazorNative/issues/392)) ([bd938d8](https://github.com/MarcelRoozekrans/BlazorNative/commit/bd938d87facdcedb125acb5c9fbc0996d3eb71bd))
+
 ## [0.16.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.1...v0.16.2) (2026-09-24)
 
 

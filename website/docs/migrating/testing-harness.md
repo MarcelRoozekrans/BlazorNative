@@ -21,7 +21,7 @@ is a place where the second copy was wrong and nothing said so.
 
 ## 1. `BnTestHost.Mount` gained a `BnShell shell = BnShell.Ios` parameter
 
-```csharp
+```csharp bn-sample=skip:signature listing, not a compilable unit
 public static BnTestHost Mount<TComponent>(
     IDictionary<string, object?>? parameters = null,
     Action<IServiceCollection>? configureServices = null,
@@ -78,12 +78,12 @@ reading as though it asserted both — on Android the text is the widget's own c
 childless leaves today, so this shape is reachable only through the **raw-element hatch** — a page
 that writes the wire element directly:
 
-```razor
+```razor bn-sample=component:SettingsPage
 @* SettingsPage.razor — the raw-element hatch, not BnCheckbox *@
 <checkbox value="true">Enable audio</checkbox>
 ```
 
-```csharp
+```csharp bn-sample=statements
 // iOS's projection (unchanged, and still the default).
 // checkbox is NOT text-bearing there, so the text stays a child node.
 using BnTestHost ios = BnTestHost.Mount<SettingsPage>();
@@ -137,7 +137,7 @@ an app with its own nested routes should re-check: a link that used to land on `
 ask for `/settings/audio`, and will miss the table unless that route exists.
 
 The rule now lives once, in `src/deeplink-vectors.json`, and `tools/BlazorNative.WireGen` emits the
-.NET, Kotlin and Swift assertion tables from it. All three suites assert the same seven cases. Do
+.NET, Kotlin and Swift assertion tables from it. All three suites assert the same cases. Do
 not hand-edit a `BnDeepLinkVectors.g.*`.
 
 **Known residual, deliberately deferred:** scheme comparison is case-sensitive on Android and

@@ -42,7 +42,7 @@ public sealed class GeolocationBridgeTests
             await bridge.GetCurrentPositionAsync();
 
             Assert.True(FakeShellHost.LastHostCallRequestId > 0);
-            Assert.Equal((int)NativeShellBridge.HostCallOp.Geolocation, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.Geolocation, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"mode\":\"request\"", FakeShellHost.LastHostCallArgs);
         }
         finally { NativeShellBridge.ResetForTests(); }

@@ -115,14 +115,16 @@ Pre-1.0 is the cheap window, and this is what it is for.
 ## 7. How it is held
 
 The one-token fix is the small half. The guard is `src/auth-semantics.json`, which declares every
-site in both shells that gates or probes authenticated access — seven of them — each with the
-authenticator token it must use and a written reason, and `AuthSemanticsDriftTests`, which reads
-the shell sources and asserts three things:
+site in both shells that gates or probes authenticated access, each with the authenticator token
+it must use and a written reason, and `AuthSemanticsDriftTests`, which reads the shell sources and
+asserts, among other things:
 
 - every declared site still carries its declared token;
 - every authenticator token occurring anywhere in either shell's non-test source is declared, or
-  explicitly ignored with a reason — so an **eighth opinion** about what counts as authentication
+  explicitly ignored with a reason — so **one more opinion** about what counts as authentication
   fails the build rather than joining quietly;
+- no shell widens the gate through a platform call that accepts the device credential without
+  naming an authenticator token at all;
 - the scan is not vacuous: it saw both shells and found occurrences.
 
 No name generator could have caught the original defect, because the names were already fine and

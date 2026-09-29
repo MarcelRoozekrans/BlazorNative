@@ -140,15 +140,13 @@ public sealed class BnImagePolishDemoTests
         Assert.Equal(754, BnImagePolishDemo.BackSectionYDp + BnImageDemo.IntrinsicNaturalHeightPx);
 
         // The declared box is /image case [0]'s — the box the 6.3 contract
-        // already proves is never measured.
+        // already proves is never measured. A genuine two-copy pin: each side is
+        // its own literal, 200 × 120, in each page, so either edited alone reds.
         Assert.Equal(BnImageDemo.FixedWidthDp, BnImagePolishDemo.DeclaredWidthDp);
         Assert.Equal(BnImageDemo.FixedHeightDp, BnImagePolishDemo.DeclaredHeightDp);
 
-        // The fixtures, BY REFERENCE — one origin, declared once, no drift.
-        Assert.Equal(BnImageDemo.FixtureOrigin, BnImagePolishDemo.FixtureOrigin);
-        Assert.Equal(BnImageDemo.FailingSrc, BnImagePolishDemo.ErrorSrc);
-        Assert.Equal(BnImageDemo.IntrinsicSrc, BnImagePolishDemo.IntrinsicSrc);
-        Assert.Equal(BnImageDemo.FixedSrc, BnImagePolishDemo.ModeSrc);
+        // No fixture equalities (15.7): the page defines FixtureOrigin, ErrorSrc,
+        // IntrinsicSrc and ModeSrc as `= BnImageDemo.X`, so comparing them could never red.
         // The held source is NEW (a fixture-server extension, Gates 2/3) and
         // loopback like everything else — CI never touches the internet.
         Assert.StartsWith(BnImagePolishDemo.FixtureOrigin, BnImagePolishDemo.SlowSrc,

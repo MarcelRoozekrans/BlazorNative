@@ -7,35 +7,30 @@ using Xunit;
 namespace BlazorNative.Renderer.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RenderThreadWarningTests — Phase 13.2.
+// RenderThreadWarningTests — Phase 13.2, flipped in Phase 16.1.
 //
-// WHAT THIS GUARDS, AND WHY IT IS A WARNING RATHER THAN AN ASSERTION.
+// WHAT THIS GUARDS.
 //
-// The renderer's InlineDispatcher answers CheckAccess() with an unconditional
-// `true`. That looks like a lie worth fixing, and Phase 13.2 tried: the spike
-// made it honest (owner-thread comparison) and the TEST HOST PROCESS DIED with a
-// stack overflow, reproducibly. The captured loop:
+// Phase 13.2 could only DETECT a render driven from the wrong thread: the inline
+// dispatcher answered CheckAccess() with an unconditional `true`, because an honest
+// answer on a dispatcher with nowhere to marshal to recursed
 //
-//     Renderer.Dispose()
-//       -> CheckAccess()                        false
-//       -> Dispatcher.InvokeAsync(() => Dispose())   marshal to "the right thread"
-//       -> InlineDispatcher.InvokeAsync runs it INLINE, on the same thread
-//       -> Renderer.Dispose()  -> CheckAccess() false -> ... until the stack ends
+//     Renderer.Dispose() -> CheckAccess() false -> Dispatcher.InvokeAsync(Dispose)
+//       -> run INLINE on the same thread -> Renderer.Dispose() -> ... stack overflow
 //
-// Blazor uses CheckAccess() for MARSHALLING, not merely for assertions. An
-// inline dispatcher runs work on the CALLING thread and therefore has nowhere to
-// marshal to, so it MUST claim every thread is the right one. The unconditional
-// `true` is load-bearing for the dispatcher's own coherence, not an oversight.
+// Phase 16.1 gave the renderer its own render thread, so CheckAccess() is honest and
+// Blazor's own AssertAccess() rejects an off-thread StateHasChanged before any batch
+// starts. The renderer's check is now a second, independent line: it compares the
+// thread that reaches UpdateDisplayAsync against THIS renderer's RenderThreadId, not
+// against CheckAccess(). So it still fires if CheckAccess() ever lies again — which is
+// exactly 13.2's failure mode, and exactly how these tests drive it: they make the
+// dispatcher claim every thread (RenderThreadDispatcher.ClaimEveryThreadForTests), the
+// one condition under which a batch can reach the tree off its thread.
 //
-// Making it honest requires giving InvokeAsync a real queue and a real owner
-// thread, and that breaks the sync-mount contract the C-ABI depends on (the first
-// render must complete synchronously inside the native callback window — see
-// Exports.cs and MountSyncTests).
+// Under StrictErrors the check THROWS, naming both threads; without it, it warns.
 //
-// So the real risk — a render batch driven from a thread that is not the one the
-// sync-mount contract assumes — is DETECTED here and reported. It is never
-// thrown. A throw would be a behaviour change on a path that currently works, in
-// the exact area the spike proved is delicate.
+// DOES NOT COVER (pin standard Rule 5): Blazor's own AssertAccess rejection of an
+// off-thread StateHasChanged — that is Blazor's pin, not ours, and it names no thread.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Serializes every class that touches BnLog's PROCESS-WIDE Level/Sink.
@@ -140,32 +135,42 @@ public sealed class RenderThreadWarningTests
                l.Message.Contains("render batch", StringComparison.Ordinal)
                && l.Message.Contains($"owned by thread {ownerThreadId}", StringComparison.Ordinal))];
 
-    /// <summary>A batch driven from a thread that did not drive the first one is a WARNING
-    /// under StrictErrors, and it must name BOTH threads — a report that says only "wrong
-    /// thread" cannot be acted on.</summary>
+    /// <summary>A batch that reaches the tree off the render thread THROWS under StrictErrors,
+    /// and the exception must name BOTH threads — a report that says only "wrong thread" cannot
+    /// be acted on.</summary>
     [Fact]
-    public void ARenderFromANonOwnerThread_WarnsUnderStrictErrors_AndNamesBothThreads()
+    public void ARenderFromANonOwnerThread_ThrowsUnderStrictErrors_AndNamesBothThreads()
     {
+        // Flipped in 16.1: was ARenderFromANonOwnerThread_WarnsUnderStrictErrors_AndNamesBothThreads, asserting a single Warn-level report and no throw.
         using var renderer = BuildRenderer(strict: true);
-        int ownerThreadId = Environment.CurrentManagedThreadId;
-        int otherThreadId = 0;
+        var dispatcher = Assert.IsType<RenderThreadDispatcher>(renderer.Dispatcher);
+        int ownerThreadId = renderer.RenderThreadId;
+        int rootId = renderer.Mount<Probe>();
 
-        var lines = Capture(() =>
+        // Positive control: the same off-thread call WITHOUT the lie is marshalled onto the
+        // render thread and is fine, so the throw below comes from the bypass, not the call.
+        OnAnotherThread(() => renderer.TriggerRootRenderForTests(rootId));
+
+        int otherThreadId = 0;
+        InvalidOperationException thrown;
+        dispatcher.ClaimEveryThreadForTests = true;
+        try
         {
-            int rootId = renderer.Mount<Probe>();          // this thread becomes the owner
-            OnAnotherThread(() =>
+            thrown = Assert.Throws<InvalidOperationException>(() => OnAnotherThread(() =>
             {
                 otherThreadId = Environment.CurrentManagedThreadId;
                 renderer.TriggerRootRenderForTests(rootId);
-            });
-        });
+            }));
+        }
+        finally
+        {
+            dispatcher.ClaimEveryThreadForTests = false;
+        }
 
         Assert.NotEqual(ownerThreadId, otherThreadId);
-
-        (BnLogLevel Level, string Message) warning = Assert.Single(Reports(lines, ownerThreadId));
-        Assert.Equal(BnLogLevel.Warn, warning.Level);
-        Assert.Contains(otherThreadId.ToString(), warning.Message, StringComparison.Ordinal);
-        Assert.Contains(ownerThreadId.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.Contains("render batch", thrown.Message, StringComparison.Ordinal);
+        Assert.Contains($"driven from thread {otherThreadId}", thrown.Message, StringComparison.Ordinal);
+        Assert.Contains($"owned by thread {ownerThreadId}", thrown.Message, StringComparison.Ordinal);
     }
 
     /// <summary>The ordinary single-threaded path must be SILENT. A guard that fires on every
@@ -176,7 +181,9 @@ public sealed class RenderThreadWarningTests
     public void TheOrdinarySingleThreadedPath_IsSilent()
     {
         using var renderer = BuildRenderer(strict: true);
-        int ownerThreadId = Environment.CurrentManagedThreadId;
+        // 16.1: the owner is the renderer's render thread, no longer the thread that drove the
+        // first batch — compared against the renderer under test, never the test thread.
+        int ownerThreadId = renderer.RenderThreadId;
 
         var lines = Capture(() =>
         {
@@ -188,21 +195,31 @@ public sealed class RenderThreadWarningTests
         Assert.Empty(Reports(lines, ownerThreadId));
     }
 
-    /// <summary>Without StrictErrors the same condition still reports, at Debug level — it ships
-    /// either way, so a consumer running ordinary trace logging gets it without having to
-    /// discover StrictErrors first.</summary>
+    /// <summary>Without StrictErrors the same condition still reports, as a WARNING — it ships
+    /// either way, so a consumer running ordinary logging gets it without having to discover
+    /// StrictErrors first.</summary>
     [Fact]
-    public void WithoutStrictErrors_TheSameConditionReportsAtDebugLevel()
+    public void WithoutStrictErrors_TheSameConditionWarns()
     {
+        // Flipped in 16.1: was WithoutStrictErrors_TheSameConditionReportsAtDebugLevel, asserting a single Debug-level report.
         using var renderer = BuildRenderer(strict: false);
-        int ownerThreadId = Environment.CurrentManagedThreadId;
+        var dispatcher = Assert.IsType<RenderThreadDispatcher>(renderer.Dispatcher);
+        int ownerThreadId = renderer.RenderThreadId;
 
         var lines = Capture(() =>
         {
             int rootId = renderer.Mount<Probe>();
-            OnAnotherThread(() => renderer.TriggerRootRenderForTests(rootId));
+            dispatcher.ClaimEveryThreadForTests = true;
+            try
+            {
+                OnAnotherThread(() => renderer.TriggerRootRenderForTests(rootId));
+            }
+            finally
+            {
+                dispatcher.ClaimEveryThreadForTests = false;
+            }
         });
 
-        Assert.Equal(BnLogLevel.Debug, Assert.Single(Reports(lines, ownerThreadId)).Level);
+        Assert.Equal(BnLogLevel.Warn, Assert.Single(Reports(lines, ownerThreadId)).Level);
     }
 }

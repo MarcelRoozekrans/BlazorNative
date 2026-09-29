@@ -5,7 +5,8 @@ namespace BlazorNative.Components;
 
 /// <summary>
 /// A slider for picking a number from a range. Renders as a native
-/// <c>SeekBar</c> on Android and a <c>UISlider</c> on iOS.
+/// <c>SeekBar</c> on Android and as <c>BnSliderView</c> on iOS, a
+/// <c>UISlider</c> subclass.
 /// </summary>
 /// <remarks>
 /// <para>

@@ -54,7 +54,8 @@
     {
       "name": "dispatchHostEventAndWait",
       "semantics": "blocking",
-      "doc": "Deep-link and back: the caller needs the rc and needs frames applied before it returns."
+      "visibility": "internal",
+      "doc": "Blocking, internal and test-only since 16.2 Task 5 (#346). Until then it was deep-link and back's production path, needing the rc and the frames applied before it returned; both moved to the fire-and-forget dispatchHostEvent, and no production caller needs the rc any more."
     }
   ],
   "ignored": [
@@ -74,7 +75,7 @@
     {
       "name": "dispatchHostEventBlocking",
       "platforms": ["kotlin"],
-      "reason": "Test seam: runs dispatchHostEvent's marshalling INLINE on the calling thread and returns the raw rc (HostEventTest.kt asserts the 0/1/2/3 contract directly). Production uses the fire-and-forget dispatchHostEvent (lifecycle) or the blocking dispatchHostEventAndWait (back) -- never this seam."
+      "reason": "Test seam: runs dispatchHostEvent's marshalling INLINE on the calling thread and returns the raw rc (HostEventTest.kt asserts the 0/1/2/3 contract directly). Production uses the fire-and-forget dispatchHostEvent for every host event, lifecycle and back alike, since 16.2 -- never this seam, and never the now test-only dispatchHostEventAndWait."
     }
   ]
 }

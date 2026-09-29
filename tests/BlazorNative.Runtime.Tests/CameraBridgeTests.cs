@@ -43,7 +43,7 @@ public sealed class CameraBridgeTests
             await bridge.CapturePhotoAsync(new CaptureOptions(MaxDimension: 1024, Quality: 70));
 
             Assert.True(FakeShellHost.LastHostCallRequestId > 0);
-            Assert.Equal((int)NativeShellBridge.HostCallOp.Camera, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.Camera, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"action\":\"capture\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"maxDim\":\"1024\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"quality\":\"70\"", FakeShellHost.LastHostCallArgs);
@@ -60,7 +60,7 @@ public sealed class CameraBridgeTests
             FakeShellHost.HostCallStatus = (int)CameraStatus.Captured; // "present + usable"
             await bridge.CheckCameraAvailabilityAsync();
 
-            Assert.Equal((int)NativeShellBridge.HostCallOp.Camera, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.Camera, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"action\":\"check\"", FakeShellHost.LastHostCallArgs);
             Assert.DoesNotContain("\"maxDim\"", FakeShellHost.LastHostCallArgs);
         }

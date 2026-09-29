@@ -112,46 +112,17 @@ interface ShellBridgeHandlers {
     // the awaiting .NET ValueTask always resolves (denial-as-data, never a hang)
     // instead of the id leaking pending forever. The production Android host
     // (AndroidShellBridge) overrides it with the real geolocation flow.
+    //
+    // Phase 16.1: [HostCallOp.FAULT_NOTICE] never reaches this method. BridgeRegistrar
+    // answers it itself, so every host, including a test host, routes it to onError.
     fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
         BridgeHostCallCompleter.complete(requestId, HostCallStatus.ERROR, null)
     }
 }
 
-/**
- * The generic permission-gated capabilities carried on the ONE HostCallBegin
- * slot — the wire-mirror of NativeShellBridge.HostCallOp (.NET). 9.0 wires
- * exactly one op (Geolocation = 0); 9.1/9.2/9.3 append a constant with NO ABI,
- * NO export-gate, NO drift-test change (the generic-op reuse story). The integer
- * IS the wire contract — the host switches on it.
- */
-object HostCallOp {
-    const val GEOLOCATION = 0
-
-    // Phase 9.1 (M9 DoD #3) — the FIRST reuse of the 9.0 generic ABI, and it
-    // holds the bet: local notifications add ONE op-enum value here and touch the
-    // ABI at nothing else (the bridge stays 80 bytes / 10 slots, host_call_complete
-    // reused for the calls, host_event reused for warm tap-through). The mirror of
-    // NativeShellBridge.HostCallOp.Notifications (.NET) / BnHostCallOp (Swift).
-    const val NOTIFICATIONS = 1
-
-    // Phase 9.2 (M9 DoD #4) — the SECOND reuse of the 9.0 generic ABI, and it adds
-    // TWO op-enum values at once: biometrics (an OS auth prompt) and secure storage
-    // (an encrypted-at-rest, optionally biometric-bound key/value store). Both ride
-    // the SAME hostCallBegin slot; the ABI does not move (still 80 bytes / 10 slots /
-    // 10 exports). The mirror of NativeShellBridge.HostCallOp.Biometrics /
-    // .SecureStorage (.NET) / BnHostCallOp (Swift). The integer IS the wire contract.
-    const val BIOMETRICS = 2
-    const val SECURE_STORAGE = 3
-
-    // Phase 9.3 (M9 DoD #5) — the THIRD reuse of the 9.0 generic ABI and the LAST M9
-    // capability: camera photo capture. ONE op-enum value here and the ABI moves at
-    // nothing else (still 80 bytes / 10 slots / 10 exports). The headline is HOW the
-    // result crosses: a photo is a LARGE artifact, but it is handed by REFERENCE — the
-    // completion payload NAMES a file (a file:// PATH the shell wrote), it does not
-    // carry the bytes, so no binary/buffer export is added and the struct does not grow.
-    // The mirror of NativeShellBridge.HostCallOp.Camera (.NET) / BnHostCallOp (Swift).
-    const val CAMERA = 4
-}
+// The op integers [hostCallBegin] switches on are [HostCallOp], GENERATED since Phase
+// 16.1 into BnWireVocabulary.g.kt from src/wire-vocabulary.json. It was hand-mirrored
+// here until then.
 
 /**
  * The wire-mirrored biometric completion status — byte-identical to .NET's
@@ -190,7 +161,13 @@ object SecureStorageStatus {
     const val OK = 0            // set/delete succeeded; GET FOUND THE VALUE ({"value":…} on get)
     const val NOT_FOUND = 1     // get/getWithAuth of an absent key (no payload)
     const val AUTH_FAILED = 2   // the biometric gate on getWithAuth denied / failed / cancelled / locked out
-    const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable / biometrics not enrolled
+    const val UNAVAILABLE = 3   // no secure hardware / Keystore unusable — the auth-bound SET path
+                                 // only (secureSetAuth's provisionKey call: its KeyGenParameterSpec
+                                 // throws when generating a key with none enrolled; caught by
+                                 // secureErrorStatus). getWithAuth of an EXISTING item does NOT reach
+                                 // this the same way — a denied/unavailable prompt there always folds
+                                 // to AuthFailed. iOS is NOT known to map the SET case the same way —
+                                 // nothing on that shell checks enrolment (#396).
     const val ERROR = 4         // unexpected host error (a caught throw, a decrypt failure, malformed args)
 }
 
@@ -276,6 +253,12 @@ object HostCallStatus {
  */
 class BridgeRegistrar(
     private val handlers: ShellBridgeHandlers,
+    // Phase 16.2 (#346): .NET's two back notices, answered here like FaultNotice so no
+    // [ShellBridgeHandlers] can drop one. See [BlazorNativeRuntime]'s parameters of the
+    // same names for their thread set. Before [onError] so a trailing lambda still binds
+    // to the error sink.
+    private val onBackState: (canGoBack: Boolean) -> Unit = {},
+    private val onBackUnhandled: () -> Unit = {},
     // (JVM-friendly default is deliberate NOT provided: callers choose the
     // sink — Android must pass android.util.Log, stderr is /dev/null there.)
     private val onError: (String, Throwable) -> Unit,
@@ -370,9 +353,86 @@ class BridgeRegistrar(
             // The args string is .NET-owned and valid ONLY during this call —
             // getString copies. hostCallBegin returns quickly; the result is
             // pushed later via BridgeHostCallCompleter (the fetchBegin shape).
-            handlers.hostCallBegin(requestId, op, argsJsonUtf8.getString(0, "UTF-8"))
+            val argsJson = argsJsonUtf8.getString(0, "UTF-8")
+            when (op) {
+                HostCallOp.FAULT_NOTICE -> deliverFaultNotice(requestId, argsJson)
+                HostCallOp.BACK_STATE -> deliverBackState(requestId, argsJson)
+                HostCallOp.BACK_UNHANDLED -> deliverBackUnhandled(requestId)
+                else -> handlers.hostCallBegin(requestId, op, argsJson)
+            }
             0
         }
+    }
+
+    /**
+     * Phase 16.1 (#8): a .NET handler faulted AFTER its first await, too late to be its
+     * dispatch rc 2. Answered HERE, not by [handlers], so every host routes it to the
+     * same [onError] the runtime was given, and no [ShellBridgeHandlers] can drop it.
+     * The args are flat JSON: handlerId (0 for a reserved host event), event, type and
+     * message. They never carry a stack trace or the event payload. Completed OK with a
+     * null payload even if [onError] throws; .NET ignores the result either way.
+     */
+    private fun deliverFaultNotice(requestId: Long, argsJson: String) {
+        try {
+            val args = FlatJson.parse(argsJson)
+            val type = args["type"] ?: "?"
+            val message = args["message"] ?: ""
+            onError(
+                "handler fault after await: $type: $message " +
+                    "(handler ${args["handlerId"] ?: "?"}, event '${args["event"] ?: "?"}')",
+                RuntimeException(message),
+            )
+        } finally {
+            lastFaultNoticeCompleteRcForTest =
+                BridgeHostCallCompleter.complete(requestId, HostCallStatus.GRANTED, null)
+        }
+    }
+
+    /**
+     * Phase 16.2 (#346): whether .NET can go back, pushed so the shell never asks on its main
+     * thread. The args are flat JSON, canGoBack as the string true or false. Handed to
+     * [onBackState] on the thread .NET sent it from, which may be the mount caller, the render
+     * thread or the dispatch lane, so the listener must only record the value. A value that is
+     * neither true nor false is a .NET writer bug: it reaches [onError] and the listener is not
+     * called, so the shell keeps the state it had. Completed OK either way.
+     */
+    private fun deliverBackState(requestId: Long, argsJson: String) {
+        try {
+            when (val value = FlatJson.parse(argsJson)["canGoBack"]) {
+                "true" -> onBackState(true)
+                "false" -> onBackState(false)
+                else -> onError(
+                    "BackState notice carried canGoBack='$value', not true or false: $argsJson",
+                    IllegalArgumentException("malformed BackState args"),
+                )
+            }
+        } catch (t: Throwable) {
+            onError("BackState notice listener threw", t)
+        } finally {
+            completeNotice(HostCallOp.BACK_STATE, requestId)
+        }
+    }
+
+    /**
+     * Phase 16.2 (#346): a back reached .NET and could not be handled, at the root or with no
+     * session. The shell acts on it through [onBackUnhandled]: Android hands the press to the
+     * platform's default back, and a host with no system back ignores it. A press is never
+     * swallowed now that back is dispatched fire-and-forget and its rc is read by nobody. The
+     * args are an empty flat JSON object and are ignored. Completed OK even if the listener throws.
+     */
+    private fun deliverBackUnhandled(requestId: Long) {
+        try {
+            onBackUnhandled()
+        } catch (t: Throwable) {
+            onError("BackUnhandled notice listener threw", t)
+        } finally {
+            completeNotice(HostCallOp.BACK_UNHANDLED, requestId)
+        }
+    }
+
+    /** Completes a notice OK with a null payload; .NET ignores the result. */
+    private fun completeNotice(op: Int, requestId: Long) {
+        noticeCompleteRcForTest[op] = BridgeHostCallCompleter.complete(requestId, HostCallStatus.GRANTED, null)
     }
 
     /**
@@ -433,6 +493,15 @@ class BridgeRegistrar(
 
         /** Every registrar that ever registered — never released (see class KDoc). */
         private val registeredForever = mutableListOf<BridgeRegistrar>()
+
+        /** Test-only: the rc of the last FaultNotice completion, -1 before any. 0 means
+         * .NET found the notice's pending entry and removed it. */
+        @Volatile
+        internal var lastFaultNoticeCompleteRcForTest: Int = -1
+
+        /** Test-only: op → the rc of the last completion of that back notice. 0 means .NET
+         * found the notice's pending entry and removed it. */
+        internal val noticeCompleteRcForTest = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
         /**
          * The shared buffer-write helper (host half of the buffer protocol):

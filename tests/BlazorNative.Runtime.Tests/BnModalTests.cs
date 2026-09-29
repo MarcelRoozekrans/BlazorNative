@@ -35,6 +35,19 @@ namespace BlazorNative.Runtime.Tests;
 // modal element and the content-box DIV both attach and dispatch through the
 // production ingress below. The shells' halves (Android's generic
 // setOnClickListener, iOS's tap-recognizer arm) are Gates 2/3.
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - DeclaresExactlyTheDesignedSurface (below) pins DECLARATION only — the
+//   [Parameter] names and types reflection finds on BnModal. It does not
+//   assert that a declared parameter actually reaches the wire; a surface
+//   param declared here and never forwarded would still pass this fact. That
+//   half is covered by name, not by this pin: ContentBox_ForwardsTheDeclared
+//   Surface covers ContentWidth/ContentHeight/Padding/BackgroundColor, and
+//   ScrimColor_AlwaysEmitted covers ScrimColor. Visible/VisibleChanged are
+//   covered behaviourally by the mount-shape and dismissal facts above. The
+//   same declaration/forwarding split is named in LayoutSurfacePinTests'
+//   header ("DECLARATION, NOT BEHAVIOUR").
 // ─────────────────────────────────────────────────────────────────────────────
 
 [Collection("host-session")]

@@ -42,7 +42,7 @@ public sealed class SecureStorageBridgeTests
             await bridge.SetSecretAsync("k", "v", requireAuth: true);
 
             Assert.True(FakeShellHost.LastHostCallRequestId > 0);
-            Assert.Equal((int)NativeShellBridge.HostCallOp.SecureStorage, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.SecureStorage, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"action\":\"set\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"key\":\"k\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"value\":\"v\"", FakeShellHost.LastHostCallArgs);

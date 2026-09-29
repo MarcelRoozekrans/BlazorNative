@@ -40,7 +40,9 @@ import java.util.concurrent.atomic.AtomicReference
 //         deep link; launching that exact Intent relaunches into onCreate → the
 //         /notifications page mounts (its "arrived:/notifications" marker);
 //       – WARM (app alive, singleTop): onNewIntent → host_event("navigate","/notifications")
-//         → .NET NavigateToAsync re-routes the LIVE session (rc 0) and the page mounts.
+//         → .NET NavigateToAsync re-routes the LIVE session and the page mounts. Since
+//         Phase 16.2 (#346) the dispatch is fire-and-forget, so the page landing is the
+//         only observable, and the only assertion.
 //
 // THE REAL SYSTEM PERMISSION-DIALOG UX + the real shade tap are owner-phone territory
 // (the design's PROVEN/UNPROVEN split). CI drives the RESULT through
@@ -64,7 +66,6 @@ class BnNotificationsAndroidTest {
     fun reset() {
         AndroidShellBridge.resetGeolocationForTest()
         AndroidShellBridge.permissionRequestHook = null
-        MainActivity.resetNavigateRcForTest()
         // Guarantee the denied prompt path even if a prior granted test in this run
         // left POST_NOTIFICATIONS granted (grants are app-wide, not per-test).
         NotifHarness.revokePostNotifications()
@@ -74,7 +75,6 @@ class BnNotificationsAndroidTest {
     fun cleanup() {
         AndroidShellBridge.permissionRequestHook = null
         AndroidShellBridge.resetGeolocationForTest()
-        MainActivity.resetNavigateRcForTest()
         NotifHarness.cancelAll()
     }
 
@@ -162,13 +162,10 @@ class BnNotificationsAndroidTest {
             val tap = AndroidShellBridge.buildTapIntent(ctx, "/notifications")
             scenario.onActivity { act -> act.onNewIntent(tap) }
 
-            // The reserved "navigate" host event re-routes the LIVE session: rc 0 =
-            // the .NET continuation navigated (proves warm tap-through over host_event).
-            assertTrue(
-                "the warm 'navigate' host event never returned rc 0 within 10s",
-                NotifHarness.pollTrue(10_000) { MainActivity.lastNavigateHostEventRcForTest == 0 }
-            )
-            // …and the live session actually landed on the /notifications page.
+            // The reserved "navigate" host event re-routes the LIVE session, and the
+            // live session actually lands on the /notifications page. Phase 16.2 (#346)
+            // retired the rc seam this used to poll first: the dispatch is fire-and-forget
+            // now, and the landed page is the stronger assertion anyway.
             assertTrue(
                 "the warm re-route never mounted the /notifications page within 10s",
                 NotifHarness.pollTrue(10_000) {

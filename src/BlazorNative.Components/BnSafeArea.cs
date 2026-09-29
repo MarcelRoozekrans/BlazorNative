@@ -114,7 +114,7 @@ public enum BnSafeAreaEdge
 /// one sees it as already consumed.
 /// </para>
 /// <para>
-/// <b>Live.</b> Rotation, a keyboard appearing, a call banner — the insets can
+/// <b>Live.</b> Rotation, for one — the insets can
 /// change while the app is running, and this component re-lays-out when they
 /// do.
 /// </para>

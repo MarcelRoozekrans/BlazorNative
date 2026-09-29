@@ -91,18 +91,14 @@ public sealed class NativeShellBridge : IMobileBridge
     private static readonly ConcurrentDictionary<long, TaskCompletionSource<HostCallResult>>
         s_pendingHostCalls = new();
 
-    /// <summary>The generic permission-gated capabilities carried on the ONE
-    /// HostCallBegin slot. 9.0 wired exactly one (Geolocation); Phase 9.1 added the
-    /// SECOND (Notifications); Phase 9.2 added TWO at once (Biometrics = 2,
-    /// SecureStorage = 3); Phase 9.3 adds the FIFTH (Camera = 4) — op-enum values and
-    /// nothing else on the ABI: NO struct grow (still 80 bytes / 10 slots), NO new
-    /// export (still 10), NO drift-pin move. This is the "pay once (9.0), reuse
-    /// thrice" bet paying its FOURTH draw — and Camera does it while returning an
-    /// IMAGE, because the image crosses as a PATH in the completion payload, not bytes
-    /// (no binary/buffer export). The integer is the wire contract — the host switches
-    /// on it, and the shells' mirror enums (Kotlin HostCallOp / Swift BnHostCallOp)
-    /// gain the same values at Gates 2/3.</summary>
-    internal enum HostCallOp { Geolocation = 0, Notifications = 1, Biometrics = 2, SecureStorage = 3, Camera = 4 }
+    // The generic permission-gated capabilities carried on the ONE HostCallBegin slot
+    // are the HostCallOp enum, GENERATED since Phase 16.1 into BnHostCallOps.g.cs from
+    // src/wire-vocabulary.json, together with the Kotlin HostCallOp and Swift
+    // BnHostCallOp copies. 9.0 wired Geolocation; 9.1 to 9.3 appended Notifications,
+    // Biometrics, SecureStorage and Camera; 16.1 appended FaultNotice. Each one is an
+    // op-enum value and nothing else on the ABI: NO struct grow (still 80 bytes / 10
+    // slots), NO new export (still 10). Camera returns an IMAGE this way, because the
+    // image crosses as a PATH in the completion payload, not bytes.
 
     /// <summary>A completion carried back through blazornative_host_call_complete:
     /// the wire status integer (mapped to <see cref="GeolocationStatus"/> etc. by the
@@ -455,7 +451,7 @@ public sealed class NativeShellBridge : IMobileBridge
     /// process killed during the prompt is the caller's token to abandon, never a
     /// leaked entry); a late/unknown completion takes the unknown-id path in
     /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.</summary>
-    private async ValueTask<HostCallResult> InvokeHostCallAsync(
+    private static async ValueTask<HostCallResult> InvokeHostCallAsync(
         HostCallOp op, string argsJson, CancellationToken ct)
     {
         var cb = GetCallbacks();
@@ -538,6 +534,135 @@ public sealed class NativeShellBridge : IMobileBridge
         // duplicate completion after a cancellation race cannot fault the host.
         tcs.TrySetResult(new HostCallResult(status, payloadJson));
         return 0;
+    }
+
+    /// <summary>Test-only: how many host calls are still waiting for the shell's answer.</summary>
+    internal static int PendingHostCallCountForTests => s_pendingHostCalls.Count;
+
+    // ── Notices: FaultNotice (Phase 16.1, #8), BackState and BackUnhandled (16.2) ──
+    //
+    // A notice is .NET telling the shell something, as a host call on the existing
+    // slot, with no ABI change. .NET ignores the answer.
+    //
+    // FaultNotice: a handler that faults AFTER its first await faults too late to be
+    // its export's rc 2, because the export has already returned rc 0. This hands that
+    // fault to the shell so it reaches onError instead of only stderr. A shell that
+    // predates the op still reaches onError through its unknown-op branch on Android,
+    // and completes it with Error on iOS.
+    //
+    // BackState and BackUnhandled (#346): the shell stops asking .NET whether it can go
+    // back on the main thread. NativeNavigationManager pushes the answer instead, and a
+    // back that still reaches .NET with nothing to go back to tells the shell, and Android
+    // hands the press to the platform's default back. iOS has no system back.
+    // A shell that predates the ops completes them with Error through its unknown-op
+    // branch and keeps its current back behaviour.
+
+    /// <summary>How long an unanswered notice stays in the pending table. Every shell
+    /// answers at once, so this only bounds the leak from a shell that never does: one
+    /// entry per notice for the life of the process. Settable for tests.</summary>
+    internal static TimeSpan FaultNoticeTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>Sends a late fault to the shell as a FaultNotice host call. Its args are
+    /// the flat JSON <c>{"handlerId","event","type","message"}</c>: never the stack trace
+    /// and never the event payload, because either can carry user data.
+    /// <paramref name="handlerId"/> is 0 for a reserved host event.
+    ///
+    /// FIRE-AND-FORGET: begins the call and ignores its result. It NEVER throws, because
+    /// its caller is a continuation of a faulted handler; a failure to send is logged and
+    /// swallowed. The pending entry is removed when the shell answers, or after
+    /// <see cref="FaultNoticeTimeout"/> when it never does.</summary>
+    internal static void SendFaultNotice(ulong handlerId, string eventName, Exception fault)
+    {
+        string what = $"FaultNotice for handler {handlerId} '{eventName}'";
+        try
+        {
+            string args = WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["handlerId"] = handlerId.ToString(CultureInfo.InvariantCulture),
+                ["event"] = eventName,
+                ["type"] = fault.GetType().FullName ?? fault.GetType().Name,
+                ["message"] = fault.Message,
+            });
+            SendNotice(HostCallOp.FaultNotice, args, what);
+        }
+        catch (Exception ex)
+        {
+            BnLog.Error("NativeShellBridge", $"{what} could not be sent", ex);
+        }
+    }
+
+    /// <summary>Sends whether .NET can go back, as a BackState host call with the flat
+    /// JSON <c>{"canGoBack":"true"|"false"}</c>. NativeNavigationManager decides WHEN:
+    /// on a change, and for a navigation before the frames that show the new page.
+    /// Fire-and-forget and never throws, like <see cref="SendFaultNotice"/>.</summary>
+    internal static void SendBackState(bool canGoBack)
+    {
+        string what = $"BackState canGoBack={(canGoBack ? "true" : "false")}";
+        try
+        {
+            string args = WriteFlatJsonObject(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["canGoBack"] = canGoBack ? "true" : "false",
+            });
+            SendNotice(HostCallOp.BackState, args, what);
+        }
+        catch (Exception ex)
+        {
+            BnLog.Error("NativeShellBridge", $"{what} could not be sent", ex);
+        }
+    }
+
+    /// <summary>Tells the shell a back reached .NET and could not be handled. On Android the
+    /// shell hands the press to the platform's default back, so it is never swallowed; iOS
+    /// has no system back and ignores it. Args are the empty flat JSON object.
+    /// Fire-and-forget and never throws, like <see cref="SendFaultNotice"/>.</summary>
+    internal static void SendBackUnhandled()
+    {
+        const string what = "BackUnhandled";
+        try
+        {
+            SendNotice(HostCallOp.BackUnhandled, "{}", what);
+        }
+        catch (Exception ex)
+        {
+            BnLog.Error("NativeShellBridge", $"{what} could not be sent", ex);
+        }
+    }
+
+    /// <summary>The one notice delivery: begins the host call synchronously, so the shell
+    /// has it before this returns, bounds it with <see cref="FaultNoticeTimeout"/>, and
+    /// observes the outcome. <paramref name="what"/> names the notice in a log line and
+    /// must carry no user data.</summary>
+    private static void SendNotice(HostCallOp op, string args, string what)
+    {
+        var timeout = new CancellationTokenSource(FaultNoticeTimeout);
+        _ = AwaitNotice(InvokeHostCallAsync(op, args, timeout.Token), timeout, what);
+    }
+
+    /// <summary>Observes a sent notice so its outcome is never an unobserved Task
+    /// exception: logs a failure, and disposes the timeout. Never throws.</summary>
+    private static async Task AwaitNotice(
+        ValueTask<HostCallResult> call, CancellationTokenSource timeout, string what)
+    {
+        try
+        {
+            await call.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            BnLog.Warn("NativeShellBridge",
+                $"{what} was not answered within "
+                + $"{FaultNoticeTimeout.TotalSeconds:0.#}s — dropped from the pending table");
+        }
+        catch (Exception ex)
+        {
+            // No bridge registered, no hostCallBegin slot, or the shell refused the begin.
+            BnLog.Error("NativeShellBridge", $"{what} could not be sent", ex);
+        }
+        finally
+        {
+            timeout.Dispose();
+        }
     }
 
     /// <summary>Maps the wire status integer to the typed tri-state; an out-of-range

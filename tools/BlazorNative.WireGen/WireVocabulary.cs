@@ -87,6 +87,30 @@ public sealed class HostEventTable
     public const string PassthroughTier = "passthrough";
 }
 
+public sealed class HostCallOpEntry
+{
+    /// <summary>The .NET enum member, PascalCase. The other two spellings derive from it.</summary>
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
+
+    /// <summary>The wire integer on hostCallBegin's <c>op</c>. Frozen once shipped.</summary>
+    [JsonPropertyName("id")]   public int Id { get; init; } = -1;
+
+    /// <summary>Required: it becomes the generated members' doc comments.</summary>
+    [JsonPropertyName("doc")]  public string Doc { get; init; } = "";
+
+    /// <summary>Kotlin's <c>const val</c> spelling: SecureStorage → SECURE_STORAGE.</summary>
+    public string KotlinName => string.Concat(Name.Select((c, i) =>
+        i > 0 && char.IsUpper(c) ? "_" + c : char.ToUpperInvariant(c).ToString()));
+
+    /// <summary>Swift's <c>static let</c> spelling: SecureStorage → secureStorage.</summary>
+    public string SwiftName => char.ToLowerInvariant(Name[0]) + Name[1..];
+}
+
+public sealed class HostCallOpTable
+{
+    [JsonPropertyName("ops")] public HostCallOpEntry[] Ops { get; init; } = [];
+}
+
 public sealed class WireVocabulary
 {
     [JsonPropertyName("yogaStyles")]                   public StyleTable YogaStyles { get; init; } = new();
@@ -95,6 +119,7 @@ public sealed class WireVocabulary
     [JsonPropertyName("measuredNodeTypes")]            public NameList MeasuredNodeTypes { get; init; } = new();
     [JsonPropertyName("hostEvents")]                   public HostEventTable HostEvents { get; init; } = new();
     [JsonPropertyName("nodeTypes")]                    public NodeTypeTable NodeTypes { get; init; } = new();
+    [JsonPropertyName("hostCallOps")]                  public HostCallOpTable HostCallOps { get; init; } = new();
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -191,6 +216,29 @@ public sealed class WireVocabulary
             if (string.IsNullOrWhiteSpace(e.Name))
                 throw new InvalidDataException("a hostEvent has an empty name");
         }
+
+        // THE OP INTEGER IS THE ROUTING KEY in every shell's hostCallBegin switch. A
+        // duplicate id routes two capabilities to one arm; a duplicate name emits a
+        // duplicate member that fails to compile in one language and not another.
+        RequireNonEmpty(HostCallOps.Ops, "hostCallOps");
+        foreach (HostCallOpEntry op in HostCallOps.Ops)
+        {
+            if (string.IsNullOrWhiteSpace(op.Name) || !char.IsUpper(op.Name[0]) || !op.Name.All(char.IsLetterOrDigit))
+                throw new InvalidDataException(
+                    $"hostCallOp '{op.Name}' is not a PascalCase identifier. The Kotlin and Swift "
+                    + "spellings are derived from it, so it must be one.");
+            if (op.Id < 0)
+                throw new InvalidDataException(
+                    $"hostCallOp '{op.Name}' has id {op.Id}. Ids are non-negative wire integers.");
+            if (string.IsNullOrWhiteSpace(op.Doc))
+                throw new InvalidDataException(
+                    $"hostCallOp '{op.Name}' has no doc. It becomes the generated members' doc "
+                    + "comments, and an op nobody explained is an op nobody can route.");
+        }
+        RequireNoDuplicates(HostCallOps.Ops.Select(o => o.Name), "hostCallOps.name");
+        RequireNoDuplicates(
+            HostCallOps.Ops.Select(o => o.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            "hostCallOps.id");
     }
 
     private static void RequireNonEmpty<T>(IReadOnlyCollection<T> items, string what)

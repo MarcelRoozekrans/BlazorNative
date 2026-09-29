@@ -91,8 +91,8 @@ adb shell am start -a android.intent.action.VIEW -d "blazornative://about"
 (`BlazorNative.RouteGen` parses your `Routed<T>(route, name)` rows and emits the resource;
 `MainActivity` reads it at Intent-parse time, *before* the native library loads). It cannot drift
 from your pages — add a routed row and the deep link resolves. This was the last place a page lived
-twice; since v0.3.0 the mount registry, the route table, **and** this map are all views over that
-one array.
+twice; now the mount registry, the route table, **and** this map are all views over that one
+array.
 
 The URI **scheme** (`blazornative://`) is yours to change for a production app — it lives in two
 paired places, `AndroidManifest.xml`'s `<data android:scheme="…"/>` and `MainActivity`'s

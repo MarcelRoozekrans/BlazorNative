@@ -71,6 +71,10 @@
          above. A test that shelled out to the tool could only assert that SOME
          generator ran; this asserts THIS one produces exactly these bytes. -->
     <ProjectReference Include="..\..\tools\BlazorNative.WireGen\BlazorNative.WireGen.csproj" />
+    <!-- #291: DocsSamplesDriftTests calls DocSampleParser directly — the same parser
+         the docs-sample generator and the CI compile step use — so the pin and the
+         build cannot disagree about what a fence is (pin standard Rule 8). -->
+    <ProjectReference Include="..\..\tools\BlazorNative.DocSamples\BlazorNative.DocSamples.csproj" />
   </ItemGroup>
 
   <ItemGroup>

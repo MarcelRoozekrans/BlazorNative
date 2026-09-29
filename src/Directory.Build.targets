@@ -92,8 +92,8 @@
                   repo is nullable-enabled throughout and an un-annotated
                   baseline would sleep through a real break.
 
-       WHAT IS BASELINED. Six packages — Core, Renderer, Http, Components,
-       Runtime, Device. NOT BlazorNative.Analyzers: it ships as an analyzer
+       WHAT IS BASELINED. Every package that sets BnEnforcePublicApi — Core,
+       Renderer, Http, Components, Runtime, Device and Testing. NOT BlazorNative.Analyzers: it ships as an analyzer
        asset with PrivateAssets=all, so a consumer never gets a compile-time
        reference to MobilePolicyAnalyzer. Its real contract is the seven
        BN00xx diagnostic IDs — what a consumer types into a NoWarn — which a
@@ -101,7 +101,7 @@
        manufactures confidence, so that package gets the pin it actually needs
        instead: AnalyzerDiagnosticRosterTests (Gate B's A2, both directions).
 
-       GENERATED TYPES ARE IN THE BASELINE, DELIBERATELY. Three of the 88
+       GENERATED TYPES ARE IN THE BASELINE, DELIBERATELY. Three of the
        exported types are emitted, not written: the two ZeroAlloc.Inject
        ...ServiceCollectionExtensions and Razor's BlazorNative.Components._Imports.
        They are NOT excluded from the analyzer. If a ZeroAlloc or Razor
@@ -112,7 +112,7 @@
        BnSlider's 23 parameters are declared in .razor and reach the surface
        only through the Razor generator.)
 
-       The PackageReference sits here rather than in six csprojs for the same
+       The PackageReference sits here rather than in each csproj for the same
        reason the NoWarn does: one home for the policy, one opt-in line per
        package. The item is visible to restore because Directory.Build.targets
        is imported during EVALUATION, not during target execution.
@@ -152,7 +152,7 @@
       <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
     </PackageReference>
     <!-- Relative Includes in an imported file resolve against the PROJECT
-         directory, so each of the six picks up its own pair. -->
+         directory, so each opted-in package picks up its own pair. -->
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>

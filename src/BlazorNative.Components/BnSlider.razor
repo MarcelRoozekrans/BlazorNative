@@ -3,9 +3,13 @@
     BnSlider — Phase 7.3 Task 1.2 (design decision 1), authored in .razor.
 
     Emits the `slider` element → NodeType 10. Android: SeekBar. iOS:
-    UISlider. A leaf with a fixed intrinsic size via the measure func (the
-    6.1 law; the intrinsic size is the platform's own — declare a Width where
-    a number is asserted cross-platform, exactly what BnFormDemo does).
+    BnSliderView, a UISlider subclass — the iOS 26 exact-value shim
+    (BnWidgetMapper.swift's header on it: a bare UISlider does not store
+    `value` verbatim, so the shim holds the last programmatic value exactly
+    and reports it instead of the SDK's own reconstruction). A leaf with a
+    fixed intrinsic size via the measure func (the 6.1 law; the intrinsic
+    size is the platform's own — declare a Width where a number is asserted
+    cross-platform, exactly what BnFormDemo does).
 
     THE WIRE — every number INVARIANT (the 6.1 stringification pattern: a
     Dutch locale must never put "1,5" on any wire; the culture pin covers

@@ -35,8 +35,9 @@ interface NativeBindings : Library {
     fun blazornative_version(): Pointer
 
     /**
-     * Phase 3.0d: registers the frame callback the runtime invokes (synchronously,
-     * on the mounting thread) with a `BlazorNativeFrame*` per render frame.
+     * Phase 3.0d: registers the frame callback the runtime invokes with a
+     * `BlazorNativeFrame*` per render frame. Since Phase 16.1 every invocation
+     * comes from the session's .NET render thread, never the mounting thread.
      * Returns 0 on success; re-registration is allowed (last wins).
      *
      * LIFETIME: the [callback] object MUST be strongly referenced by the caller
@@ -78,9 +79,15 @@ interface NativeBindings : Library {
      *       desktop JVM)
      *   3 = malformed/NULL args OR handlerId > int.MaxValue
      *
-     * SYNCHRONOUS: the handler, the re-render, AND the frame callback all
-     * complete before this returns (InlineDispatcher contract in Exports.cs) —
-     * frames still fire only inside host calls (mount OR dispatch).
+     * RETURNS WHEN THE HANDLER'S SYNCHRONOUS PART HAS RUN (Phase 16.1): that
+     * part, its re-render, and that re-render's frame callback complete before
+     * this returns. A handler that awaits returns here at its first await.
+     * FRAMES ARE NOT CONFINED TO HOST CALLS: they come from the .NET render
+     * thread, during a host call or later from a continuation, when the
+     * awaited work completes. [BlazorNativeRuntime.retire] drains only the
+     * Kotlin lane and does NOT quiesce .NET; [BlazorNativeRuntime.shutdown] is
+     * quiescent, because it calls [blazornative_shutdown], which closes .NET's
+     * frame gate before it returns.
      * THREADING: never call from the UI thread — all post-boot .NET entry
      * serializes through BlazorNativeRuntime's BlazorNative-Dispatch lane
      * (see the threading contract on [BlazorNativeRuntime.dispatchEvent]).
@@ -110,9 +117,9 @@ interface NativeBindings : Library {
 
     /**
      * Phase 5.1 (M5 DoD #5): host-INITIATED event ingress. Two routes on ONE
-     * export: the reserved name "back" routes to navigation-back (the
-     * predictive-back production path — Android's OnBackInvokedCallback and the
-     * JVM test drive it identically; the back→NavigateBack mapping lives in
+     * export: the reserved name "back" routes to navigation-back (since Phase 16.2
+     * Android's AndroidX OnBackPressedCallback dispatches it fire-and-forget, and
+     * the JVM test drives it identically; the back→NavigateBack mapping lives in
      * .NET); ANY OTHER name fires the runtime's real
      * NativeShellBridge.NativeEvents multicast so a mounted component
      * (HostEventProbe) re-renders. [nameUtf8] is NUL-terminated UTF-8 (e.g.
@@ -123,18 +130,20 @@ interface NativeBindings : Library {
      *   0 = delivered/handled — a lifecycle event reached its subscribers (incl.
      *       none — an unheard signal is not an error); OR "back" navigated to
      *       the previous route
-     *   1 = "back" NOT handled — at the origin (no previous route / no session):
-     *       the shell falls through to default back (Android finishes). ONLY the
-     *       "back" route returns rc 1; the multicast path never does
+     *   1 = "back" NOT handled — at the origin (no previous route / no session).
+     *       Since Phase 16.2 no shell reads this: .NET also sends a BackUnhandled
+     *       notice, and Android hands that press to the platform default. The
+     *       multicast path never returns rc 1
      *   2 = a subscriber (or the re-render it drove) faulted — CONTAINED
      *       (isolation) but surfaced; OR the back swap faulted; detail on the
      *       runtime's stderr → LOGCAT under `BlazorNative/…` since Phase 11.4
      *       Gate B's pump — log LOUDLY
      *   3 = malformed: NULL / empty [nameUtf8] (a NULL payload is legal)
      *
-     * SYNCHRONOUS: the subscriber's StateHasChanged re-render — or the back
-     * swap's frames — all complete before this returns (InlineDispatcher
-     * contract). THREADING: never call from the UI thread — route through the
+     * SYNCHRONOUS PART ONLY (Phase 16.1): the subscriber's synchronous
+     * StateHasChanged re-render, or the back swap's frames, complete before
+     * this returns, delivered on .NET's render thread; work after an await
+     * frames later, as for dispatch_event. THREADING: never call from the UI thread — route through the
      * BlazorNative-Dispatch lane like dispatch_event.
      */
     fun blazornative_host_event(nameUtf8: ByteArray, payloadUtf8: ByteArray?): Int

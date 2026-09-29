@@ -12,10 +12,20 @@
 //
 // Dispatch lane (Phase 5.3, the `BlazorNative-Dispatch` twin): a SERIAL
 // DispatchQueue. Every UI event enters .NET through it (never call the ABI from
-// the main thread). `dispatch_event` is SYNCHRONOUS — the handler, the re-render,
-// and the re-render's frame callback all complete on the lane thread before the
-// export returns; the frame consumer (mapper) marshals the tree mutation to
-// DispatchQueue.main (the 5.2 CommitFrame hop), so UIViews are only touched on main.
+// the main thread). Since Phase 16.1 `dispatch_event` returns once the handler's
+// SYNCHRONOUS part has run: that part's re-render and its frame callback complete
+// before the export returns, but a handler that awaits frees the lane at its first
+// await, and its later re-renders arrive afterwards, from a continuation.
+//
+// FRAME THREAD SET (Phase 16.1): every frame callback comes from ONE thread per
+// session, .NET's render thread: the mount's first frame while `start` waits in the
+// export, a handler's synchronous re-render while the lane waits, and continuation
+// frames later with no call in progress. Never the lane, never main, never two at
+// once, so the mapper's pending batch has a single producer. Frames are NOT confined
+// to host calls; the only quiescence point is `blazornative_shutdown`, which closes
+// .NET's frame gate before it returns (the iOS shell has no caller for it today).
+// The frame consumer (mapper) marshals the tree mutation to DispatchQueue.main (the
+// 5.2 CommitFrame hop), so UIViews are only touched on main.
 //
 // Exception posture: the decode is wrapped in do/catch → the `onError` sink; a
 // throw NEVER crosses back into the C callback. A non-zero dispatch rc routes to
@@ -125,6 +135,12 @@ final class BnRuntime {
     /// Phase 11.4: the error's description is REDACTED by default (BnLog.swift's
     /// privacy rule) — an `Error`'s text is exactly the "internal exception detail"
     /// #155 asks not to leak at Release verbosity, and `NSLog` had no way to say so.
+    ///
+    /// THREAD: called on ANY thread, never guaranteed main — the dispatch lane, the frame
+    /// callback's thread, and since Phase 16.1 a .NET thread-pool thread: a handler fault
+    /// after its first await arrives as a FaultNotice that AppleShellBridge hands here on
+    /// whatever .NET thread sent it. An override that touches UI must hop to
+    /// `DispatchQueue.main` first.
     var onError: ((String, Error) -> Void) = { msg, err in
         BnLog.error(BnRuntime.logCategory, "\(msg): \(err)")
     }
@@ -155,9 +171,9 @@ final class BnRuntime {
 
     /// Dispatches a UI event to the .NET handler on the serial dispatch lane
     /// (async-submit; call from UI control targets, never the ABI directly). A
-    /// non-zero rc routes to `onError` (the tap is dropped). The re-render frame
-    /// arrives synchronously on the lane thread inside the export and the mapper
-    /// hops the tree mutation to main.
+    /// non-zero rc routes to `onError` (the tap is dropped). Re-render frames arrive
+    /// on .NET's render thread, the synchronous part's inside the export and a
+    /// continuation's later (Phase 16.1), and the mapper hops the tree mutation to main.
     func dispatchEvent(handlerId: Int32, eventName: String, payload: String?) {
         dispatchEvent(handlerId: handlerId, eventName: eventName, payload: payload, onComplete: {})
     }
@@ -215,8 +231,9 @@ final class BnRuntime {
     }
 
     /// Boots: init → register frame callback → mount. The first frame fires
-    /// SYNCHRONOUSLY inside `blazornative_mount` (sync-mount contract), on the
-    /// calling thread; the mapper buffers it and hops the batch to the main queue.
+    /// SYNCHRONOUSLY inside `blazornative_mount` (sync-mount contract), delivered on
+    /// .NET's render thread while the calling thread waits (Phase 16.1); the mapper
+    /// buffers it and hops the batch to the main queue.
     /// Throws BnRuntimeError on any non-zero status.
     func start(component: String = "BnDemo", os: String = "ios", apiLevel: Int32 = 0) throws {
         // Route the C callback here BEFORE registering it, so a synchronous mount
@@ -293,8 +310,14 @@ final class BnRuntime {
         // the delegate's `didReceive` re-routes over host_event on the serial lane (the ABI
         // is never called from the delegate's main thread directly). The non-nil dispatcher
         // is also BnNotifications' "session is live" signal (warm re-route vs cold stash).
+        //
+        // Phase 16.2 (#346): FIRE-AND-FORGET. Both navigators used to call
+        // `dispatchHostEventAndWait`, a `dispatchLane.sync` from main, so a link or a tap
+        // while a handler held the lane froze the app until the handler let go. Nobody read
+        // the rc they waited for: BnDeepLink discarded it, and BnNotifications kept it only
+        // for a test seam. BnBackOffMainTests pins the deep link against a held lane.
         bridge.notifications.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // The deep-link surface gets the SAME dispatcher for the same reason: a URL
@@ -302,7 +325,7 @@ final class BnRuntime {
         // serial lane. Non-nil is likewise its "session is live" signal, so a link
         // opened from now on re-routes warm instead of stashing.
         BnDeepLink.shared.navigateDispatcher = { [weak self] route in
-            self?.dispatchHostEventAndWait(.navigate, payload: route) ?? 1
+            self?.dispatchHostEvent(.navigate, payload: route)
         }
 
         // Published LAST, after mount: `current` means "a session that can be
@@ -313,14 +336,16 @@ final class BnRuntime {
 
     /// Phase 9.1 / 14.1: dispatches a host-INITIATED event over the EXISTING
     /// `blazornative_host_event` export. FIRE-AND-FORGET — the Swift twin of Kotlin's
-    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses.
+    /// `BlazorNativeRuntime.dispatchHostEvent`, and the overload LIFECYCLE uses, as do
+    /// both navigators since 16.2 (#346).
     ///
     /// #339: this used to be the blocking one, and `BnAppLifecycle` called it from
     /// main. When an async host call already held the lane — a camera or geolocation
     /// capture waiting on the user — `willResignActive` blocked main on a lane that
     /// could not drain, and the app was dead until force-quit. Android never had the
     /// bug because its lifecycle path has always called the non-blocking overload.
-    /// Callers that need the rc use `dispatchHostEventAndWait`.
+    /// Since 16.2 (#346) no production caller needs the rc any more — both navigators
+    /// moved here too — so `dispatchHostEventAndWait` is `internal` and test-only.
     func dispatchHostEvent(_ event: BnHostEvent, payload: String?) {
         dispatchLane.async {
             _ = event.rawValue.withCString { n -> Int32 in
@@ -332,18 +357,23 @@ final class BnRuntime {
         }
     }
 
-    /// Phase 14.1: the BLOCKING host-event dispatch — the Swift twin of Kotlin's
-    /// `dispatchHostEventAndWait`. Marshals through the SAME serial lane but blocks
-    /// the caller until the dispatch has completed, so the re-route swap's frames are
-    /// applied before it returns, and returns the rc (0 = navigated).
+    /// Phase 14.1 — the BLOCKING host-event dispatch, the Swift twin of Kotlin's
+    /// `dispatchHostEventAndWait`. Until Phase 16.2 it was the deep-link and warm
+    /// notification navigate path; both now dispatch fire-and-forget through
+    /// `dispatchHostEvent` instead, because a caller blocked here waits on .NET
+    /// (#346), and no production code calls this any more. `internal` and
+    /// test-only by owner decision (16.2 Task 5) — reachable from XCTest through
+    /// `@testable import BnHost`. It still marshals through the SAME serial lane but
+    /// blocks the caller until the dispatch has completed, and returns the rc
+    /// (0 = navigated).
     ///
     /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
-    /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. It also
-    /// blocks if an async host call currently holds the lane; that exposure is the
-    /// subject of a separate phase, and #339's fix was to stop LIFECYCLE from
-    /// taking this path, not to make this path non-blocking.
+    /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. Since Phase
+    /// 16.1 an async handler suspended on a host call no longer holds the lane (the
+    /// export returns at its first await), so this no longer blocks behind one;
+    /// BnDispatchLaneTests pins the lane half of that on the simulator.
     @discardableResult
-    func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
+    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {
         dispatchLane.sync {
             event.rawValue.withCString { n in
                 if let payload = payload {

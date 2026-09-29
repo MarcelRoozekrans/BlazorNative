@@ -34,6 +34,115 @@ internal static unsafe class HostSession
     private static NativeRenderer? s_renderer;
     private static NativeNavigationManager? s_navigation; // born with the session (Phase 3.5)
     private static IntPtr s_frameCallback; // delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>
+    private static FrameGate? s_frameGate; // the live session's gate; born and detached with it
+
+    /// <summary>How long shutdown waits for callbacks already in flight, and, separately,
+    /// for the render thread to join (Phase 16.1).</summary>
+    private static readonly TimeSpan QuiesceBudget = TimeSpan.FromSeconds(5);
+
+    /// <summary>Serializes <see cref="SetFrameCallback"/>'s swap-and-wait, so each wait
+    /// covers exactly the entries that may hold the pointer it replaced.</summary>
+    private static readonly object s_registrationLock = new();
+
+    /// <summary>Phase 16.1: a counted region around every frame-callback invocation.
+    /// The sink enters it before it reads the callback pointer, INVOKES the callback
+    /// inside it, and leaves only after the callback returns. What makes waiting on the
+    /// gate safe is that invocation: a callback that is running is always counted.
+    /// <list type="bullet">
+    /// <item><see cref="CloseAndDrain"/> refuses new entries and waits for the ones in
+    /// flight. Once shutdown has closed and drained the gate, no frame of that session
+    /// reaches the host, including one produced later by a handler that outlived the
+    /// render thread's join, and none is inside the host's trampoline.</item>
+    /// <item><see cref="WaitOutPreviousEpoch"/> leaves the gate open and waits only for
+    /// the entries that may hold a pointer that has just been replaced. Entries are
+    /// counted in one of two epoch slots, and the swap flips the epoch, so entries that
+    /// arrive after it land in the other slot and a steady stream of new frames cannot
+    /// starve the wait.</item>
+    /// </list></summary>
+    internal sealed class FrameGate
+    {
+        /// <summary>How many gate regions the CURRENT thread is inside, across all gates.
+        /// A registration from inside a frame callback must not wait for itself.</summary>
+        [ThreadStatic] private static int t_depth;
+
+        private readonly int[] _inFlight = new int[2];
+        private int _epoch;
+        private volatile bool _closed;
+
+        /// <summary>True when the calling thread is inside a frame callback.</summary>
+        public static bool CallerIsInside => t_depth > 0;
+
+        /// <summary>Test-only: runs inside <see cref="TryEnter"/> between the epoch read and
+        /// the slot increment, the window a registration's flip can land in. Null in
+        /// production and never set in <c>src</c>; tests reset it in a <c>finally</c>.</summary>
+        internal static Action? AfterEpochReadForTests;
+
+        /// <summary>Enters the region, in the current epoch's slot. False once the gate
+        /// is closed: the caller drops the frame.</summary>
+        public bool TryEnter(out int slot)
+        {
+            // Increment BEFORE reading _closed or the pointer. CloseAndDrain writes _closed,
+            // and SetFrameCallback writes the pointer, BEFORE reading the counts, with a
+            // full fence on each side: either the waiter sees this entry and waits for it,
+            // or this entry sees the gate closed or the new pointer.
+            //
+            // The slot must be the epoch that is current AFTER the increment, so the epoch
+            // is re-read once the increment's full fence has passed, and a mismatch backs
+            // out and retries. Without it, an entry that read the epoch, then lost the CPU
+            // across a registration's flip, would be counted in the old slot while it went
+            // on to read and call the NEW pointer. The next registration flips back and
+            // waits only on the other slot, so it would return while that callback ran.
+            // Once the epoch is confirmed, any registration that flips after it waits on
+            // this slot, and any that flipped before it wrote its pointer first, which is
+            // the pointer this entry then reads.
+            while (true)
+            {
+                slot = Volatile.Read(ref _epoch);
+                AfterEpochReadForTests?.Invoke();
+                Interlocked.Increment(ref _inFlight[slot]);
+                if (Volatile.Read(ref _epoch) == slot)
+                    break;
+                Interlocked.Decrement(ref _inFlight[slot]);
+            }
+            if (_closed)
+            {
+                Interlocked.Decrement(ref _inFlight[slot]);
+                return false;
+            }
+            t_depth++;
+            return true;
+        }
+
+        /// <summary>Leaves the region entered by a successful <see cref="TryEnter"/>.</summary>
+        public void Exit(int slot)
+        {
+            t_depth--;
+            Interlocked.Decrement(ref _inFlight[slot]);
+        }
+
+        /// <summary>Closes the gate, then waits until no callback is in flight, bounded by
+        /// <paramref name="budget"/>. Returns whether it drained.</summary>
+        public bool CloseAndDrain(TimeSpan budget)
+        {
+            _closed = true;
+            Interlocked.MemoryBarrier();
+            return SpinWait.SpinUntil(
+                () => Volatile.Read(ref _inFlight[0]) == 0 && Volatile.Read(ref _inFlight[1]) == 0,
+                budget);
+        }
+
+        /// <summary>Called after the callback pointer was replaced: flips the epoch and
+        /// waits, bounded, for the previous epoch's entries, which are the only ones that
+        /// can hold the replaced pointer. Returns whether they drained.</summary>
+        public bool WaitOutPreviousEpoch(TimeSpan budget)
+        {
+            int previous = Volatile.Read(ref _epoch);
+            // Exchange is a full fence: the pointer write before it is visible to any
+            // entry that reads the new epoch, so such an entry reads the new pointer.
+            Interlocked.Exchange(ref _epoch, 1 - previous);
+            return SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight[previous]) == 0, budget);
+        }
+    }
 
     // Phase 0.4.0-prep Gate A (design §1): the app's captured service-
     // registration delegate — the ConfigureServices seam. Written ONCE via
@@ -93,9 +202,35 @@ internal static unsafe class HostSession
     }
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
-    /// delivery; re-registration is allowed (last wins).</summary>
+    /// delivery; re-registration is allowed (last wins). Phase 16.1: once this
+    /// returns, no callback holding the PREVIOUS pointer is still in flight, so the
+    /// host may release its old callback object. Android Activity recreation does
+    /// exactly that without calling shutdown. The gate stays open: frames keep
+    /// flowing to the new pointer while the old ones drain. The wait is bounded at
+    /// 5 s with a warning, and skipped when called from inside a frame callback,
+    /// which would otherwise wait for itself.</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
-        => Volatile.Write(ref s_frameCallback, fnPtr);
+    {
+        if (FrameGate.CallerIsInside)
+        {
+            // Registering from a callback: that callback is itself an old-pointer entry,
+            // so waiting would only time out. Swap, and leave the wait to the host.
+            Volatile.Write(ref s_frameCallback, fnPtr);
+            return;
+        }
+
+        lock (s_registrationLock)
+        {
+            Volatile.Write(ref s_frameCallback, fnPtr);
+            FrameGate? gate = Volatile.Read(ref s_frameGate);
+            if (gate is not null && !gate.WaitOutPreviousEpoch(QuiesceBudget))
+            {
+                BnLog.Warn("HostSession",
+                    $"a callback holding the previous frame callback was still in flight "
+                    + $"{QuiesceBudget.TotalSeconds:0} s after re-registration; returning without it");
+            }
+        }
+    }
 
     /// <summary>Stores the app's ConfigureServices delegate (design §1) —
     /// backing BlazorNativeApp.ConfigureServices. Consumed once by
@@ -145,28 +280,103 @@ internal static unsafe class HostSession
     internal static NativeNavigationManager? CurrentNavigationManager
         => Volatile.Read(ref s_navigation);
 
-    /// <summary>Test-only: tears down the session singleton so "no session"
-    /// paths are testable and each test gets a fresh renderer. Tests touching
-    /// HostSession serialize via the "host-session" xUnit collection — the
-    /// production ABI never calls this.</summary>
-    internal static void ResetForTests()
+    /// <summary>Detaches the live session under <c>s_lock</c> and returns its renderer
+    /// and frame gate, so the caller can quiesce them OUTSIDE the lock. Nothing here
+    /// waits. The next EnsureSession builds a fresh session.</summary>
+    private static (NativeRenderer? Renderer, FrameGate? Gate) Detach()
     {
         lock (s_lock)
         {
-            // BL0006: Dispose comes from Blazor's internal Renderer base —
-            // same deliberate-access rationale as CurrentRenderer above.
-#pragma warning disable BL0006
-            Volatile.Read(ref s_renderer)?.Dispose();
-#pragma warning restore BL0006
+            NativeRenderer? renderer = Volatile.Read(ref s_renderer);
+            FrameGate? gate = Volatile.Read(ref s_frameGate);
             Volatile.Write(ref s_renderer, null);
+            Volatile.Write(ref s_frameGate, null);
             Volatile.Write(ref s_navigation, null);
             Volatile.Write(ref s_currentRootComponentId, -1);
-            Volatile.Write(ref s_frameCallback, IntPtr.Zero);
-            // Gate A: clear the app's captured ConfigureServices delegate too,
-            // so a session-composition capture never leaks across tests (the
-            // ConfigureServices seam's isolation, alongside the renderer's).
-            Volatile.Write(ref s_configureServices, null);
+            return (renderer, gate);
         }
+    }
+
+    /// <summary>Quiescence steps 1 and 2: close the session's frame gate and drain the
+    /// callbacks in flight, THEN clear the callback pointer. Never under s_lock.</summary>
+    private static void CloseGateAndClearCallback(FrameGate? gate)
+    {
+        if (gate is not null && !gate.CloseAndDrain(QuiesceBudget))
+        {
+            BnLog.Warn("HostSession",
+                $"a frame callback was still in flight {QuiesceBudget.TotalSeconds:0} s after shutdown "
+                + "closed the frame gate; shutdown continues without it");
+        }
+        Volatile.Write(ref s_frameCallback, IntPtr.Zero);
+    }
+
+    /// <summary>Quiescence step 3: shut the render thread's queue and join it, bounded.
+    /// Logs a warning when it did not join. Never under s_lock.</summary>
+    private static void JoinRenderThread(NativeRenderer renderer)
+    {
+        if (renderer.Dispatcher is RenderThreadDispatcher dispatcher
+            && !dispatcher.Shutdown(QuiesceBudget))
+        {
+            BnLog.Warn("HostSession",
+                $"the render thread did not join within {QuiesceBudget.TotalSeconds:0} s because a "
+                + "handler has not yielded; its later frames are dropped at the closed frame gate");
+        }
+    }
+
+    /// <summary>Phase 16.1 — behind blazornative_shutdown. Once this returns, no frame
+    /// of the session can reach the host's callback and none is in flight, even when a
+    /// handler never yields. In order:
+    /// <list type="number">
+    /// <item>detach the session under s_lock, so the next EnsureSession builds a fresh
+    /// one instead of handing out a renderer whose thread is gone;</item>
+    /// <item>close the frame gate and drain the callbacks already in flight;</item>
+    /// <item>clear the callback pointer;</item>
+    /// <item>shut the render thread's queue and join it, bounded at 5 s, with a warning
+    /// if it did not join. Work posted after this completes as cancelled.</item>
+    /// </list>
+    /// Steps 2 to 4 run outside s_lock. The renderer is not disposed: its components'
+    /// Dispose needs the render thread, which a handler may still hold.
+    /// The quiescence guarantee covers FRAMES only. A late fault that races shutdown —
+    /// a handler resuming and throwing as this runs — may be dropped, because its
+    /// pending Task is cancelled first, or its FaultNotice may be delivered after this
+    /// returns. Either is safe: the bridge callbacks live for the whole process, and
+    /// the fault still reaches stderr.</summary>
+    internal static void Shutdown()
+    {
+        (NativeRenderer? renderer, FrameGate? gate) = Detach();
+        CloseGateAndClearCallback(gate);
+        if (renderer is not null)
+            JoinRenderThread(renderer);
+    }
+
+    /// <summary>Test-only: tears down the session singleton so "no session"
+    /// paths are testable and each test gets a fresh renderer. Tests touching
+    /// HostSession serialize via the "host-session" xUnit collection — the
+    /// production ABI never calls this. Phase 16.1: the statics are swapped out
+    /// under s_lock, and everything that waits (the gate's drain, the renderer's
+    /// dispose on its render thread, and the join) runs after the lock is
+    /// released. The session's render thread is joined, so no thread leaks.</summary>
+    internal static void ResetForTests()
+    {
+        (NativeRenderer? renderer, FrameGate? gate) = Detach();
+        // Gate A: clear the app's captured ConfigureServices delegate too,
+        // so a session-composition capture never leaks across tests (the
+        // ConfigureServices seam's isolation, alongside the renderer's).
+        Volatile.Write(ref s_configureServices, null);
+
+        CloseGateAndClearCallback(gate);
+        if (renderer is null)
+            return;
+
+        // BL0006: Dispose comes from Blazor's internal Renderer base —
+        // same deliberate-access rationale as CurrentRenderer above. The
+        // components are disposed ON the render thread, which waits for any
+        // handler holding it: the reason none of this runs under s_lock.
+#pragma warning disable BL0006
+        renderer.Dispose();
+#pragma warning restore BL0006
+        // Dispose joins on its way out; this call reports a join that timed out.
+        JoinRenderThread(renderer);
     }
 
     /// <summary>Test-only: the mount registry's KEYS — every name
@@ -239,6 +449,10 @@ internal static unsafe class HostSession
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 
+            // Phase 16.2 (#346): the session's back state reaches the shell before the
+            // mount's first frame. Sent on EVERY mount, changed or not: a second mount is a
+            // new shell, such as a recreated Activity, that has not been told yet.
+            Volatile.Read(ref s_navigation)?.PublishBackState();
             MountRoot(effective, renderer);
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
             // resolved registry name — a route-aware initial mount may differ from `name`.
@@ -264,12 +478,25 @@ internal static unsafe class HostSession
     /// cannot start its disposal batch there); the deferred swap still runs
     /// before blazornative_dispatch_event returns. Failures THROW — direct
     /// callers see them; deferred ones join the 3.2 dispatch capture and
-    /// map to export rc 2 (strict conventions).</summary>
+    /// map to export rc 2 (strict conventions). Phase 16.1: the whole swap
+    /// decision runs on the render thread, and a call from any other thread
+    /// waits for ALL of it — off the render thread no dispatch scope can be
+    /// open, so the swap runs at once and its frames are delivered before
+    /// this returns.</summary>
     /// <param name="name">The mount-registry key to swap to.</param>
     /// <param name="afterSwap">Runs INSIDE the swap unit, after the new root
     /// mounted — the nav manager finalizes route state + RouteChanged here so
     /// neither happens when a (possibly deferred) swap fails.</param>
-    internal static void SwapRoot(string name, Action? afterSwap = null)
+    /// <param name="beforeSwap">Runs INSIDE the swap unit, before the old root is
+    /// unmounted, so before any of the swap's frames. Phase 16.2: the nav manager
+    /// sends its BackState notice here, because the shell must have it before the
+    /// frame that shows the new page.</param>
+    /// <param name="swapFailed">Runs INSIDE the swap unit when the unmount or the
+    /// mount throws, before the exception propagates. Phase 16.2: the nav manager
+    /// resends the back state its route state still holds, since beforeSwap already
+    /// announced the one this swap would have produced.</param>
+    internal static void SwapRoot(
+        string name, Action? afterSwap = null, Action? beforeSwap = null, Action? swapFailed = null)
     {
         if (!Components.ContainsKey(name))
         {
@@ -278,25 +505,43 @@ internal static unsafe class HostSession
         }
 
         NativeRenderer renderer = EnsureSession();
-        renderer.RunAfterDispatch(() =>
+        // Inline on the render thread, where a handler's navigation must still see
+        // its own dispatch scope; a full wait from anywhere else.
+        renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() =>
         {
-            int current = Volatile.Read(ref s_currentRootComponentId);
-            if (current >= 0)
+            beforeSwap?.Invoke();
+            try
             {
-                // Tracking clears BEFORE Unmount (unmount-as-best-effort): a
-                // strict-mode disposal fault leaves the old root in an
-                // undefined half-disposed state, and keeping its dead id
-                // would make every LATER swap re-call Unmount on it — each
-                // raising Blazor's "not a live root component"
-                // ArgumentException and masking the original fault forever.
-                // The fault itself still surfaces (thrown here → rc 2 on the
-                // deferred path), and the next swap can proceed to a mount.
-                Volatile.Write(ref s_currentRootComponentId, -1);
-                renderer.Unmount(current);
+                UnmountAndMount(name, renderer);
             }
-            MountRoot(name, renderer);
+            catch
+            {
+                swapFailed?.Invoke();
+                throw;
+            }
             afterSwap?.Invoke();
-        });
+        })).GetAwaiter().GetResult();
+    }
+
+    /// <summary>The body of the swap unit: unmounts the tracked current root, then
+    /// mounts <paramref name="name"/>. Both emit frames. Throws on failure.</summary>
+    private static void UnmountAndMount(string name, NativeRenderer renderer)
+    {
+        int current = Volatile.Read(ref s_currentRootComponentId);
+        if (current >= 0)
+        {
+            // Tracking clears BEFORE Unmount (unmount-as-best-effort): a
+            // strict-mode disposal fault leaves the old root in an
+            // undefined half-disposed state, and keeping its dead id
+            // would make every LATER swap re-call Unmount on it — each
+            // raising Blazor's "not a live root component"
+            // ArgumentException and masking the original fault forever.
+            // The fault itself still surfaces (thrown here → rc 2 on the
+            // deferred path), and the next swap can proceed to a mount.
+            Volatile.Write(ref s_currentRootComponentId, -1);
+            renderer.Unmount(current);
+        }
+        MountRoot(name, renderer);
     }
 
     /// <summary>Mounts a registry component (callers verified the key) and
@@ -416,18 +661,36 @@ internal static unsafe class HostSession
             renderer.StrictErrors = Volatile.Read(ref s_strictErrors)
                 || Environment.GetEnvironmentVariable("BLAZORNATIVE_STRICT") == "1";
 
+            // Phase 16.1: every callback is INVOKED inside this session's frame gate,
+            // and the gate is left only after the callback returns. That is what makes
+            // both waits safe: a callback that is running is always counted, so
+            // Shutdown's drain and SetFrameCallback's epoch wait each cover every call
+            // into the pointer they replace. The pointer is read after entering, so an
+            // entry the waiter misses reads the new value. A closed gate drops the
+            // frame: the session has been shut down or reset.
+            var gate = new FrameGate();
             renderer.FrameSink = frame =>
             {
-                var cb = (delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>)
-                    Volatile.Read(ref s_frameCallback);
-                if (cb == null)
-                    return; // no host callback registered — drop the frame
+                if (!gate.TryEnter(out int slot))
+                    return;
+                try
+                {
+                    var cb = (delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>)
+                        Volatile.Read(ref s_frameCallback);
+                    if (cb == null)
+                        return; // no host callback registered — drop the frame
 
-                using var arena = FrameArena.Rent();
-                BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
-                cb(&native); // synchronous: arena memory dies when this returns
+                    using var arena = FrameArena.Rent();
+                    BlazorNativeFrame native = FrameEncoder.Encode(frame, arena);
+                    cb(&native); // synchronous: arena memory dies when this returns
+                }
+                finally
+                {
+                    gate.Exit(slot);
+                }
             };
 
+            Volatile.Write(ref s_frameGate, gate);
             Volatile.Write(ref s_renderer, renderer);
             return renderer;
         }

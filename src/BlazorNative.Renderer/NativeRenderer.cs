@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
@@ -123,43 +124,49 @@ public sealed class NativeRenderer : BlazorRenderer
         };
     }
 
-    // Born on the retired Mono-WASI runtime (single-threaded, no real scheduler):
-    // Dispatcher.CreateDefault() returns a dispatcher whose async-state-machine
-    // continuations don't unwind synchronously even when the wrapped work completes
-    // inline (Phase 2.4 Task 4). The inline dispatcher outlived that era because the
-    // sync-mount contract survives it — HostSession's C-ABI mount path still requires
-    // the first render to complete synchronously inside the native callback window —
-    // so all work runs directly on the calling thread (pinned by MountSyncTests).
-    public override Dispatcher Dispatcher { get; } = new InlineDispatcher();
+    // ── The render thread (Phase 16.1) ───────────────────────────────────────
+    //
+    // Each renderer owns ONE dedicated thread, "BlazorNative-Render", with a
+    // single-threaded SynchronizationContext on it (RenderThreadDispatcher). Every
+    // mutating entry point below — Mount, MountAsync, Unmount, RunAfterDispatch,
+    // DispatchUiEventAsync, DispatchSyncPart and Dispose — runs its body on that thread: a call from
+    // another thread posts the work and blocks until it completes, and a call from the
+    // render thread runs inline. CheckAccess() answers honestly.
+    //
+    // This replaces the inline dispatcher, born on the retired Mono-WASI runtime, which
+    // ran all work on the CALLING thread and answered CheckAccess() with an unconditional
+    // true. That made every export a blocking wait whenever a handler awaited the host,
+    // which is #345, and it could not be made honest without a real thread to marshal to:
+    // 13.2 measured the honest answer recursing Dispose -> InvokeAsync -> Dispose into a
+    // stack overflow. The 16.0 spike proved the render thread keeps the sync-mount contract
+    // the C ABI needs — Mount still returns only after its first frame — and removes the
+    // recursion, because the hop is now real (docs/plans/2026-09-26-phase-16.0-spike-conclusion.md).
+    private readonly RenderThreadDispatcher _dispatcher = new();
 
-    private sealed class InlineDispatcher : Dispatcher
+    /// <summary>This renderer's render thread (Phase 16.1).</summary>
+    public override Dispatcher Dispatcher => _dispatcher;
+
+    /// <summary>The managed id of THIS renderer's render thread. An instance property on
+    /// purpose: the 16.0 spike's static "last constructed" id named another renderer's
+    /// thread under test parallelism (spike requirement 9), so every thread-identity pin
+    /// compares against the renderer under test.</summary>
+    internal int RenderThreadId => _dispatcher.ThreadId;
+
+    /// <summary>Runs <paramref name="work"/> on the render thread and waits for it to finish.
+    /// Blocking is safe: off the render thread the caller is never the thread that must run
+    /// the work, and on it the work runs inline.</summary>
+    private void OnRenderThread(Action work)
     {
-        public override bool CheckAccess() => true;
-
-        public override Task InvokeAsync(Action workItem)
-        {
-            try { workItem(); return Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
-        }
-
-        public override Task InvokeAsync(Func<Task> workItem)
-        {
-            try { return workItem() ?? Task.CompletedTask; }
-            catch (Exception ex) { return Task.FromException(ex); }
-        }
-
-        public override Task<TResult> InvokeAsync<TResult>(Func<TResult> workItem)
-        {
-            try { return Task.FromResult(workItem()); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
-        }
-
-        public override Task<TResult> InvokeAsync<TResult>(Func<Task<TResult>> workItem)
-        {
-            try { return workItem(); }
-            catch (Exception ex) { return Task.FromException<TResult>(ex); }
-        }
+        if (_dispatcher.CheckAccess())
+            work();
+        else
+            _dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
     }
+
+    private T OnRenderThread<T>(Func<T> work)
+        => _dispatcher.CheckAccess()
+            ? work()
+            : _dispatcher.InvokeAsync(work).GetAwaiter().GetResult();
 
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
     /// Do NOT collapse this into a single overload with <c>ParameterView parameters = default</c>:
@@ -176,6 +183,8 @@ public sealed class NativeRenderer : BlazorRenderer
         ParameterView parameters,
         CancellationToken ct = default)
         where TComponent : IComponent
+        // Marshals through the dispatcher: InvokeAsync posts to the render thread when called
+        // from any other thread, and the returned Task completes when the mount does.
         => Dispatcher.InvokeAsync(() => AddComponentAsync(typeof(TComponent), parameters));
 
     /// <summary>Convenience overload that explicitly passes <see cref="ParameterView.Empty"/>.
@@ -205,6 +214,12 @@ public sealed class NativeRenderer : BlazorRenderer
     /// </remarks>
     public int Mount<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
         where TComponent : IComponent
+        => OnRenderThread(() => MountOnRenderThread<TComponent>(parameters));
+
+    // The "must complete synchronously" check runs HERE, on the render thread, so it still
+    // means what it always meant: the first render finished inside this call.
+    private int MountOnRenderThread<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TComponent>(ParameterView parameters)
+        where TComponent : IComponent
     {
         var component = InstantiateComponent(typeof(TComponent));
         var componentId = AssignRootComponentId(component);
@@ -216,7 +231,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 $"Mount<T> requires RenderRootComponentAsync to complete synchronously. " +
                 $"task.Status={task.Status}; task.Exception={inner?.Message ?? "<none>"}. " +
                 "Common causes: component has truly async SetParametersAsync/OnInitializedAsync " +
-                "work, or the Dispatcher is no longer inline (see Phase 2.4 Task 4 investigation).",
+                "work that yields before the first render completes.",
                 inner);
         }
         return componentId;
@@ -227,8 +242,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Thin wrapper over Blazor's <c>RemoveRootComponent(int)</c> (protected
     /// internal on the Renderer base — verified present on Blazor 10.0.x):
     /// Blazor enqueues the component (and transitively its descendants) for
-    /// disposal and processes the render queue; on the InlineDispatcher the
-    /// disposal batch reaches UpdateDisplayAsync SYNCHRONOUSLY, so the
+    /// disposal and processes the render queue on the render thread, and a call
+    /// from another thread waits for it, so the disposal batch has reached
+    /// UpdateDisplayAsync when this returns, and the
     /// RemoveNode patches that clear the screen (the Phase 3.3 disposal
     /// machinery — today EmitDisposedComponentRemoves + its pass-2 delta and
     /// CleanupDisposedComponent) have already been delivered to
@@ -239,58 +255,64 @@ public sealed class NativeRenderer : BlazorRenderer
     /// RemoveRootComponent's ProcessRenderQueue throws "Cannot start a batch
     /// when one is already in progress" — defer via
     /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
-    public void Unmount(int componentId) => RemoveRootComponent(componentId);
+    public void Unmount(int componentId) => OnRenderThread(() => RemoveRootComponent(componentId));
 
-    // ── Post-dispatch deferral (Phase 3.5) ────────────────────────────────────
+    // ── Post-dispatch deferral (Phase 3.5, scoped per dispatch in 16.1) ──────
     //
     // Blazor's Renderer.DispatchEventAsync keeps its batch open across the
     // synchronous part of an event handler (state changes coalesce into ONE
     // re-render after the handler). Work that must start a NEW batch — the
     // navigation swap's RemoveRootComponent — therefore cannot run inside the
-    // handler; it queues here and drains when the OUTERMOST dispatch window
-    // unwinds (handler + its re-render batch complete), still synchronously
-    // inside DispatchUiEventAsync — so swap frames are delivered before
+    // handler; it queues into the CURRENT dispatch's scope and runs when that
+    // scope closes, which is when the dispatch's synchronous part returns its
+    // Task — still inside DispatchSyncPart, so swap frames are delivered before
     // blazornative_dispatch_event returns (the dispatch-window pin).
 
-    private List<Action>? _postDispatchActions;
-
-    /// <summary>Runs <paramref name="action"/> immediately when no UI-event
-    /// dispatch window is open; otherwise queues it to run when the outermost
-    /// window unwinds (still inside the dispatch export call). A queued
-    /// action's exception — including strict-mode renderer errors from the
-    /// frames it produces — is routed into the dispatch capture slot, so it
-    /// faults the dispatch task exactly like a handler fault (export rc 2).
-    /// Honest boundary (NON-strict mode): the drain runs at depth 0, so a
-    /// renderer error DURING a deferred action's own batches routes through
-    /// <see cref="HandleException"/>'s log-only path — the action "succeeds"
-    /// and the export returns 0. Only exceptions the action itself throws
-    /// (or strict-mode rethrows) reach the capture slot. In-window faults are
-    /// unaffected: they always map to rc 2.</summary>
+    /// <summary>Runs <paramref name="action"/> immediately when no dispatch's
+    /// synchronous part is running; otherwise queues it into that dispatch's
+    /// <see cref="DispatchScope"/>, to run when the scope closes (still inside the
+    /// dispatch export call). A queued action's exception — including strict-mode
+    /// renderer errors from the frames it produces — is captured into that same
+    /// scope, so it faults the dispatch exactly like a handler fault (export rc 2).
+    /// A handler SUSPENDED on an await holds no scope, so a dispatch arriving
+    /// meanwhile queues into its own scope and swaps before its own export returns
+    /// (16.0 spike requirement 1). Honest boundary (NON-strict mode): the drain
+    /// runs after the scope closed, so a renderer error DURING a deferred action's
+    /// own batches routes through <see cref="HandleException"/>'s log-only path —
+    /// the action "succeeds" and the export returns 0. Only exceptions the action
+    /// itself throws (or strict-mode rethrows) reach the scope. In-window faults
+    /// are unaffected: they always map to rc 2.</summary>
     public void RunAfterDispatch(Action action)
     {
-        if (_uiEventDispatchDepth == 0)
+        // 16.1: reads the current scope, which only the render thread may touch.
+        if (!_dispatcher.CheckAccess())
+        {
+            OnRenderThread(() => RunAfterDispatch(action));
+            return;
+        }
+        if (_currentScope is not { } scope)
         {
             action();
             return;
         }
-        (_postDispatchActions ??= new List<Action>()).Add(action);
+        (scope.PostDispatchActions ??= new List<Action>()).Add(action);
     }
 
-    /// <summary>Drains queued post-dispatch work (see <see cref="RunAfterDispatch"/>).
-    /// Runs with the dispatch depth already at 0 — a drained action's
-    /// Unmount/Mount batches process normally, and a RunAfterDispatch call
-    /// DURING the drain executes immediately (depth 0), so the while-loop is
+    /// <summary>Drains a closed scope's queued post-dispatch work (see
+    /// <see cref="RunAfterDispatch"/>). Runs after the scope closed — a drained
+    /// action's Unmount/Mount batches process normally, and a RunAfterDispatch
+    /// call DURING the drain executes immediately, so the while-loop is
     /// unreachable today: purely defensive against a future change that
-    /// re-queues mid-drain. Action faults land in the capture slot (first
-    /// one wins, matching the window contract) instead of escaping the
-    /// calling finally; EVERY fault is logged to stderr — mirroring
-    /// <see cref="HandleException"/>'s window path — so a second fault is
-    /// never silently discarded when the slot is already taken.</summary>
-    private void DrainPostDispatchActions()
+    /// re-queues mid-drain. Action faults land in THIS scope (first one wins,
+    /// matching the window contract) instead of escaping the calling finally;
+    /// EVERY fault is logged to stderr — mirroring <see cref="HandleException"/>'s
+    /// window path — so a second fault is never silently discarded when the slot
+    /// is already taken.</summary>
+    private static void DrainPostDispatchActions(DispatchScope scope)
     {
-        while (_postDispatchActions is { Count: > 0 } actions)
+        while (scope.PostDispatchActions is { Count: > 0 } actions)
         {
-            _postDispatchActions = null;
+            scope.PostDispatchActions = null;
             foreach (Action action in actions)
             {
                 try
@@ -300,7 +322,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 catch (Exception ex)
                 {
                     BnLog.Error("BlazorNative.Renderer", "post-dispatch action threw", ex);
-                    _uiEventDispatchException ??= ex;
+                    scope.Fault ??= ex;
                 }
             }
         }
@@ -316,67 +338,46 @@ public sealed class NativeRenderer : BlazorRenderer
         return componentId;
     }
 
-    // ── The render-owner thread (Phase 13.2) ─────────────────────────────────
+    // ── The render-owner check (Phase 13.2, made an assertion in 16.1) ───────
     //
-    // WHY THIS IS A REPORT AND NOT AN ASSERTION — read before "fixing" it.
+    // Blazor's own Dispatcher.AssertAccess() rejects an off-thread render before a batch
+    // starts, but it trusts CheckAccess(). This check does NOT: it compares the thread
+    // that actually reached UpdateDisplayAsync against THIS renderer's RenderThreadId. So
+    // it is a second, independent line that still fires if CheckAccess() ever lies again —
+    // 13.2's inline dispatcher answered true for every thread, which is exactly how a batch
+    // could reach the tree from the wrong thread.
     //
-    // The obvious guard is <c>Dispatcher.AssertAccess()</c>, and it cannot be used
-    // here. <see cref="InlineDispatcher.CheckAccess"/> answers an unconditional
-    // <c>true</c>, and that is LOAD-BEARING rather than a lie left lying around:
-    // Blazor calls CheckAccess() to decide whether to MARSHAL, not merely to assert.
-    // <c>Renderer.Dispose()</c> is the clearest case — on a false answer it calls
-    // <c>Dispatcher.InvokeAsync(() =&gt; Dispose())</c> to hop threads. An inline
-    // dispatcher runs that work on the CALLING thread, so the hop never happens,
-    // CheckAccess() is false again, and it recurses until the stack ends.
-    //
-    // Phase 13.2 measured exactly that: an honest CheckAccess() killed the test host
-    // with a stack overflow, reproducibly, in the Dispose/InvokeAsync loop above. So
-    // an honest answer needs InvokeAsync to own a real queue and a real thread — and
-    // that breaks the sync-mount contract the C ABI depends on (the first render must
-    // complete synchronously inside the native callback window; see Exports.cs and
-    // MountSyncTests). The door is closed until the dispatcher itself changes.
-    //
-    // What remains available is DETECTION, which is what this is. It never throws —
-    // not even under StrictErrors — because a throw would change behaviour on a path
-    // that works today, in the area the spike proved is delicate.
-    //
-    // "Owner" is whoever drove the FIRST batch, not whoever constructed the renderer:
-    // construction can happen anywhere, while the contract is about the thread driving
-    // renders inside the native callback window.
-    private int _renderOwnerThreadId;
-
-    private void ReportIfNotTheRenderOwnerThread()
+    // Under StrictErrors, which every test harness enables, it THROWS, so a violation fails
+    // under test instead of scrolling past as a log line. Otherwise it warns. It names both
+    // threads, because "wrong thread" alone cannot be acted on. The silent path allocates
+    // nothing: the message is built only when the check fails.
+    private void AssertOnTheRenderThread()
     {
         int current = Environment.CurrentManagedThreadId;
-
-        // First batch claims ownership. CompareExchange returns the PREVIOUS value, so a
-        // zero here means this call is the one that claimed it — nothing to report.
-        int owner = Interlocked.CompareExchange(ref _renderOwnerThreadId, current, 0);
-        if (owner == 0 || owner == current)
+        int owner = RenderThreadId;
+        if (current == owner)
             return;
 
         string message =
             $"render batch driven from thread {current}, but this renderer's batches are "
-            + $"owned by thread {owner} — the render tree is not safe to drive concurrently. "
-            + "Marshal the work onto the owning thread (usually by raising the change from a "
-            + "native event handler) rather than calling into the renderer directly.";
+            + $"owned by thread {owner}, its render thread — the render tree is not safe to "
+            + "drive concurrently. Marshal the work onto the render thread with "
+            + "Dispatcher.InvokeAsync rather than calling into the renderer directly.";
 
-        // StrictErrors is this renderer's documented "surface it rather than swallow it"
-        // posture and every test harness enables it, so it is what escalates the level.
         if (StrictErrors)
-            BnLog.Warn("BlazorNative.Renderer", message);
-        else
-            BnLog.Debug("BlazorNative.Renderer", message);
+            throw new InvalidOperationException(message);
+        BnLog.Warn("BlazorNative.Renderer", message);
     }
 
     // ── UpdateDisplayAsync ────────────────────────────────────────────────────
 
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
-        // 13.2. Pure observation — no renderer state is touched — so it sits ahead of the
-        // drain without disturbing the drain-first rule below, and still reports the thread
-        // even when the drain rethrows under strict mode.
-        ReportIfNotTheRenderOwnerThread();
+        // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
+        // the drain without disturbing the drain-first rule below. Under StrictErrors the
+        // throw routes through ProcessRenderQueue's catch into HandleException, which
+        // rethrows it at the caller boundary.
+        AssertOnTheRenderThread();
 
         // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
         // on the renderer thread — the only thread where HandleException's single-threaded
@@ -456,6 +457,12 @@ public sealed class NativeRenderer : BlazorRenderer
             foreach (ref var disposedId in batch.DisposedComponentIDs)
                 CleanupDisposedComponent(disposedId);
 
+            // Phase 16.3: forget the call sites of handler ids Blazor has disposed, so
+            // the map holds only live handlers and never grows without bound. Pinned by
+            // SlowHandlerWarningTests.TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas.
+            foreach (ref var disposedHandler in batch.DisposedEventHandlerIDs)
+                _handlerCallSites.Remove((int)disposedHandler);
+
             patches.Add(new CommitFramePatch(frameId, timestamp));
 
             var frame = new RenderFrame(frameId, timestamp, patches.AsSpan().ToArray());
@@ -478,9 +485,9 @@ public sealed class NativeRenderer : BlazorRenderer
                 // #213 item 2 — PARK IT, DO NOT HANDLE IT HERE.
                 //
                 // This continuation runs on a ThreadPool thread. It used to call
-                // HandleException directly, which reads and writes three fields this class
-                // declares single-threaded (_uiEventDispatchDepth,
-                // _uiEventDispatchException, _reportedBindingFault) and, under
+                // HandleException directly, which reads and writes state this class
+                // declares single-threaded (the current dispatch scope, and
+                // _reportedBindingFault) and, under
                 // StrictErrors, rethrows via ExceptionDispatchInfo.Throw() — on a pool
                 // thread, where nothing observes it. So the mechanism meant to stop a
                 // subscriber fault being SWALLOWED could both corrupt renderer state and
@@ -543,8 +550,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Interlocked access. Every other field in this class — including the three
     /// <see cref="HandleException"/> touches — is single-threaded by contract, which is
     /// exactly what the old fault continuation broke: it called HandleException straight
-    /// from the pool thread, reading and writing <c>_uiEventDispatchDepth</c>,
-    /// <c>_uiEventDispatchException</c> and <c>_reportedBindingFault</c> from off the
+    /// from the pool thread, reading and writing the dispatch capture window, then a
+    /// depth counter and a shared slot, and <c>_reportedBindingFault</c> from off the
     /// renderer thread, and under <see cref="StrictErrors"/> it also rethrew via
     /// <c>ExceptionDispatchInfo.Throw()</c> on that pool thread — where nothing observes
     /// it.</para>
@@ -575,15 +582,32 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void HandleException(Exception exception)
     {
-        // Inside a UI-event dispatch window, remember the first exception so
-        // DispatchUiEventAsync can fault its task (Blazor swallows dispatch
-        // exceptions here otherwise — see _uiEventDispatchException doc).
-        // The window wins over strict mode: the fault surfaces ONCE, at the
-        // dispatch boundary (export rc 2) — never from this stack.
-        if (_uiEventDispatchDepth > 0)
+        // Inside a dispatch's synchronous part, remember the first exception in
+        // THAT dispatch's scope so DispatchSyncPart reports it as Faulted (Blazor
+        // swallows dispatch exceptions here otherwise — see DispatchScope). The
+        // window wins over strict mode: the fault surfaces ONCE, at the dispatch
+        // boundary (export rc 2) — never from this stack. A handler suspended on
+        // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
+        // is that dispatch's, never the suspended one's (16.0 requirement 1).
+        if (_currentScope is { } scope)
         {
-            _uiEventDispatchException ??= exception;
+            scope.Fault ??= exception;
             BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
+            return;
+        }
+
+        // After a handler's first await: no scope is open, but the continuation still
+        // carries its dispatch's scope in the execution context. Attribute the fault to
+        // THAT dispatch, so its pending Task faults, in production mode as well as strict.
+        // A scope that is Done belongs to a handler that already finished; a fault then is
+        // fire-and-forget, and takes the no-window path below. A PARAMETER-BINDING fault
+        // is never attributed here: #164's abort below must see it first.
+        if (s_flowingScope.Value is { Done: false } flowing
+            && ReferenceEquals(flowing.Owner, this)
+            && !BlazorInterop.IsParameterBindingFault(exception))
+        {
+            Interlocked.CompareExchange(ref flowing.LateFault, exception, null);
+            BnLog.Error("BlazorNative.Renderer", LateFaultLogLabel, exception);
             return;
         }
 
@@ -664,7 +688,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <c>HostSession.ReplaceRegistryEntryForTests</c>): triggers a
     /// steady-state re-render of a mounted root — the exact
     /// <c>StateHasChanged()</c> a component's own event handler would issue,
-    /// resolved through Blazor's ComponentState. On the InlineDispatcher the
+    /// resolved through Blazor's ComponentState, run on the render thread. The
     /// render batch (diff → UpdateDisplayAsync → frame delivery) has fully
     /// completed when this returns. Exists solely so the allocation-budget
     /// test (RendererSpike.RenderWalk_IsAllocationFree_OnSteadyState, the M1
@@ -674,6 +698,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// wiring bug, not a runtime condition).</summary>
     internal void TriggerRootRenderForTests(int componentId)
     {
+        if (!_dispatcher.CheckAccess())
+        {
+            OnRenderThread(() => TriggerRootRenderForTests(componentId));
+            return;
+        }
         if (GetComponentState(componentId).Component is not ComponentBase component)
         {
             throw new InvalidOperationException(
@@ -685,15 +714,39 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!disposing)
         {
-            // Release any handlers registered against Frames. The underlying
-            // AsyncEventHandler<T> struct holds delegate references in its
-            // internal state; resetting to default releases them so per-test
-            // closures don't leak across NativeRenderer instances.
-            _frames = default;
+            base.Dispose(disposing);
+            return;
         }
-        base.Dispose(disposing);
+
+        // Already disposed: the render thread is gone, and Blazor's own guard makes a second
+        // dispose a no-op anyway. Returning here keeps a repeat Dispose from waiting on a
+        // cancelled post.
+        if (_dispatcher.IsShutDown)
+            return;
+
+        try
+        {
+            // The body runs ON the render thread, so Blazor's base Dispose sees CheckAccess()
+            // true and never re-marshals: 13.2's Dispose -> InvokeAsync -> Dispose loop has
+            // nowhere to recur.
+            OnRenderThread(() =>
+            {
+                // Release any handlers registered against Frames. The underlying
+                // AsyncEventHandler<T> struct holds delegate references in its
+                // internal state; resetting to default releases them so per-test
+                // closures don't leak across NativeRenderer instances.
+                _frames = default;
+                base.Dispose(disposing);
+            });
+        }
+        finally
+        {
+            // Last: stop the render thread. Off the thread this joins it; on it, the thread
+            // exits once the queue drains.
+            _dispatcher.Dispose();
+        }
     }
 
     // ── Render tree walking (typed against Bn* wrappers only) ─────────────────
@@ -829,7 +882,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     if (slot.IsNode)
                     {
                         var attrFrame = new BnRenderTreeFrame(ref referenceFrames[bnEdit.ReferenceFrameIndex]);
-                        ProcessAttribute(slot.NodeId, ref attrFrame, ref patches);
+                        ProcessAttribute(cursor.ComponentId, slot.NodeId, ref attrFrame, ref patches);
                     }
                     break;
                 }
@@ -1017,7 +1070,7 @@ public sealed class NativeRenderer : BlazorRenderer
                     var child = new BnRenderTreeFrame(ref frames[frameIndex + i]);
                     if (child.FrameType == RenderTreeFrameType.Attribute)
                     {
-                        ProcessAttribute(nodeId, ref child, ref patches);
+                        ProcessAttribute(componentId, nodeId, ref child, ref patches);
                     }
                     else if (child.FrameType == RenderTreeFrameType.Component)
                     {
@@ -1277,6 +1330,7 @@ public sealed class NativeRenderer : BlazorRenderer
         // Event registrations for every node the component still owned die
         // with its buckets (Task 5 registry cleanup).
         _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
+        _componentTypes.Remove(componentId);
     }
 
     /// <summary>Narrows Blazor's <c>ulong</c> event-handler id to the <c>int</c>
@@ -1304,7 +1358,7 @@ public sealed class NativeRenderer : BlazorRenderer
         return (int)handlerId;
     }
 
-    private void ProcessAttribute(int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
+    private void ProcessAttribute(int componentId, int nodeId, ref BnRenderTreeFrame frame, ref PooledList<RenderPatch> patches)
     {
         var name = frame.AttributeName ?? "";
         var value = frame.AttributeValue?.ToString();
@@ -1317,6 +1371,8 @@ public sealed class NativeRenderer : BlazorRenderer
             // handlerId here (a SetAttribute re-attach overwrites: last wins,
             // so a later detach carries the LIVE handlerId). Task 5.
             RegisterEventHandler(nodeId, eventName, handlerId);
+            RecordCallSite(componentId, handlerId, frame.Sequence, eventName,
+                BlazorInterop.HandlerDelegate(frame.AttributeValue));
             patches.Add(new AttachEventPatch(nodeId, eventName, handlerId));
         }
         else if (name == ScrollToAttributeName)
@@ -1438,78 +1494,418 @@ public sealed class NativeRenderer : BlazorRenderer
 
     // ── Event ingestion ───────────────────────────────────────────────────────
 
-    /// <summary>Captures the first exception Blazor routes to
-    /// <see cref="HandleException"/> during a <see cref="DispatchUiEventAsync"/>
-    /// window. Blazor's Renderer.DispatchEventAsync does NOT propagate such
-    /// exceptions to its caller — they go to HandleExceptionViaErrorBoundary →
-    /// (no error boundary here) → HandleException, and the returned task
-    /// completes successfully. Without this capture,
-    /// blazornative_dispatch_event could never honor its "2 = dispatch
-    /// faulted" contract (Phase 3.2, DoD #9 partial). Note the capture is a
-    /// WINDOW, not a handler hook: anything routed to HandleException while
-    /// the window is open is captured — the handler itself, the resulting
-    /// re-render (UpdateDisplayAsync failures land here too), or frame
-    /// delivery.
+    /// <summary>One dispatch's capture window (Phase 16.1): the first fault Blazor
+    /// routes to <see cref="HandleException"/> during that dispatch's synchronous
+    /// part, and the post-dispatch actions queued by <see cref="RunAfterDispatch"/>.
     ///
-    /// The depth counter (not a bool) keeps the window correct for NESTED
-    /// dispatches (a handler that itself calls DispatchUiEventAsync): the
-    /// slot is only cleared + rethrown when the OUTERMOST dispatch unwinds,
-    /// and is never reset at nested-dispatch start — so an outer handler's
-    /// throw cannot be discarded by an inner dispatch.
+    /// <para>Why a window at all: Blazor's Renderer.DispatchEventAsync does NOT
+    /// propagate a handler's exception to its caller — it goes to
+    /// HandleExceptionViaErrorBoundary → (no error boundary here) →
+    /// HandleException, and the returned task completes successfully. Without the
+    /// capture, blazornative_dispatch_event could never honor its "2 = faulted
+    /// before yielding" contract (Phase 3.2, DoD #9 partial). The capture is a
+    /// WINDOW, not a handler hook: anything routed to HandleException while it is
+    /// open is captured — the handler itself, the resulting re-render
+    /// (UpdateDisplayAsync failures land here too), or frame delivery.</para>
     ///
-    /// These guarantees assume SYNCHRONOUS handlers; async handlers (await in
-    /// @onclick) move continuations off the dispatch thread and out of this
-    /// window. RE-LEDGERED — Phase 4.2 triage item 1 (ledger of record:
-    /// docs/plans/2026-07-11-phase-4.2-hardening-triage.md): revisit with the
-    /// first real async @onclick consumer, together with the dispatch lane's
-    /// async-offload (triage item 2 — the same design).
+    /// <para>Why per dispatch: until 16.1 the window was a renderer-wide depth
+    /// counter decremented in the dispatch lambda's finally, so it stayed open
+    /// across an async handler's await. A second dispatch arriving while the first
+    /// was suspended was treated as nested inside it: its navigation swap waited
+    /// for the unrelated handler, and its fault landed in the shared slot, returned
+    /// rc 0, and surfaced later as the FIRST handler's fault (16.0 spike
+    /// requirement 1). A scope is current only while its own dispatch's
+    /// synchronous part runs on the render thread; <see cref="DispatchSyncPart"/>
+    /// closes it when Blazor hands back the handler's Task.</para>
     ///
-    /// Instance fields are safe: all dispatch runs on the InlineDispatcher's
-    /// calling thread (single-threaded post-boot contract).</summary>
-    private Exception? _uiEventDispatchException;
-    private int _uiEventDispatchDepth;
+    /// <para>Genuinely NESTED dispatch — a handler that itself dispatches,
+    /// synchronously, on the render thread — opens an inner scope and restores the
+    /// outer one on close. The inner fault is the inner dispatch's; the inner
+    /// scope's queued actions move to the outer scope, so they still run when the
+    /// OUTERMOST synchronous part unwinds, as they always did.</para>
+    ///
+    /// <para>A fault raised after the first await, in a continuation, is attributed
+    /// to its own dispatch too, in production mode as well as strict. Blazor catches
+    /// it in GetErrorHandledTask and routes it to <see cref="HandleException"/>, then
+    /// completes its Task SUCCESSFULLY, so before this the fault was only logged
+    /// unless StrictErrors rethrew it. GetErrorHandledTask starts inside the
+    /// synchronous part, so its continuation carries the execution context captured
+    /// there, including <see cref="s_flowingScope"/>. HandleException finds the scope
+    /// through it and records <see cref="LateFault"/>, and the pending Task that
+    /// <see cref="DispatchSyncPart"/> returns faults with it. Pinned by
+    /// DispatchWindowScopeTests.ALateFault_InProductionMode_FaultsThePendingTask.
+    /// Once the handler has finished — at the synchronous return when it never
+    /// yielded, or when its pending Task completes — the scope is <see cref="Done"/>,
+    /// and a later fire-and-forget fault takes the no-window path: strict rethrow, or
+    /// a log. A parameter-binding fault is never attributed this way; it takes #164's
+    /// abort. Pinned by DispatchWindowScopeTests'
+    /// AFireAndForgetFault_FromAHandlerThatFinishedSynchronously_TakesTheNoWindowPath,
+    /// AFireAndForgetFault_FromAPendingHandler_AfterItCompletes_TakesTheNoWindowPath,
+    /// AParameterBindingFault_AfterTheFirstAwait_StillTakesThe164Path and
+    /// TheFlowingScope_IsRestored_SoUnrelatedRenderThreadWorkSeesNone.</para></summary>
+    private sealed class DispatchScope(NativeRenderer owner)
+    {
+        public readonly NativeRenderer Owner = owner;
+        public Exception? Fault;
+        public List<Action>? PostDispatchActions;
+        /// <summary>The first fault raised after the handler's first await.</summary>
+        public Exception? LateFault;
+        /// <summary>Set once the handler has finished: at DispatchSyncPart's return when
+        /// it never yielded, otherwise when its pending Task completes.</summary>
+        public volatile bool Done;
+    }
 
-    /// <summary>Dispatches a host UI event into Blazor's handler table.
-    /// Synchronous in effect (InlineDispatcher): handler, re-render, and
-    /// FrameSink delivery have all completed when the returned task is
-    /// observed. Stale handler ids (ArgumentException from a handler that
-    /// died in a re-render) are caught + logged — delivery is at-most-once,
-    /// a stale tap is not an error. A fault anywhere in the dispatch window —
-    /// the handler, the resulting re-render, or frame delivery — faults the
-    /// returned task (see <see cref="_uiEventDispatchException"/>) so the
-    /// export can map it to return code 2.</summary>
+    /// <summary>The scope of the dispatch whose synchronous part is running now, or
+    /// null. Render thread only. <see cref="RunAfterDispatch"/> and the in-window
+    /// capture use THIS, never <see cref="s_flowingScope"/>: a continuation must not
+    /// queue into a scope that has already closed, or the cascade returns.</summary>
+    private DispatchScope? _currentScope;
+
+    /// <summary>The same scope, flowed with the execution context into the handler's
+    /// continuations. Used ONLY to attribute a late fault in
+    /// <see cref="HandleException"/>. Set and restored alongside
+    /// <see cref="_currentScope"/>: the restore is required, because the render
+    /// thread does not flow a poster's execution context, so a value left set would
+    /// leak into whatever work item ran next.</summary>
+    private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new();
+
+    /// <summary>The log line for a fault attributed to a handler after its first await
+    /// (Phase 16.1). A constant so the tests that assert a fault was NOT attributed
+    /// this way, and the one that asserts it WAS, track the real text: a reworded
+    /// literal would leave the absence assertions passing while checking nothing.</summary>
+    internal const string LateFaultLogLabel = "render fault (after the handler's first await)";
+
+    // ── The slow-handler warning (Phase 16.3, #9) ────────────────────────────
+    //
+    // Since 16.1 an async handler frees the dispatch lane when it yields, so what
+    // can still starve the lane is a handler whose SYNCHRONOUS part is slow: the
+    // render thread runs it while the shell's dispatch lane waits, and every later
+    // event queues behind it, one-for-one (the measurement is in
+    // docs/plans/2026-09-27-phase-16.3-record.md). This makes that stall
+    // diagnosable: DispatchSyncPart times its scope, Exports times the host-event
+    // arms, and a synchronous part over the budget logs ONE Warn per key per
+    // renderer, at most SlowHandlerWarningCap of them. A dispatch is keyed by its
+    // handler's call site, a host event by its name. A renderer lives exactly as
+    // long as its HostSession, so the set and the cap reset with the session. BnLog.DefaultLevel is Warn in every build: the
+    // once-per-key rule is what keeps Release quiet. Pinned by SlowHandlerWarningTests.
+
+    /// <summary>The slow-handler budget, in milliseconds (Phase 16.3). A synchronous
+    /// part longer than this logs <see cref="SlowHandlerLogLabel"/> once per handler
+    /// call site, or per event name for a host-event arm, per session. Internal on purpose:
+    /// it is a diagnostic threshold, not API. Chosen from the phase record's
+    /// measurement; the record gives the reason.</summary>
+    internal const int SlowHandlerBudget = 100;
+
+    /// <summary>The leading text of the slow-handler warning. A constant so the pins
+    /// that assert its absence track the real text.</summary>
+    internal const string SlowHandlerLogLabel = "slow handler";
+
+    /// <summary>The most slow-handler warnings one session logs. The next distinct slow
+    /// key logs <see cref="SlowHandlerSuppressedLogText"/> once, and then the warning is
+    /// silent until the session resets. A backstop for the Release-quiet promise: it
+    /// also bounds the host-event keys, whose names the shell supplies.</summary>
+    internal const int SlowHandlerWarningCap = 32;
+
+    /// <summary>The one line logged when <see cref="SlowHandlerWarningCap"/> is reached.</summary>
+    internal const string SlowHandlerSuppressedLogText = "further slow-handler warnings suppressed";
+
+    private static readonly long s_slowHandlerBudgetTicks = SlowHandlerBudget * Stopwatch.Frequency / 1000;
+
+    /// <summary>Test-only: replaces <see cref="Stopwatch.GetTimestamp"/> as THIS
+    /// renderer's clock for the slow-handler timing, so a pin can make a synchronous
+    /// part "slow" without waiting. Per renderer, never static: other renderers in
+    /// the process keep the real clock. Null in production.</summary>
+    internal Func<long>? TimestampForTests { get; set; }
+
+    /// <summary>Keys already warned about, for the once-per-key rule. Render thread
+    /// only in practice; locked anyway, because the lock is uncontended and a
+    /// wrong-thread caller must not corrupt it.</summary>
+    private readonly HashSet<string> _slowHandlerWarned = new(StringComparer.Ordinal);
+
+    /// <summary>Slow-handler warnings logged so far this session, the suppression line
+    /// included. Guarded by the <see cref="_slowHandlerWarned"/> lock.</summary>
+    private int _slowHandlerWarnings;
+
+    /// <summary>Where a live handler id was attached. Written at the AttachEvent
+    /// emission site, pruned by the batch's disposed handler ids, and read by the
+    /// slow-handler warning. Render thread only.</summary>
+    private readonly Dictionary<int, HandlerCallSite> _handlerCallSites = new();
+
+    /// <summary>Test-only: how many call sites the map holds. Pins that it holds the live
+    /// handlers only, never one entry per render.</summary>
+    internal int HandlerCallSiteCountForTests => OnRenderThread(() => _handlerCallSites.Count);
+
+    /// <summary>A handler's identity for the once-per-handler rule. Blazor hands a
+    /// lambda that captures per-render state a NEW handler id on every render, and
+    /// every item of a <c>foreach</c> its own, so the id cannot key the rule.
+    /// <para>The key is the handler's OWNER: the method its delegate runs, declaring
+    /// type and name. The compiler emits one method per lambda call site, so that is
+    /// stable across renders and items and unique per call site in code. It is NOT the
+    /// component whose render tree holds the attribute: <c>BnButton</c> forwards every
+    /// app's <c>OnClick</c> from one line, and a <c>BnView</c>'s ChildContent renders
+    /// into BnView's tree with the page's sequence numbers, so a tree-owner key would
+    /// merge every such handler in the app into one.</para>
+    /// <para>The fallback, when no delegate can be reached or its method cannot be
+    /// resolved, is the tree owner: the component type, the attribute frame's sequence
+    /// number and the event name. The delegate is only read here; its method is
+    /// resolved when a dispatch is already over budget, never on the render path.</para></summary>
+    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
+    {
+        public (string Key, string Owner) Resolve()
+        {
+            if (Handler is not null)
+            {
+                try
+                {
+                    System.Reflection.MethodInfo method = Handler.Method;
+                    if (method.DeclaringType is { FullName: { } declaring } type)
+                    {
+                        // A FRAMEWORK method is shared by every call site that uses it: each
+                        // @bind of one value type runs Blazor's own binder lambda, and a
+                        // BlazorNative.Components wrapper runs its own handler for every
+                        // instance. Combined with the tree-owner key it stays per call site,
+                        // and the warning names the component that holds the call site.
+                        if (IsFrameworkAssembly(type.Assembly))
+                            return ($"{declaring}::{method.Name}#{Component.FullName}#{Sequence}#{EventName}",
+                                Component.FullName ?? Component.Name);
+                        return ($"{declaring}::{method.Name}#{EventName}", $"{declaring}.{method.Name}");
+                    }
+                }
+                catch (NotSupportedException)
+                {
+                    // A method with no reflection metadata under NativeAOT: fall back.
+                }
+            }
+            return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
+        }
+    }
+
+    /// <summary>Whether <paramref name="assembly"/> is framework code for the slow-handler
+    /// key: Blazor (<c>Microsoft.AspNetCore.Components*</c>), the BCL (<c>System*</c>), or
+    /// <c>BlazorNative.Components</c>, whose wrappers run their own handler for every
+    /// instance. Any other assembly, the sample app included, is app code.</summary>
+    private static bool IsFrameworkAssembly(System.Reflection.Assembly assembly)
+    {
+        string name = assembly.GetName().Name ?? "";
+        return name.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+            || name == "System" || name.StartsWith("System.", StringComparison.Ordinal)
+            || name == "BlazorNative.Components";
+    }
+
+    private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
+    {
+        if (_componentTypes.TryGetValue(componentId, out Type? component))
+            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName, handler);
+    }
+
+    /// <summary>Each live component's type, for <see cref="RecordCallSite"/>. Kept here
+    /// rather than read through <c>GetComponentState</c>: a component rendered and then
+    /// disposed in the SAME batch still has its diff in the batch, but Blazor has already
+    /// removed its state, and <c>GetComponentState</c> would throw mid-frame. Removed in
+    /// <see cref="CleanupDisposedComponent"/>, after the batch's diffs. Render thread only.</summary>
+    private readonly Dictionary<int, Type> _componentTypes = new();
+
+    /// <inheritdoc/>
+    protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(
+        int componentId, IComponent component, Microsoft.AspNetCore.Components.Rendering.ComponentState? parentComponentState)
+    {
+        _componentTypes[componentId] = component.GetType();
+        return base.CreateComponentState(componentId, component, parentComponentState);
+    }
+
+    /// <summary>The slow-handler key and subject of a UI dispatch: its call site when
+    /// the attach was recorded, else its handler id. Formatted only once a dispatch
+    /// is over budget, so the hot path allocates nothing for the warning.</summary>
+    private static (string Key, string Subject) DispatchSubject(NativeUiEvent e, HandlerCallSite? site)
+    {
+        if (site is not { } s)
+            return ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
+        (string key, string owner) = s.Resolve();
+        return (key, $"handler {e.HandlerId} '{e.EventName}' in {owner}");
+    }
+
+    /// <summary>The start timestamp of a timed synchronous part.</summary>
+    internal long SyncPartTimestamp() => TimestampForTests?.Invoke() ?? Stopwatch.GetTimestamp();
+
+    /// <summary>Called by Exports when a host-event arm's synchronous part, which runs
+    /// outside any <see cref="DispatchScope"/>, has finished on the render thread.
+    /// Keyed by <paramref name="eventName"/>. Never the payload.</summary>
+    internal void NoteHostEventSyncPart(string eventName, long started)
+    {
+        if (OverBudget(started, out long elapsed))
+            WarnSlowOnce($"host event {eventName}", $"host event '{eventName}'", elapsed);
+    }
+
+    /// <summary>Whether the part that began at <paramref name="started"/> ran over
+    /// <see cref="SlowHandlerBudget"/>, and for how many ticks.</summary>
+    private bool OverBudget(long started, out long elapsed)
+    {
+        elapsed = SyncPartTimestamp() - started;
+        return elapsed > s_slowHandlerBudgetTicks;
+    }
+
+    /// <summary>Logs the slow-handler Warn, the first time only for
+    /// <paramref name="key"/> and at most <see cref="SlowHandlerWarningCap"/> times per
+    /// session. <paramref name="subject"/> names the handler; the caller never passes
+    /// the payload, which can carry user input.</summary>
+    private void WarnSlowOnce(string key, string subject, long elapsed)
+    {
+        lock (_slowHandlerWarned)
+        {
+            if (_slowHandlerWarnings > SlowHandlerWarningCap)
+                return; // the cap was reached and announced: silent until the session resets
+            if (!_slowHandlerWarned.Add(key))
+                return;
+            if (++_slowHandlerWarnings > SlowHandlerWarningCap)
+            {
+                BnLog.Warn("NativeRenderer",
+                    $"{SlowHandlerLogLabel}: {SlowHandlerSuppressedLogText} for this session, "
+                    + $"after {SlowHandlerWarningCap} distinct slow handlers.");
+                return;
+            }
+        }
+        long ms = elapsed * 1000 / Stopwatch.Frequency;
+        BnLog.Warn("NativeRenderer",
+            $"{SlowHandlerLogLabel}: {subject} held the render thread for {ms} ms, over the "
+            + $"{SlowHandlerBudget} ms budget. The shell's dispatch lane waited with it, and every "
+            + "event behind it waited too. Move the work after an await, or off the render thread. "
+            + $"Warned once per call site per session, at most {SlowHandlerWarningCap} times.");
+    }
+
+    /// <summary>Test-only: whether a dispatch scope flows in the CURRENT execution
+    /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to
+    /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
+    internal bool FlowingScopeIsSetForTests => s_flowingScope.Value is not null;
+
+    /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
+    /// incomplete await, its re-render and FrameSink delivery — inside its own
+    /// <see cref="DispatchScope"/>, and reports how it ended. MUST be called on the
+    /// render thread. Stale handler ids (ArgumentException from a handler that died
+    /// in a re-render) are caught + logged — delivery is at-most-once, a stale tap is
+    /// not an error — and report <see cref="DispatchOutcomeKind.Completed"/>.
+    /// The scope closes when Blazor returns the handler's Task, and its post-dispatch
+    /// actions (the navigation swap) run at that close, before this returns.
+    /// Returns <see cref="DispatchOutcomeKind.Faulted"/> when the scope captured a
+    /// fault or the returned Task is faulted, <see cref="DispatchOutcomeKind.Completed"/>
+    /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/> when the
+    /// handler is still running. The pending Task is <see cref="AwaitWholeHandler"/>'s,
+    /// not Blazor's: it also faults with a fault raised after the first await.</summary>
+    internal DispatchOutcome DispatchSyncPart(NativeUiEvent e)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            throw new InvalidOperationException(
+                $"DispatchSyncPart ran on thread {Environment.CurrentManagedThreadId}, not on this "
+                + $"renderer's render thread {RenderThreadId}. Post it through Dispatcher.InvokeAsync.");
+        }
+
+        var scope = new DispatchScope(this);
+        DispatchScope? outer = _currentScope;
+        DispatchScope? outerFlowing = s_flowingScope.Value;
+        // Phase 16.3: the slow-handler clock starts as the scope OPENS. The call site
+        // is resolved NOW: the handler's own re-render can dispose its id, when its
+        // delegate changed, and that prunes the id from the call-site map.
+        HandlerCallSite? callSite = _handlerCallSites.TryGetValue(e.HandlerId, out HandlerCallSite found)
+            ? found
+            : null;
+        long started = SyncPartTimestamp();
+        _currentScope = scope;
+        s_flowingScope.Value = scope;
+        Task? task = null;
+        try
+        {
+            var args = BuildEventArgs(e);
+            task = BlazorInterop.DispatchEventViaAccessor(this, (ulong)e.HandlerId, args);
+        }
+        catch (ArgumentException ex)
+        {
+            // Warn: a stale handler id is a teardown race, tolerated by design.
+            BnLog.Warn("NativeRenderer", $"stale handler {e.HandlerId}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Anything else escaping Blazor's own dispatch is this dispatch's fault.
+            scope.Fault ??= ex;
+        }
+        finally
+        {
+            // CLOSE the scope: the synchronous part has returned its Task. Inside the
+            // finally so a faulted dispatch still drains — the queue must never leak
+            // into another dispatch; action faults join this scope, never escape.
+            _currentScope = outer;
+            s_flowingScope.Value = outerFlowing;
+            if (outer is null)
+                DrainPostDispatchActions(scope);
+            else if (scope.PostDispatchActions is { } queued)
+                (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
+        }
+        // ...and stops once it has CLOSED, its queued swap included: the whole
+        // interval the shell's dispatch lane waits for. Keyed by the handler's call
+        // site; the payload is never passed.
+        if (OverBudget(started, out long slowElapsed))
+        {
+            (string slowKey, string slowSubject) = DispatchSubject(e, callSite);
+            WarnSlowOnce(slowKey, slowSubject, slowElapsed);
+        }
+
+        // The handler is finished on these two returns, so the scope is Done at once:
+        // fire-and-forget work it started must not have a later fault attributed to it.
+        // Only the Pending return leaves marking Done to AwaitWholeHandler.
+        if (scope.Fault is { } captured)
+        {
+            scope.Done = true;
+            return new DispatchOutcome(DispatchOutcomeKind.Faulted, captured, null);
+        }
+        if (task is null || task.IsCompletedSuccessfully)
+        {
+            scope.Done = true;
+            return new DispatchOutcome(DispatchOutcomeKind.Completed, null, null);
+        }
+        if (task.IsCompleted)
+        {
+            scope.Done = true;
+            // Faulted or cancelled before yielding: this dispatch's fault.
+            Exception fault = task.IsFaulted
+                ? task.Exception!.InnerException ?? task.Exception
+                : new TaskCanceledException(task);
+            return new DispatchOutcome(DispatchOutcomeKind.Faulted, fault, null);
+        }
+        return new DispatchOutcome(DispatchOutcomeKind.Pending, null, AwaitWholeHandler(task, scope));
+    }
+
+    /// <summary>The pending Task <see cref="DispatchSyncPart"/> hands out: completes when
+    /// the handler does, then marks the scope <see cref="DispatchScope.Done"/> and faults
+    /// with the late fault <see cref="HandleException"/> attributed to it, if any. Blazor's
+    /// own Task would complete successfully for that fault.</summary>
+    private static async Task AwaitWholeHandler(Task handler, DispatchScope scope)
+    {
+        try
+        {
+            await handler.ConfigureAwait(false);
+        }
+        finally
+        {
+            scope.Done = true;
+        }
+        if (Volatile.Read(ref scope.LateFault) is { } late)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(late).Throw();
+    }
+
+    /// <summary>Dispatches a host UI event into Blazor's handler table, for direct
+    /// callers such as the test host. Marshalled onto the render thread (Phase 16.1)
+    /// and run through <see cref="DispatchSyncPart"/>. The returned task completes when
+    /// the WHOLE handler has completed, continuation included. It faults with the
+    /// fault the dispatch's window captured or, for a handler still running after its
+    /// synchronous part, with the fault its Task ends in. The export does not use
+    /// this: it waits only for the synchronous part.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
-            _uiEventDispatchDepth++;
-            try
-            {
-                var args = BuildEventArgs(e);
-                await BlazorInterop.DispatchEventViaAccessor(this, (ulong)e.HandlerId, args);
-            }
-            catch (ArgumentException ex)
-            {
-                // Warn: a stale handler id is a teardown race, tolerated by design.
-                BnLog.Warn("NativeRenderer", $"stale handler {e.HandlerId}: {ex.Message}");
-            }
-            finally
-            {
-                _uiEventDispatchDepth--;
-                // Phase 3.5: run deferred work (the navigation swap) when the
-                // OUTERMOST window unwinds — the event's own batch is closed,
-                // so a new batch (Unmount's disposal) may start. Inside the
-                // finally so a faulted handler still drains (the queue must
-                // never leak into the NEXT dispatch); action faults join the
-                // capture slot, never escape this finally.
-                if (_uiEventDispatchDepth == 0)
-                    DrainPostDispatchActions();
-            }
-
-            if (_uiEventDispatchDepth == 0 && _uiEventDispatchException is { } dispatchEx)
-            {
-                _uiEventDispatchException = null;
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(dispatchEx).Throw();
-            }
+            DispatchOutcome outcome = DispatchSyncPart(e);
+            if (outcome.Kind == DispatchOutcomeKind.Faulted)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(outcome.Fault!).Throw();
+            if (outcome.Kind == DispatchOutcomeKind.Pending)
+                await outcome.Pending!;
         });
 
     private static EventArgs BuildEventArgs(NativeUiEvent e) => e.EventName switch
@@ -1644,9 +2040,10 @@ public sealed class NativeRenderer : BlazorRenderer
     internal static readonly HashSet<string> VisualStyleAttributes =
         new(BnWireVocabulary.VisualStyles, StringComparer.Ordinal);
 
-    /// <summary>The union — what "is a style" MEANS to the renderer. Pinned
-    /// equal to (and disjointly partitioned by) the two sets above in
-    /// StyleAttributePartitionTests.</summary>
+    /// <summary>The union — what "is a style" MEANS to the renderer. It is this union by
+    /// definition, so nothing pins it; the two halves are pinned disjoint in
+    /// StyleAttributePartitionTests and equal to src/wire-vocabulary.json in
+    /// WireVocabularyCodegenTests.</summary>
     internal static readonly HashSet<string> StyleAttributes =
         new(YogaStyleAttributes.Concat(VisualStyleAttributes), StringComparer.Ordinal);
 }

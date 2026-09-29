@@ -17,8 +17,9 @@ namespace BlazorNative.Analyzers;
 // becoming fire-and-forget: its continuation escapes the callback window and
 // its exceptions vanish. This analyzer is the compile-time gate.
 //
-// Note: NativeEvents' own redesign is a ledgered open item (NativeShellBridge
-// currently stubs it no-op) — the rule guards the surviving contract.
+// Note: NativeShellBridge.NativeEvents is real on a device — every host event
+// the runtime does not route itself, such as the lifecycle events, is raised
+// through it (Phase 5.1) — so the rule guards a live contract.
 //
 // Originally Phase 2.0 (docs/plans/2026-05-25-phase-2.0-design.md); reworded
 // off the WASI premise in Phase 4.1. Full rule docs:

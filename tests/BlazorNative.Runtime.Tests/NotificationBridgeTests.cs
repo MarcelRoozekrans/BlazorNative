@@ -46,7 +46,7 @@ public sealed class NotificationBridgeTests
             await bridge.ShowNotificationAsync(Spec());
 
             Assert.True(FakeShellHost.LastHostCallRequestId > 0);
-            Assert.Equal((int)NativeShellBridge.HostCallOp.Notifications, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.Notifications, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"action\":\"show\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"id\":\"7\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"title\":\"Hello\"", FakeShellHost.LastHostCallArgs);

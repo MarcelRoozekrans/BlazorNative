@@ -1,0 +1,22 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    _Imports.razor — Phase 15.5 (#291). The Razor imports every generated
+    docs-sample component compiles against.
+
+    Kept to @using lines only, per spec risk 2: a sample that needs more
+    scaffolding than a using is fixed in the PAGE (the markdown fence)
+    instead of here, so the prelude cannot grow into a second place a
+    sample's real dependencies live.
+
+    Components.Web is load-bearing for the same reason it is in every other
+    _Imports.razor in this repo (see samples/BlazorNative.SampleApp's copy):
+    without it, @bind/@onclick compile to literal markup with zero
+    diagnostics.
+    ─────────────────────────────────────────────────────────────────────────
+*@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using BlazorNative.Components
+@using BlazorNative.Core
+@using BlazorNative.Device
+@using BlazorNative.Runtime

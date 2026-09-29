@@ -2455,7 +2455,7 @@ public-API change.** Four workstreams, grown from three by a review finding and 
 
 ---
 
-### 🔄 Milestone 15 — A Standard for Pins  *(active — started 2026-09-22)* [status: active]
+### ✅ Milestone 15 — A Standard for Pins  *(complete — 2026-09-22 → 2026-09-26)* [status: complete]
 
 **Goal:** This repo defends its invariants with **drift pins** — tests that read source or config
 and assert two copies of one truth agree. There are **at least nineteen** of them and **four** manifests,
@@ -2464,6 +2464,9 @@ shared standard, and it shows. M15 establishes what a pin must do to be trusted,
 standard to every existing pin, and closes the backlog of missing and broken ones as
 **consequences rather than as nine separate errands**.
 **Started:** 2026-09-22
+**Completed:** 2026-09-26 · verdict **PASS WITH FINDINGS**, 8 MET, 3 MET NARROWLY, 0 NOT MET
+· [re-audit](../plans/2026-09-26-milestone-15-reaudit.md), after a first
+[audit that FAILED](../plans/2026-09-25-milestone-15-audit.md) and is kept on record
 **Design:** [`docs/superpowers/specs/2026-09-22-milestone-15-design.md`](../superpowers/specs/2026-09-22-milestone-15-design.md)
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Source:** M14's own audit. Its central criterion — *a NEW divergence reds* — was met **narrowly**,
@@ -2781,7 +2784,7 @@ mirror cannot drift either. **It must red before it is fixed.**
 > reds; the first draft of the list said it failed green, and the final review corrected it. No API, wire or ABI change:
 > outside tests and vectors, `MainActivity.kt` is the only `src` diff.
 
-#### Phase 15.4: The missing guards [status: active]
+#### Phase 15.4: The missing guards [status: complete]
 **Goal:** Close **#297** and **#302** — a pin that does not exist, and a release-notes guard that
 does not exist — each written to the 15.0 standard. Also **#375**, and with it the population-key
 decision 15.1 deferred here: `docs/plans/2026-09-22-phase-15.0-census.md` §9 asks whether the Rule 6
@@ -2791,6 +2794,7 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-24-phase-15.4-design.md`](../superpowers/specs/2026-09-24-phase-15.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-24-phase-15.4-missing-guards.md`](../superpowers/plans/2026-09-24-phase-15.4-missing-guards.md)
+**Completed:** 2026-09-25 · [PR #388](https://github.com/MarcelRoozekrans/BlazorNative/pull/388), guard follow-up [PR #392](https://github.com/MarcelRoozekrans/BlazorNative/pull/392)
 **Suite:** .NET **1169 → 1176** (Analyzers 27 · Renderer 140 · Runtime 1002 → 1009: five
 `PatchKindDriftTests` facts plus two `ReleaseParserVersionPinTests` facts) · Android instrumented
 228, iOS 271 and JVM 162 unchanged — no shell source moved.
@@ -2866,15 +2870,773 @@ see. Decide the key first; #375 follows from it rather than the other way round.
 > infrastructure before any test ran — a system-image download "Premature EOF" — passing on attempt
 > 2 with 228/0.
 
-#### Phase 15.5: Prose, and the small corrections [status: pending]
+#### Phase 15.5: Prose, and the small corrections [status: complete]
 **Goal:** Answer **#291** for the three unpinned documentation transcription pairs M14 found, and
 land **#298**, **#356**, **#365**.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-25-phase-15.5-design.md`](../superpowers/specs/2026-09-25-phase-15.5-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md`](../superpowers/plans/2026-09-25-phase-15.5-prose-and-corrections.md)
+**Completed:** 2026-09-25 · [PR #397](https://github.com/MarcelRoozekrans/BlazorNative/pull/397), record and final-review fixes [PR #399](https://github.com/MarcelRoozekrans/BlazorNative/pull/399)
+**Suite:** .NET **1176 → 1186** (Analyzers 27 · Renderer 140 · Runtime 1009 → 1019:
+`DocsSamplesDriftTests` +7 over three fix rounds · `DocsNameDriftTests` +2 · one fact grown onto
+`TextCollapseParityDriftTests`) · Android instrumented 228, iOS 271 and JVM 162 unchanged — no
+shell source moved. `#397` (the phase PR) merged as `0bdeb84` before this record was written, while
+`ci`, `ios` and `android-instrumented` were still running on its head; all three finished green on
+`1b675a9`, including the new "Docs samples compile" step (33 compiled, 3 skipped).
 
-#### Phase 15.6: Audit and close [status: pending]
+> **Outcome: the audit closes #291, the two guards it left behind close #298 for real, #365's three
+> prose pairs are answered one by one, and #356 is corrected everywhere without a behaviour change.**
+>
+> **The audit's headline: 46 false claims across 19 of the 20 hand-written pages, plus 6 coverage
+> gaps.** Only `migrating/typed-lengths.md` had nothing false. **The most consequential finding was
+> `api-stability.md`, the published compatibility contract**: its hand-maintained type counts were
+> stale, its PROVISIONAL table omitted `BnLog`/`BnLogLevel` and the whole `BlazorNative.Testing`
+> package, it said "six of seven packages" are baselined when seven of eight are, it linked a closed
+> docs issue as the ABI-growth case instead of the real one, and it told the page's own reader that
+> iOS "has never run on physical iOS hardware" — false since M14's device report on #17/#213. Nine
+> public types added since the tier table has no tier anywhere; the page now says so openly rather
+> than silently.
+>
+> **The two guards, `DocsSamplesDriftTests` and `DocsNameDriftTests`, are the docs pin pair #291
+> asked for — one fence parser (`tools/BlazorNative.DocSamples`), so the CI compile step and the
+> pins cannot disagree about what a fence is (Rule 8).** The CI "Docs samples compile" step compiles
+> every `component`/`file`/`statements` fence on the 20 pages, through the generator; `DocsSamplesDriftTests`
+> itself never invokes a compiler (its own Rule 5 says so) — it holds every fence to a declared kind.
+> `DocsNameDriftTests` resolves every inline `` `Bn…` ``/`` `BlazorNative…` `` span against the
+> shipped surface, shell declarations, tracked file names and analyzer string literals. **Three fix
+> rounds on the samples pin, each closing a real hole rather than a cosmetic one:** round 0 shipped
+> with **indented fences invisible end to end** — six `analyzers.md` samples, two spaces deep inside
+> list items, were unclassified and uncompiled while the pin stayed green; round 1 fixed the
+> CommonMark 0–3-space indent and found **four `skip` classifications that were dodges** under the
+> owner's no-workarounds rule rather than fences that were genuinely uncompilable, compiling all
+> four; the same round added the **named-component mechanism**, `bn-sample=component:<Name>`, so a
+> second fence on a page can reference the first one's generated file by name, which is what let
+> `testing-harness.md`'s `SettingsPage` and `state.md`'s `BnThemedPanel` compile as real cross-fence
+> consumers instead of being left as `skip`. Final counts: 63 fences on the 20 pages, 36 in the
+> compiled-language scope, of which 33 compile and 3 are genuinely uncompilable — a signature
+> listing and two ✗ counterexamples that compile-and-throw by design. S1–S10 mutation-proven,
+> including two vacuity contrasts (S4: the `migrating/*` version exemption passes, and reds when the
+> directory name is perturbed; S8: `HandWrittenPages` emptied with the floor assert deleted passes
+> over zero pages, proving the floor is what makes the fact mean anything). **The names pin's own
+> history is a narrowing, not a widening:** the shell-declaration source first attributed every
+> member in a file to every `Bn…` container that file declared — `BnWidgetMapper.swift` alone
+> declares 14 containers, so one local variable resolved as a member of all of them — fixed by
+> scoping to `func`/`fun` only, one container per file, the file's own stem. A later round nearly
+> widened .NET reflection to the full public-and-internal surface to resolve one real span,
+> `BnListWindow.Compute`; review called that a project-wide loosening and it was reverted to a
+> **line-scoped "internal" prose gate** instead — a non-public member resolves only on a doc line
+> whose prose says "internal" outside any backtick span, so code that merely contains the word
+> cannot open the gate. Final count: 266 resolved spans, re-measured after the audit's own edits
+> moved eleven of them off `api-stability.md`. N1–N6 mutation-proven, including the N6 vacuity
+> contrast and an N3 re-run that caught a real bug before it shipped: a directory merely containing
+> a dot (`BlazorNative.Apple`) was read as having a file extension, manufacturing a false resolution.
+> Both pins moved the .NET count by measurement at every round, never by computation, matching the
+> Global Constraint.
+>
+> **The widget pin, `TextCollapseParityDriftTests`' new fact, passed on #298's own regression in its
+> first committed form and was rewritten to compare the named class exactly.** The original fact
+> used `\bSwitch\b`, a word-boundary search over the whole claim text; run against `BnSwitch.razor`'s
+> real pre-fix wording, `"Android: SwitchMaterial/Switch."`, it **passed**, because `\bSwitch\b`
+> matches the standalone `Switch` after the slash without ever looking at what follows `Android:`
+> specifically — a false green on the exact defect the pin exists to catch. Rewritten to extract the
+> first token after `Android:` (and after `<c>…</c> on Android` in published docs) and compare it
+> with `==` against the shell's derived widget class, never a regex search over the whole file;
+> re-run against the same pre-fix text, it now reds naming `SwitchMaterial` against the derived
+> `Switch`. Widening the scan from a hand-picked file list to every `.razor`/`.cs` file under
+> `src/BlazorNative.Components`, and from internal comments alone to published `///` summaries too,
+> surfaced claims the original #298 grep sweep never found. **Six wrong widget claims in total:**
+> `BnSwitch` (#298 itself, `SwitchMaterial/Switch` → `Switch`, the framework widget), `BnCheckbox`
+> (`MaterialCheckBox` → `CheckBox`), `BnPicker` (bare `Spinner` → `BnSpinner`, a `Spinner` subclass),
+> `BnSlider` on iOS (`UISlider` → `BnSliderView`, the iOS 26 exact-value shim), `BnImage` on iOS
+> (`UIImageView` → `BnImageView`, which carries the decoded pixel size), and `BnView` on Android
+> (`FrameLayout` → `BnYogaFrameLayout`, which suppresses the framework's own layout pass). Two
+> separate floors, one per scan: `floor: 5` for internal-comment claims and `floor: 11` for
+> published-doc claims, measured once the scan moved from `Match` to `Matches` in the second fix
+> round, so each means "every occurrence found" rather than "whichever occurrence came first".
+>
+> **F6, F7 and F8 — #365's three prose pairs — answered one by one, with the DoD's own reasoning for
+> whether each is pinned.**
+> - **F6** — stale "nine exports" prose in three CI comments, two of them never touched by the PR
+>   that claimed to have fixed all copies. **Not pinned, not needed: the duplicate was removed**, so
+>   the count now appears only in the assertion that holds it. Each comment points at that assertion
+>   instead of repeating the number, so there is no second copy left to drift out of step.
+> - **F7** — `GITHUB-SETUP.md` and `ios.yml` both called the device leg "already-required" when only
+>   its *result* is gated through the required `ios-build` aggregator, not its own context.
+>   **Pinned: no.** This is prose against prose about CI state — a test would only restate whichever
+>   side it chose, and the truth lives in GitHub's live branch protection, not in anything the repo
+>   itself carries. Corrected in both files and recorded with this reasoning, not tested.
+> - **F8** — the device-verification handover's own DoD item still asked for the device-build lane
+>   Phase 14.4 already built. **Pinned: no**, for the same reason as F7: a claim about what CI state
+>   already exists, checked against no mechanism but a reader, and no more provable by a repo-local
+>   test than F7 is. Corrected to match the handover's own `:315–319`.
+>
+> **#298 and #356, and the split issue.** #298's own component, plus five siblings the widened scan
+> found, are corrected in both their internal comments and their published XML docs, held to
+> `TextCollapseParityDriftTests`' new fact. #356's secure-storage legend is corrected in its three
+> copies together — `BnSecureStorage.swift`, `ShellBridge.kt` plus its byte-identical template
+> mirror, and `IMobileBridge.cs`'s public XML doc — scoped to the Android auth-bound **SET** path
+> the code actually reaches (`getWithAuth` of an existing item cannot produce `Unavailable`; a
+> denied or unavailable prompt there always folds to `AuthFailed`), with iOS's matching behaviour
+> stated as **not established**, pointing at the split issue **#396**: *"iOS secure storage on an
+> unenrolled device may return Ok where Android returns Unavailable."* #396 pre-existed at task
+> start and was verified against the brief's requirements rather than refiled. `git diff --stat` and
+> a hunk-by-hunk read of every `src/` change in both tasks confirm comments and XML docs only, and
+> `git diff -- '**/PublicAPI*'` is empty.
+>
+> **Owner decisions left open, both already surfaced rather than buried.** Nine public types added
+> since the tier table has no tier anywhere; the list now lives in
+> `docs/plans/2026-07-21-phase-11.3-api-tiers.md` §8, "Not yet tiered — pending owner decision", and
+> `api-stability.md` links it by name and count-free. The audit record's `## Code questions raised`
+> holds seven items the audit found but did not fix in place, since fixing them changes behaviour or
+> API tiers — five are still open, and two (the `Directory.Build.targets` "Six packages" comment and
+> the version guard's `v`-prefix gap) were closed in fix round 1. Headline open ones: the
+> stderr-pump twin divergence between iOS's `BnStderrPump.sink` (re-gates at the shell's level) and
+> Android's `toLogcat` (does not), and the `IMobileBridge` consume-only policy gap `HostSession.cs`
+> enforces for `INavigationManager` but not for `IMobileBridge`.
+>
+> **The live red.** Commit `bd0ab8b` broke `guides/safe-area.md` fence 1 with `Padding="16px"` on
+> this follow-up branch, `docs/15.5-record`, since the phase PR's own live-red step could not run
+> before the owner merged #397. [CI run
+> 36119508755](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/36119508755) **FAILED**,
+> and the only failing step was "Docs samples compile", naming `CS1003` in
+> `Website_docs_guides_safe_area_1.razor` — the sample the mutation broke, by name, exactly as the
+> pin's own doc comment promises a docs-sample break will fail. Reverted as `ae99eab`.
+>
+> **Not covered — each pin's Rule 5 list, one line each.** `DocsSamplesDriftTests`: whether a sample
+> *means* what the prose around it claims is never checked; a `skip` sample is held only to carrying
+> a reason, never compiled; the actual build runs in CI, not in this test. `DocsNameDriftTests`: a
+> name's prose meaning is unchecked — a real type can still expire out from under a true sentence; a
+> span without the `Bn`/`BlazorNative` prefix is invisible to it; a member is checked to exist, not
+> to carry the signature the prose implies; the shell-member map is file-scoped, not brace-scoped,
+> so an unrelated `func` in the same file as a matched container could in principle borrow its name;
+> the "internal" gate is whole-line, not clause-scoped, and covers a dotted member only, never a
+> bare non-public type name. `ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds`: iOS
+> claims are prose against `BnWidgetMapper.swift`'s `switch` arms, not a parseable table the way
+> Kotlin's `when` is, so only the Android side is mechanically checked; a claim with no literal
+> `Android:`/`<c>…</c> on Android` marker, or one stated only in free prose, is checked by hand and
+> is not scanned.
+
+#### Phase 15.6: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M15. **No tag** — the
 8.6 rule, and `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**Surface:** Docs
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-25-phase-15.6-design.md`](../superpowers/specs/2026-09-25-phase-15.6-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md`](../superpowers/plans/2026-09-25-phase-15.6-audit-and-close.md)
+**Completed:** 2026-09-25 · [PR #408](https://github.com/MarcelRoozekrans/BlazorNative/pull/408) — the audit phase is complete; the milestone is not, see 15.7–15.8
+
+> **Outcome: the audit FAILS, and that is the audit working.** [`docs/plans/2026-09-25-milestone-15-audit.md`](../plans/2026-09-25-milestone-15-audit.md)
+> records 7 MET, 2 MET NARROWLY and 2 NOT MET:
+> - **Item 4, every pin assessed: NOT MET.** `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests`
+>   are named as pins in this milestone's own MILESTONE.md, but they do not read the tree. So they
+>   are outside the census population, and neither has a verdict anywhere. This is the hole census
+>   §9 warned about.
+> - **Item 8: NOT MET.** #357's fix landed in 15.1, but the issue was never closed, and the census
+>   claimed twice that it had been.
+>
+> Seven carried items are filed as #401–#407, beside #396. The owner chose to keep the FAIL on
+> record, close the gaps in 15.7, and re-audit in 15.8.
+
+#### Phase 15.7: Close the audit gaps [status: complete]
+**Goal:** Close the two NOT MET items from the 15.6 audit, and one overclaimed register row:
+- close **#357** with its evidence;
+- give `LayoutSurfacePinTests` and `DefaultStructTrapSweepTests` a verdict, and sweep the remaining
+  non-population test files once for in-memory two-copy pins, so that the non-tree population is
+  measured instead of assumed;
+- make `RouteMenuDriftTests`' register row true for every fact, and give its Rule 3 status a
+  disposition;
+- file the three unfiled 15.2 residuals.
+**Surface:** Mixed
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-15.7-design.md`](../superpowers/specs/2026-09-26-phase-15.7-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md`](../superpowers/plans/2026-09-26-phase-15.7-close-the-audit-gaps.md)
+**Completed:** 2026-09-26 · [PR #415](https://github.com/MarcelRoozekrans/BlazorNative/pull/415)
+**Suite:** .NET 1186 → 1200, measured; Android 228, iOS 271 and JVM 162 unchanged.
+
+A read-only sweep of every non-tree test file
+([`docs/plans/2026-09-26-phase-15.7-nontree-sweep.md`](../plans/2026-09-26-phase-15.7-nontree-sweep.md))
+read all 93 files that hold a `[Fact]`/`[Theory]` and never reach the tree, found 15 of them holding
+pins, 40 pin facts total, and gave every fact a per-rule verdict; 29 facts had gaps. **Every pin
+fact now has a verdict: 25 of the 29 gap facts now conform on every rule, 1 was retired as a
+tautology, and 3 remain partial** (rows 12 and 15 on Rule 2, row 38 on Rules 3 and 5). Outside the
+40, group C stays partial on Rule 2, group E on Rule 5, and group D has no floor of its own. The
+remaining partials are named per row in the register. Every mutation table, the row 37 provenance trace, the Activator proof and
+the row 17 decision are transcribed into
+[`docs/plans/2026-09-26-phase-15.7-record.md`](../plans/2026-09-26-phase-15.7-record.md), which
+survives after the phase's gitignored SDD reports are deleted; `docs/pin-standard.md`'s register
+points there for its Rule 7 cells.
+
+**The fixes, by family:**
+- **Layout surface** (`LayoutSurfacePinTests`, `LayoutSurfaceSequenceBandTests`, rows 5–15 and group
+  D): a third hand copy of the item/container surface, `ItemNames`/`ContainerNames`, was pinned back
+  to the declaration; the component-derivation and redeclaration sweeps got measured floors, a
+  `BnView` anchor and fixed-point controls; the collision and band sweeps got per-row floors and
+  controls fed synthetic `RenderTreeBuilder` frames.
+- **Struct trap, lengths, binding frames, enum prefixes** (rows 19–22, 28, 35, group F): the
+  struct-trap sweep now compares `new T()` against the primary constructor's declared defaults by
+  **value**, not by existence of a ctor, catching a `WrongValueFixture` the old check missed; nested
+  public value types are now swept; the length, binding-frame and enum-prefix sweeps each got a
+  measured floor and an extracted-detector control.
+- **Style partition, route menu, image polish, forwarded names** (rows 1, 2, 4, 37, 38, groups C and
+  E): the route-menu absence detectors got extracted helpers and planted-ghost/planted-dangling
+  controls; four tautological image-polish fixture equalities were deleted and the one genuine
+  two-literal pin was kept; a Rule 5 note was added for the near-tautological forward-target facts.
+- **Rule 5 disclosures** (rows 17, 23, 24–26, 27, 30): each remaining pin got a "what this does not
+  cover" block; row 17 was **widened** rather than merely disclosed, to sweep all seven shipped
+  packages instead of two, proven by a mutation against a planted stray mark.
+
+**Row 37 decision: retired.** `NativeRenderer.StyleAttributes` is defined as the union of its two
+halves, both generated from `src/wire-vocabulary.json`, and the union already has two independent
+pins in `WireVocabularyCodegenTests`. No independent third copy exists, so the fact was retired as a
+tautology, per the NavigationTests 7.6 precedent, rather than re-pointed.
+
+**#357: closed 2026-09-25 by #408's merge, through an accidental "close #357" keyword in that PR's
+next-steps list.** The fix itself is d481dae / #377, from Phase 15.1. 15.7 did not close it; it
+found the issue already closed and posted an evidence comment. Do not credit 15.7 with the close.
+
+**Issues filed:** #411 (subtractive build calls — `setSrcDirs`, a singular `srcDir`, XcodeGen
+excludes — pass the shell source roster's derivation check), #412 (the template's
+`build.gradle.kts` is an unread second record of the shell source dirs), #413 (ten CS1570
+malformed-XML doc-comment warnings in the test tree, hidden until `GenerateDocumentationFile`),
+#414 (a tree-reading differential pin for cross-language ABI and wire constants, read from Kotlin,
+Swift and C and compared with .NET, replacing group A's common-mode-blind half-pins).
+
+**What each pin still does not cover** is stated per row in `docs/pin-standard.md`'s register, under
+the Rule 6 heading "The register — pins that do not read the tree".
+
+**Lesson:** a PR body's next-steps list can close an issue through GitHub's keyword matching, so
+write "#N to be closed", never "close #N".
+
+#### Phase 15.8: Re-audit and close [status: complete]
+**Goal:** Re-run `audit-milestone` on live evidence after 15.7, and close M15 if every DoD item is
+MET or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-15.8-design.md`](../superpowers/specs/2026-09-26-phase-15.8-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md`](../superpowers/plans/2026-09-26-phase-15.8-reaudit-and-close.md)
+**Completed:** 2026-09-26 · [PR #419](https://github.com/MarcelRoozekrans/BlazorNative/pull/419)
+**Audit:** [`docs/plans/2026-09-26-milestone-15-reaudit.md`](../plans/2026-09-26-milestone-15-reaudit.md)
+**Suite:** .NET 1200 → 1201, from a clean rebuild; Android 228, iOS 271 and JVM 162 unchanged.
+
+**The re-audit failed once before it passed, and both results are on record.** The first draft
+scored item 4 MET NARROWLY; the reviewer ruled it NOT MET, because the non-tree register assessed
+pins against Rules 2, 3, 5 and 7 and never against Rule 4, a minimum clause of DoD item 3. The
+owner ruled "fix inside 15.8, record both": the FAIL was committed on its own, every register row
+then got a Rule 4 cell citing a mechanism checked against the code, `BnActivityIndicatorTests` was
+registered, census row 27a was split, and the two reviewer mutations that had survived now red.
+Item 4 re-measured MET NARROWLY; final verdict **PASS WITH FINDINGS**, 8 MET, 3 MET NARROWLY, 0 NOT
+MET. Filed: #417 (unpinned cross-language demo goldens and the `BuildHostGraph` mirror), #418 (test
+warnings: 46 BL0006, 2 CS8669).
+
+**Lesson:** a plan that narrows a DoD clause to a subset of the rules produces an audit that
+inherits the narrowing. The 15.7 plan listed Rules 2, 3, 5 and 7; the DoD named Rule 4.
+
+---
+
+### 🔄 Milestone 16 — Unblock the Dispatch Lane  *(active — started 2026-09-26)* [status: active]
+
+**Goal:** Give the renderer one .NET-owned thread so exports stop blocking on async handlers —
+freeing the shell's dispatch lane (#345), taking Android back off the main thread (#346), and
+delivering faults after the first await to the shell (#8) — with **no ABI change**. Today the
+lane-blocking `GetAwaiter().GetResult()` is both the deadlock and, by accident, the only thing
+serialising renderer work, so the two must be separated rather than the wait simply removed.
+**Started:** 2026-09-26
+**Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
+· full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Closes:** #345, #346, #8. **Re-assesses on measurement:** #9. Five phases after the 2026-09-26 fold.
+
+#### Phase 16.0: The render-thread spike [status: complete]
+**Goal:** Measure whether a .NET-owned single-thread dispatcher can replace `InlineDispatcher` —
+exports post and wait for the synchronous part, continuations marshal back — against all tests,
+`MountSyncTests`, the navigation dispatch-window tests, and 13.2's `Dispose → InvokeAsync`
+recursion. Output a measured go/no-go; **a no-go stops M16 and goes to the owner.**
+**Surface:** Backend
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-16.0-design.md`](../superpowers/specs/2026-09-26-phase-16.0-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md`](../superpowers/plans/2026-09-26-phase-16.0-render-thread-spike.md)
+**Completed:** 2026-09-26 · [PR #422](https://github.com/MarcelRoozekrans/BlazorNative/pull/422)
+**Conclusion:** [`docs/plans/2026-09-26-phase-16.0-spike-conclusion.md`](../plans/2026-09-26-phase-16.0-spike-conclusion.md)
+
+**PROCEED, not a clean GO.** 5 of 7 criteria met: G2, G4, G5 and G7 cleanly, and G3 on its named
+tests only. G1 and G6 fail as written. No failure is unfixable, so, per the spec's rule, M16
+proceeds and every failure is a named 16.1 requirement. There are **11**. The spike code stays on
+`spike/16.0-render-thread` at `9df59f0`, unmerged. #345 is freed on the spike: the export returns
+within 1 s with the host call open, and the continuation renders on the render thread. The thread
+hop costs microseconds.
+
+**The finding that matters most:** a navigation issued while another handler is suspended waits
+for that handler, because one capture-window depth counter spans the `await`. It caused four of
+the six JVM failures, and it is requirement 1.
+
+**Lesson, the near-miss:** the first JVM run reported a false 162/0. The win-x64 NativeAOT publish
+failed because `vswhere` was not on the shell PATH, and Gradle loaded a stale library built from
+`main`. Check the publish exit code and the library's timestamp before trusting a JVM count.
+
+#### Phase 16.1: The render thread [status: complete]
+**Goal:** Replace the inline dispatcher with a .NET-owned render thread and carry the 16.0 spike's
+11 requirements: correct the false `Exports.cs` comment first, free the lane on yield and flip
+`DispatchLaneBlockingTests`, scope the capture window per dispatch, pin render-thread ownership,
+move `MountSyncTests` from the type name to behaviour, write the rc contract once, make shutdown
+quiesce, and fix both shells' frame paths. **Also delivers async faults** — a reserved notice op
+over `hostCallBegin`, routed to both shells' `onError` — folded in from the former 16.2 so there is
+never a merged state where a fault after the first await is only logged. Closes #345 and #8.
+> **Renumbered 2026-09-26.** The former Phase 16.2 "Async faults" was removed and folded into 16.1,
+> so the former 16.3, 16.4 and 16.5 are now 16.2, 16.3 and 16.4. The 16.0 conclusion keeps the old
+> numbers as written: its "16.2" means 16.1, its "16.3" means 16.2, and its "16.4" means 16.3.
+**Surface:** Backend
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-26-phase-16.1-design.md`](../superpowers/specs/2026-09-26-phase-16.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-26-phase-16.1-render-thread.md`](../superpowers/plans/2026-09-26-phase-16.1-render-thread.md)
+**Completed:** 2026-09-27 · [PR #428](https://github.com/MarcelRoozekrans/BlazorNative/pull/428) · #345 and #8 closed with evidence
+
+> **16.1 outcome: the render thread shipped, #345 and #8 are fixed in code, and all 11 spike
+> requirements are accounted for. Three are carried in part, and each is named below.** The
+> issues are to be closed by the phase PR: #345 and #8.
+
+**What shipped:**
+- **The dispatcher.** `InlineDispatcher` is gone. Each `NativeRenderer` now owns a
+  `RenderThreadDispatcher`: one background thread named `BlazorNative-Render`, a single-threaded
+  `SynchronizationContext` and an honest `CheckAccess()`. Every entry point that mutates the
+  renderer is marshalled onto that thread and waits there. That covers mount, unmount, the root
+  swap, dispose, `RunAfterDispatch` and every `host_event` arm.
+- **Exports wait for the synchronous part only.** A handler that awaits frees the shell's lane at
+  its first await. The capture window belongs to one dispatch, not to the renderer. A late fault
+  is attributed to its own handler through an `AsyncLocal` scope, in production mode as well as
+  strict.
+- **Fault delivery.** A fault after the first await is sent to the shell as a `FaultNotice` host
+  call, op 5, over the existing `hostCallBegin` slot. Its args are exactly `handlerId`, `event`,
+  `type` and `message`, never the stack or the payload. Both shells route it to `onError`.
+  `HostCallOp` is now generated from `src/wire-vocabulary.json` in C#, Kotlin and Swift, with the
+  ids 0–4 frozen.
+- **Shutdown quiesces.** A counted, two-epoch frame gate closes, and shutdown drains the
+  callbacks already in flight. It then clears the pointer and joins the render thread, bounded at
+  5 s. Re-registering a callback waits out any callback still holding the old pointer. Work that is
+  pending at shutdown ends `Canceled`. `ResetForTests` joins every session thread, and it never
+  waits under `s_lock`.
+- **The shells.** Kotlin checks that frames have a single producer. The Kotlin and Swift comments
+  that claimed "frames only inside host calls" and "a retired runtime is fully quiescent" are
+  rewritten. There is a new XCTest twin of the lane pin.
+- **No ABI change.** `BlazorNativeRuntimeC.h` differs from `main` in comment lines only, and the rc
+  contract is written there and in `Exports.cs`.
+
+**Requirement by requirement.** The requirements are the 16.0 conclusion's §5. Each row is checked
+against the tree at `a2c6a9d`.
+
+| # | Requirement | Commits | Pins | Status |
+|---|---|---|---|---|
+| — | The false `Exports.cs` "non-blocking" comment, truth first | `f13bcd8` | none; it is a comment | Met |
+| 1 | A capture window per dispatch | `fdde723` `96b41d1` `5f942cd` `785e998` | `DispatchWindowScopeTests`: `ANavigationDuringAnotherHandlersSuspension_SwapsBeforeItsOwnExportReturns` and its control, `AFaultInASecondDispatch_IsAttributedToIt_NotToTheSuspendedFirst`, `ANavigationQueuedInsideANestedDispatch_…` | Met |
+| 2 | The shells' frame paths | `fdde723` for the `Exports.cs` comment, `521d4c3` for Kotlin and Swift | JVM `FrameProducerTest` ×3, and the flipped `DispatchEventTest.async_dispatchEvent_rerenders_serially_on_one_non_lane_thread` | **Met on Android, partial on iOS.** Kotlin's single-producer check reports to `onError` and still delivers the frame. On iOS the trampoline was audited, and the mapper already hops to `DispatchQueue.main`, but no iOS pin asserts a single producer |
+| 3 | No callback in flight when the pointer is cleared | `094f8f9` `2555dc3` `8a978ad` | `Shutdown_WaitsForACallbackAlreadyInFlight`, `SetFrameCallback_DoesNotReturn_WhileAnOldCallbackIsInFlight`, `…TwoSequentialRegistrations_WaitForAnEntryThatStraddledTheFirstFlip` | Met |
+| 4 | Teardown: no wait under a lock, a deliberate post-shutdown policy, no thread leak | `55290d2` `64ced82` `094f8f9` `2555dc3` `bb45ee7` | `ResetForTests_DoesNotWaitWhileHoldingTheSessionLock`, `ResetForTests_JoinsTheRenderThread_AndLeaksNone`, `WorkPostedAfterShutdown_CompletesCancelled_NeverHangs`, `AnAwaitInFlightAtShutdown_…`, `APendingHandler_EndsCancelled_…`, `APendingHostEvent_EndsCancelled_AtShutdown` | **Met for session threads, partial for others.** A renderer that is built directly and never disposed still leaks one blocked background thread. This is disclosed in `ShutdownQuiescenceTests`' header. Production shutdown joins the thread but does not dispose the old session's components |
+| 5 | Marshal every `host_event` arm deliberately, and pin each one | `fdde723` `96b41d1` `5f942cd` | `HostEventArmThreadTests.EveryHostEventArm_RunsItsComponentCode_OnTheRenderThread` and its control | Met. The arms wait for the synchronous part. Taking back off Android's main thread is 16.2's job |
+| 6 | `ConfigureAwait(false)` followed by a re-render | none needed; see the audit below | none | **Audit met. The rest is carried.** The rule goes on 16.3's app-author page, per owner decision 4. The analyzer is #427 |
+| 7 | Flip the tests that M16's DoD names, and delete none | `55290d2` `fdde723` `521d4c3` | `RenderThreadWarningTests` ×2, `MountSyncTests.Renderer_mounts_synchronously_on_its_render_thread`, `DispatchLaneBlockingTests.…_ReturnsWhileTheCallIsOpen`, JVM `HostEventTest.dispatchHostEventAndWait_returns_while_a_handler_holds_a_host_call`, JVM `DispatchEventTest` frame thread | Met. All six were flipped and none was deleted |
+| 8 | JVM tests that suit a shared session which is never reset | `521d4c3` | `HeldCameraCall.kt`; every held call completes in a `finally`; the #346 flip asserts no rc | Met |
+| 9 | Thread-identity pins use the renderer under test | `55290d2` onward | Every thread assertion compares with `renderer.RenderThreadId` | Met |
+| 10 | A deliberate policy for render-thread exceptions | `55290d2` `64ced82` | `AThrowFromPostedWork_ReachesTheUnhandledExceptionSink`, `SendPropagatesTheException_ToItsCaller` | Met. The process crashes as on `main`, by owner decision 2 |
+| 11 | The Kotlin quiescence claim | `094f8f9` `521d4c3` `a2c6a9d` | .NET `ShutdownQuiescenceTests`; JVM `ShutdownQuiescenceTest` and its control; JVM `RetireLateContinuationTest`, a hazard pin | **Met, by correcting the claim.** `shutdown()` is quiescent and pinned. `retire()` is not, and the comments now say so. Whether `retire()` should quiesce is #425 |
+| #8 | Fault delivery, folded in from the former 16.2 | `a72dd2b` `54bc744`, on top of requirement 1's attribution | `FaultNoticeTests` (10 cases, all in production mode), JVM `FaultNoticeTest` ×2, XCTest `BnFaultNoticeTests` ×4, `WireVocabularyCodegenTests.TheHostCallOps_KeepTheirFrozenIds` | Met. An older iOS shell only logs the notice, as described below |
+
+**The `ConfigureAwait(false)` audit, re-measured at `a2c6a9d`.** The command was
+`grep -rn "ConfigureAwait(false)" samples templates src --include=*.cs --include=*.razor`, excluding
+`bin`, `obj` and generated files. **It found 20 hits, all in library code and none in a component
+or in `samples/` or `templates/`, and no render follows any of them on the same path.** The pre-plan
+count was 18. The two new hits are 16.1's own:
+- `NativeShellBridge.cs`, 18 hits, at lines 345, 436, 443, 487, 591, 662, 669, 676, 683, 690, 754, 763,
+  776, 783, 794, 801, 906 and 916. Seventeen are the host-call plumbing and the capability facades
+  over it. They return a value to their caller, and they never render. The new one, at `:591`, is in
+  `AwaitFaultNotice`, which logs and disposes a timeout.
+- `Biometrics.cs:20` maps a status to a `bool`, and it does not render.
+- `NativeRenderer.cs:1656` is new. It is in `AwaitWholeHandler`, which marks the scope `Done` and
+  rethrows a late fault. It does not render. Its only in-process awaiter is `DispatchUiEventAsync`,
+  which awaits it inside `Dispatcher.InvokeAsync` without `ConfigureAwait`, so it resumes on the
+  render thread.
+
+No hit needed a fix. #427 is the analyzer that would catch a component doing this.
+
+**Counts, measured on `a2c6a9d`.** The .NET build was a clean
+`dotnet build BlazorNative.sln --no-incremental -v q`: 0 errors, and 24 warnings that already
+existed, BL0006 and CS8669 in the test project. The JVM run followed a fresh
+`dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4 IL2072
+and wrote a dll newer than the stamp. Gradle then ran with `--rerun`. A local JVM run on a machine
+where no bionic `.so` has been built also needs `-PciSoDir=<bionic publish dir>`; without it
+`verifyNativeAssets` fails before any test runs. #424 covers the related UP-TO-DATE trap.
+
+| Surface | Before (`main`) | After | Change |
+|---|---|---|---|
+| .NET total | 1201 | **1255** | +54 |
+| · Renderer | 139 | 147 | +8: `RenderThreadDispatcherTests` |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1035 | 1081 | +46: `DispatchWindowScopeTests` 10, `ShutdownQuiescenceTests` 20, `FaultNoticeTests` 10, `HostEventArmThreadTests` 2, `WireVocabularyCodegenTests` +3, `GeneratedSymbolShadowTests` +1 |
+| JVM | 162 | **170**, 0 failed | +8: `FaultNoticeTest` 2, `FrameProducerTest` 3, `ShutdownQuiescenceTest` 2, `RetireLateContinuationTest` 1 |
+| iOS | 271 | **276** | +5: `BnFaultNoticeTests` 4, `BnDispatchLaneTests` 1. Measured on the ios lane, run 36283515416 at `521d4c3`, with 276 passed and 0 failed. No Swift changed after `521d4c3` |
+| Android | 228 | 228 | No instrumented test was added. The android-instrumented lane, run 36283514207 at `521d4c3`, was green at 228 |
+
+**Notable mutations.** Every mutation below went red unless it is marked otherwise. The per-pin
+tables are in the register in `docs/pin-standard.md`.
+- **The #345 flip:** putting back `GetResult` in `DispatchEventCore` reds the flipped lane pin with
+  "did NOT return within 1s".
+- **The cascade:** keeping the capture window open across the await, which is the old depth-counter
+  shape, reds only the cascade pin. Every `DispatchEventTests` fact stayed green.
+- **Production attribution:** removing the `AsyncLocal` branch in `HandleException` reds the
+  production-mode pin, which reports "pending Task ended RanToCompletion". The strict control stays
+  green, and that contrast is the whole of the lesson below.
+- **Fault delivery:** removing `DeliverLateFault` from `ObservePendingDispatch` reds 5 of the 10
+  `FaultNoticeTests` cases.
+- **The gate:**
+  - removing the epoch re-check in `TryEnter` reds the straddle pin;
+  - a `TryEnter` that ignores `closed` reds `Shutdown_ReturnsWithinBudget_…`;
+  - a drain that does not wait reds `Shutdown_WaitsForACallbackAlreadyInFlight`.
+- **JNA:** without `CallbackThreadInitializer`, the JVM frame flip reads `got [Thread-6, Thread-7]`.
+  JNA attaches a native thread for one callback and detaches it on return, so every frame arrived
+  on a new Java thread.
+- **Equivalent mutants, which stayed green:**
+  - Clearing the pointer before the drain. The sink reads the pointer inside the gate.
+  - Losing only the gate close, or only the join, against the JVM shutdown pin. Either mechanism
+    alone still quiesces that scenario. The .NET `ShutdownQuiescenceTests` pin each one separately.
+- **Pins with no recorded red:**
+  - The XCTest twin `BnDispatchLaneTests` has never been run red. Its red on the old runtime is
+    argued by reading.
+  - `BnFaultNoticeTests` has no mutation.
+
+**Behaviour changes, for the changelog and for shell authors:**
+- **rc now reports the synchronous part only.** `dispatch_event` returns 0 once a handler has
+  yielded, and that says nothing about the continuation. A later fault reaches the shell as a
+  `FaultNotice`, not as rc 2.
+- **`Shutdown` detaches the session.** A mount after shutdown builds a fresh session, with a new
+  renderer and a new render thread, and `TryMount_AfterShutdown_BuildsAFreshSession` pins this.
+  Before the detach, the dead session answered rc 2 to everything for the life of the process.
+  Until something mounts again, these calls return rc 1, which was read from `Exports.cs` and is not
+  pinned:
+  - `dispatch_event`;
+  - the reserved `host_event` arms: `back`, `navigate` and `safeAreaChanged`.
+
+  A passthrough host event, such as a lifecycle event, still runs the app multicast on the caller's
+  thread and returns 0 or 2.
+- **Frames arrive from the .NET render thread.** That covers continuations, which come with no
+  export in progress. JNA keeps that thread attached as one daemon named `BlazorNative-Render`,
+  where before it attached and detached for each frame. Only the JVM lane and the green
+  android-instrumented run at `521d4c3` have seen this; no hardware has run it yet.
+- **An older iOS shell only logs a FaultNotice.** Its unknown-op branch completes the call with
+  Error through `BnLog.warn`, and the fault never reaches `onError`. An older Android shell's
+  unknown-op branch does call `onError`.
+- **`onError` can run on any thread,** including a .NET thread-pool thread for a FaultNotice.
+- **An off-thread render now throws under `StrictErrors`.** Without `StrictErrors` it warns. A
+  component that calls `StateHasChanged` after `ConfigureAwait(false)` gets Blazor's own
+  "not associated with the Dispatcher" exception.
+
+**Issues filed:**
+- **#424:** Gradle's `testDebugUnitTest` does not declare the native dll as an input, so a run can
+  be a stale `UP-TO-DATE`. Use `--rerun`.
+- **#425:** `retire()` does not quiesce .NET, which is a late-continuation hazard on Activity
+  recreation. It is pinned by `RetireLateContinuationTest`, and it needs a decision.
+- **#426:** a FaultNotice's `message` is logged unredacted by Android's `Log.e` in Release builds.
+  iOS redacts it.
+- **#427:** an analyzer for `ConfigureAwait(false)` followed by a render.
+
+**Open questions for the owner:**
+- **#426, privacy:** should the notice's exception message be redacted, dropped, or kept on
+  Android? The behaviour was deliberately left unchanged overnight.
+- **#425:** should `retire()` quiesce .NET, or should the shell be designed for late frames?
+- **Uncommitted edits were reverted on disk during Task 4, three times, and the cause is unknown.**
+  Twice it hit `src/` files and once `Exports.cs`. No agent was live at the third revert, and no IDE
+  or watcher process was found. Only the files the implementer had open were affected, never the
+  test file. The mitigation was to commit before every test run, and to run reviewers' probes in a
+  separate worktree. Task 5 reported no recurrence, and none was seen while this record was written.
+- **One register partial found while writing this record, and not fixed here.** Three absence
+  assertions in `DispatchWindowScopeTests` match the literal log text "after the handler's first
+  await". If that text is reworded, they pass while checking nothing. The Rule 4 cell of that row
+  names it.
+
+**Lesson:** strict-mode tests hid a production-only fault path. Every test harness sets
+`StrictErrors = true`, and there Blazor's rethrow faults the handler's Task. In production,
+`HandleException` only logged the fault, so the Task completed successfully and the planned
+FaultNotice could never have fired on a device. The first design passed every test. **Every fault
+pin in 16.1 now runs in production mode, and strict mode appears only as a control.**
+
+#### Phase 16.2: Back and navigation off the main thread [status: complete]
+**Goal:** Push `canGoBack` from .NET and toggle Android's `OnBackInvokedCallback` to match; make back
+and deep-link navigation fire-and-forget on both shells; write and test the stale-window rule;
+update `src/dispatch-surface.json`, add the iOS twin pin, and update the template mirrors. Closes
+#346.
+**Surface:** Mixed
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-27-phase-16.2-design.md`](../superpowers/specs/2026-09-27-phase-16.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.2-back-off-main.md`](../superpowers/plans/2026-09-27-phase-16.2-back-off-main.md)
+**Completed:** 2026-09-27 · [PR #431](https://github.com/MarcelRoozekrans/BlazorNative/pull/431) · #346 closed with evidence
+
+> **16.2 outcome: no main-thread entry point waits on .NET any more, on either shell.** Android's
+> back is driven by a back state that .NET pushes, and deep-link and notification navigation are
+> fire-and-forget on both shells. #346 is to be closed after the phase PR merges.
+
+**What shipped:**
+- **Two notice ops.** `src/wire-vocabulary.json` gains `BackState` = 6, with args exactly
+  `{"canGoBack":"true"|"false"}`, and `BackUnhandled` = 7, with args `{}`. Both are generated into
+  C#, Kotlin and Swift, and both ride FaultNotice's fire-and-forget delivery over the existing
+  `hostCallBegin` slot. **No ABI change:** no header differs from `main`.
+- **The order.** `NativeNavigationManager` sends `BackState` from the swap unit's new `beforeSwap`
+  step. It carries the value the navigation is about to produce, because a swap's frames are
+  emitted before `afterSwap` records the route. A failed swap resends the held value. Every mount
+  resends the back state, even unchanged. Every rc-1 back sends `BackUnhandled` first: at the root,
+  with no session, and a back that yields and later resolves false.
+- **Android.** One AndroidX `OnBackPressedCallback`, enabled only while .NET can go back or a modal
+  is open. `BackStateBuffer` holds each value until the first frame batch that is NOT removal-only,
+  and `WidgetMapper` applies it at the end of that batch's own main-thread runnable. So back changes
+  with the page, never with the blank removal frame before it. Disabled, back takes the platform
+  default. Enabled, the press goes to .NET fire-and-forget. `BackUnhandled` hands the press back to
+  the platform default through `handBackToPlatform`, which restores the callback afterwards.
+  `registerPredictiveBack`, the `OnBackInvokedCallback` and the `onBackPressed` override are gone.
+- **`androidx.activity` 1.9.3,** pinned explicitly in the shell's and the template's Gradle files.
+  The transitive 1.1.0, through biometric and fragment, predates the dispatcher's predictive-back
+  integration, which arrived in 1.6.0. 1.10.x fails `checkDebugAarMetadata` because it needs
+  compileSdk 35; that was measured with 1.10.1.
+- **Fire-and-forget navigators.** Android's `onNewIntent` and both iOS navigators, the deep link's
+  and the notification tap's, call `dispatchHostEvent`. The iOS closures are now
+  `(String) -> Void`, since a fire-and-forget call has no rc.
+- **iOS arms.** `AppleShellBridge` has `backState` and `backUnhandled` arms that complete OK with no
+  payload. iOS has no system back, so they do nothing else. `completeFaultNotice` is renamed
+  `completeNotice`.
+- **`dispatchHostEventAndWait` is internal and test-only, held by three mechanisms, not two.**
+  Kotlin was already `internal` since 14.0, and Swift already defaulted to `internal`; the Swift
+  keyword is now explicit — but `internal` alone stops nothing a same-module or same-target caller
+  could not already do, and the final review proved it by reverting a fire-and-forget call back to
+  the blocking one and watching every existing gate stay green. So three mechanisms hold it: the
+  keyword itself; `src/dispatch-surface.json`'s `"visibility": "internal"`, held by a .NET
+  differential pin and a JVM `KVisibility` pin; and a new source scan,
+  `GeneratedSymbolShadowTests.NoShippedShellSource_CallsTheBlockingHostEventDispatch`, that reds if
+  any shipped Kotlin (`src/main`, `src/androidMain`, both template mirrors) or Swift (`BnHost/`)
+  source calls it outside its own declaration.
+
+**What the reviews found, fixed in the loop:**
+- **The back state landed on a blank screen.** A swap is two frames, the removal and then the page.
+  "Apply with the next batch" applied the value with the removal, one runnable before the page. It
+  now rides the first batch that is not removal-only.
+- **The empty-first-render gap.** The round-1 rule, "a batch that creates a parentless node", never
+  applied the value to a page whose first render is empty, because its mount frame is a lone
+  CommitFrame. Back stayed disabled on that sub-page, so a press exited the app, which is #346's
+  symptom. The removal-only rule closes it, pinned against the dll's real frames.
+- **Callback and mapper drift.** The pre-boot branch and `BackUnhandled` both disabled the callback
+  to re-dispatch, and nothing re-enabled it, because the mapper publishes only on a change.
+  `handBackToPlatform` restores it in a `finally`, reading the state after the dispatch.
+- **A #346 device pin that could not tell old code from new.** Since 16.1 frees the lane at a
+  handler's first await, the old blocking back also returned quickly behind a held camera call.
+  The pin now holds the RENDER THREAD with `BackHoldProbe`, whose synchronous handler blocks on a
+  camera call. A JVM control proves the old blocking dispatch waits for the release there.
+- **A consumption pin fooled twice.** Deleting a Swift op arm stayed green, because the scan read
+  test trees and a test named the op. Deleting a Kotlin arm stayed green even with tests excluded,
+  because the arm's own completion call named the constant. `GeneratedSymbolShadowTests` now scans
+  shipped sources only, and an op counts as consumed only through a routing arm.
+- **A vacuous visibility pin.** `MethodsWithADeclaredVisibility_MatchBothShells` passed with the
+  manifest's visibility line deleted and both shells public. It is now floored on a named entry.
+- **`internal` enforced nothing a caller could not already do.** MainActivity shares
+  `BlazorNativeRuntime`'s Kotlin module, and `BnHost` is an app target where a modifier-less class
+  is already `internal`, so the keyword changed nothing a same-target caller could not already
+  reach. The final review measured it: reverting `onNewIntent`'s call and a Swift navigator's call
+  back to the blocking one, one at a time, left every existing gate green. The new source scan is
+  what actually enforces it now.
+- **Smaller fixes:** the pending-then-unhandled back that swallowed a press; a re-back trail when a
+  click handler calls back twice; the stale "the shell finishes" doc for `BackUnhandled` in about
+  fifteen places; and a stale DOES NOT COVER bullet in `BackStateNoticeTests`, corrected in this
+  record.
+
+**Behaviour changes, for the changelog and for shell authors:**
+- **Back never blocks the main thread** on Android. Deep-link and notification navigation never
+  block it on either shell.
+- **An unhandled back goes to the platform's default.** On Android 12 and later, API 31+, that
+  moves a launcher task root to the background rather than finishing it. Owner decision 2 said
+  "finish"; the Task 3 ruling made it match the platform's own root back.
+- **A faulted back, rc 2, keeps the app.** This is a policy decision: a fault means history
+  existed, the failed swap has already resent the held back state, and the fault reaches the shell
+  through `onError` or FaultNotice. The next press retries.
+- **Every mount re-sends the back state,** so a recreated Activity starts with the right callback
+  state.
+- **A refused warm deep link now logs at `Log.e` through `onError`,** where it used to log at
+  `Log.w`. `onNewIntent` uses the fire-and-forget dispatch, whose rc-1 path reports to `onError`.
+- **Test seams retired:** iOS `lastHostEventRcForTest` and Android `lastNavigateHostEventRcForTest`
+  with `resetNavigateRcForTest`.
+- **`dispatchHostEventAndWait` has no production caller left** on either shell. Its effective
+  access did not change: Kotlin was already `internal`, and Swift's method, in a class with no
+  modifier, already defaulted to `internal` too — a keyword that stops nothing a same-module or
+  same-target caller could not already do, as the final review proved by reverting a call and
+  watching every gate stay green. What actually holds "no caller" is three mechanisms: the
+  explicit Swift keyword; `src/dispatch-surface.json`'s `"visibility": "internal"`, held by a .NET
+  differential pin and a JVM `KVisibility` pin; and a new source scan across every shipped Kotlin
+  and Swift file that reds on a call anywhere outside the method's own declaration.
+
+**Counts, measured on `602a5e6`, with the .NET total and Runtime row re-measured after the final
+review round added its two new facts.** The .NET build was a clean
+`dotnet build BlazorNative.sln -c Release --no-incremental -v q`: 0 errors and the 24 warnings that
+already existed. Each project was then tested with `-c Release --no-build`. The JVM run followed a
+fresh `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, which exited 0 with 4
+IL2072 and wrote a dll newer than the run. Gradle ran with `--rerun`, and `verifyNativeAssets`
+passed without `-PciSoDir`.
+
+| Surface | Before (16.1) | After | Change |
+|---|---|---|---|
+| .NET total | 1255 | **1278** | +23 |
+| · Renderer | 147 | 147 | 0 |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1081 | 1104 | +23: `BackStateNoticeTests` 18, `GeneratedSymbolShadowTests` +4, `DispatchSurfaceDriftTests` +1 |
+| JVM | 170 | **190**, 0 failed | +20: `BackNoticeTest` 7, `BackStateBufferTest` 11, `DispatchHostEventAndWaitVisibilityTest` 2 |
+| Android | 228 | **233** | +5: `BackAndroidTest`. The android-instrumented lane, run 36316252930 at `d32f97f`, was green at 233. No instrumented test changed after `d32f97f` |
+| iOS | 276 | **282** | +6: `BnBackOffMainTests`. The ios lane, run 36321225204 at `ba27ec5`, passed 282 and failed 0. After it, `BnRuntime.swift` changed in Task 5 and `BnSafeAreaTests.swift` changed in a comment only, so the final lane must cover both |
+
+**Notable mutations.** Each went red unless marked otherwise. The per-pin cells are in the
+register in `docs/pin-standard.md` and in census rows 13a and 14a.
+- **The order:** sending `BackState` in `afterSwap` reds the three ordering pins and the failed-swap
+  pin. A log whose frames stop draining host calls reds 5.
+- **Never swallowed:** skipping `SendBackUnhandled` reds the at-root and no-session pins. Removing
+  the continuation's send reds the yielding-back pin alone.
+- **The slot clear:** moving it back after the swap reds only
+  `TwoBacksFromOneClickHandler_DoNotLeaveAReBackTrail`; 35 other facts stay green.
+- **The buffer:** the round-1 parentless rule reds the empty-render pins; dropping the removal-only
+  skip reds the removal pins; a `handBackToPlatform` that stops restoring reds all three restore
+  tests.
+- **The probe:** making `BackHoldProbe`'s handler `async` reds the JVM control, because the blocking
+  back then returns before the release.
+- **The consumption pin:** deleting the Swift `backState` arm or the Kotlin `BACK_STATE` arm reds it.
+  **Green, recorded:** the Kotlin arm deletion before the arm rule, and a name-only reference with an
+  arm also deleted.
+- **The visibility pin:** `internal` removed from either shell reds it, and deleting the manifest's
+  `visibility` line reds the floor. **Never seen red:** the JVM `KVisibility` pin, because removing
+  `internal` in Kotlin fails `compileDebugKotlin` first.
+- **Device, not run locally, for the final review.** Android: apply the back state in a separate
+  runnable, or on arrival; drop the `hasOpenModal` term; drop `publishBackEnabled()`; remove the
+  modal consult in `handleBack`; revert `handleBack` to `dispatchHostEventAndWait`, expected to red
+  the #346 pin at about 3 s. iOS: restore the blocking deep-link navigator; make it a no-op; delete
+  either back arm; make an arm call `completeUnknownOp`; make Hold `async`; remove the Hold tap.
+  Inspection only: the restore in the pre-boot and `BackUnhandled` paths, and the
+  `if (!backCallback.isEnabled) return` guard.
+
+**Coverage limits:**
+- **Below API 33** AndroidX dispatches the classic back. Only AndroidX's own contract covers that
+  path; the instrumented lane runs API 34.
+- **The `BackUnhandled` hand-off to the platform is pinned on the JVM only.** On the device, back at
+  the root goes through the disabled callback and the platform default, and no deterministic trigger
+  gives a stale ENABLED state at the root. An `onBackUnhandled` that did nothing would stay green on
+  the device.
+- **The iOS notification navigator** under a held lane is pinned only by reading. It shares the
+  deep link's one-line dispatch.
+- **Unpinned:** an unmount that emits a frame which is not removal-only, followed by a mount that
+  throws. The value applied with that frame stays until the next batch, as the `BackStateBuffer`
+  KDoc says.
+
+**Open items:**
+- **#425** now also carries the history-reset question. A recreated Activity mounts the default page
+  while .NET's history still points at the old sub-page, so back on that visible root navigates
+  rather than exiting. Should a mount reset history?
+- **#426**, the unredacted FaultNotice message in Android's Release logcat, is unchanged by this
+  phase.
+- **A process slip, reported to the owner.** During Task 4's fix round an implementer made a local
+  commit with `--no-verify`, `2df5c94` in the reflog. It was reset at once with `--soft`, and it was
+  never pushed.
+
+#### Phase 16.3: Starvation, measured [status: complete]
+**Goal:** With async offload in place, measure what a slow *synchronous* handler still costs, then
+fix #9 or re-ledger it with a new trigger; publish an app-author page on what runs where and what
+rc and async faults mean.
+**Surface:** Mixed
+**HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-09-27-phase-16.3-design.md`](../superpowers/specs/2026-09-27-phase-16.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-09-27-phase-16.3-starvation.md`](../superpowers/plans/2026-09-27-phase-16.3-starvation.md)
+**Completed:** 2026-09-27 · [PR #437](https://github.com/MarcelRoozekrans/BlazorNative/pull/437) · #9 closed with evidence
+
+> **16.3 outcome: a slow synchronous handler now warns once, naming its own owner, instead of
+> silently starving the lane.** The measured cost is one-for-one with no fixed overhead, so the
+> fix is a warning at a budget rather than a mechanism change. #9 to be closed after the phase PR
+> merges.
+
+**What shipped:**
+- **The measurement.** `docs/plans/2026-09-27-phase-16.3-record.md`: a slow handler's synchronous
+  part costs the dispatch lane exactly what it takes, and a second event queued behind it waits
+  the same amount, one for one, with no amplification and no fixed overhead:
+
+  | Sync part (ms) | Dispatch sync time, median (ms) | Second event behind it, median (ms) | `back` behind it, median (ms) |
+  |---:|---:|---:|---:|
+  | 0 | 0.1 | 0.1 | 0.0 |
+  | 200 | 205.8 | 204.5 | 206.3 |
+  | 1,000 | 1,004.8 | 1,004.7 | 1,005.0 |
+
+  Small rows are inflated by the 15.6 ms Windows scheduler quantum, not by BlazorNative. **The
+  budget stays at `NativeRenderer.SlowHandlerBudget`, 100 ms, unchanged.** The cost is linear and
+  one-for-one, so the budget is simply the delay the next event may suffer before the app author
+  is told; 100 ms is the conventional limit for a response that still feels immediate, and a lower
+  budget would sit inside the timer's own noise, since a requested 50 ms measured 63 ms on this
+  host.
+- **The warning fires once per call site per session.** Its key is the handler's owner: the
+  declaring type and method of the delegate the handler runs, read where the renderer emits the
+  AttachEvent patch, resolved only once a dispatch is over budget. For a framework-declared
+  method, meaning Blazor's own binder such as `@bind`, the BCL, or a `BlazorNative.Components`
+  wrapper, the owner key is combined with the call site: component type, frame sequence and event
+  name. It is capped at `NativeRenderer.SlowHandlerWarningCap`, 32, per session; the next distinct
+  slow key past the cap logs one `further slow-handler warnings suppressed` line, then stays
+  silent until the session resets. It never includes the payload. Timing covers the synchronous
+  part only: for a UI dispatch the clock runs from `DispatchScope` open to close, and for a host-
+  event arm it runs inside the render-thread work item, so queue wait is excluded in both cases.
+  `ASlowBackArm_IsWarned_KeyedByEventName_Once` pins this by recording the thread of every clock
+  read and asserting it is always the render thread. The NativeAOT evidence is
+  `SlowHandlerProbeTest`, which drives the published win-x64 dll's sample page
+  `SlowHandlerProbe`, two `BnButton`s with different 500 ms handlers, and reads two warnings
+  naming `SlowHandlerProbe.SlowOne` and `.SlowTwo`, never `BnButton`.
+- **The page.** `website/docs/guides/threading.md`, new: the render thread and its honest
+  `CheckAccess`, the rc contract, late-fault delivery through `FaultNotice`, off-thread
+  `StateHasChanged` throwing, the blocking-handler anti-pattern with the measured one-for-one
+  cost, the slow-handler warning's budget and keying and cap, the `BnInput` known limit, Android
+  back, and shutdown. `website/docs/guides/state.md`'s stale "Threading" section, still describing
+  the pre-16.1 inline dispatcher, is fixed to point at the new page as the canonical contract.
+
+**What the reviews found, fixed in the loop:**
+- A capturing lambda, such as `() => Select(item)`, gets a new handler id on every render, so
+  keying the warning by handler id alone warned on every click of the same button.
+- Keying by the tree that holds the AttachEvent attribute merged every `BnButton` click in an app
+  into one warning, because `BnButton` forwards every app's `OnClick` from its own render-tree
+  sequence.
+- Keying by the handler's owner method alone then merged every `@bind` of one value type onto a
+  single Blazor-internal key, because each runs Blazor's own binder lambda; the fix combines a
+  framework-declared owner with the tree-owner key.
+- "Queue wait is excluded from the timing" had no pin; `ASlowBackArm_IsWarned_KeyedByEventName_Once`
+  now asserts every clock read happens on the render thread.
+
+**Known limit.** A `BlazorNative.Components` wrapper that runs its own handler for every instance
+still shares one warning across instances, naming the wrapper rather than the app's method:
+`BnInput`'s change handler, `BnCheckbox`, `BnPicker`, `BnSlider` and `BnSwitch`'s change handlers,
+and `BnModal`'s dismiss click. `BnButton`, `BnImage`'s `onerror` and `BnScroll`'s `onscroll`
+forward the app's own delegate and are unaffected. Filed as **#435**; pinned as a known limit by
+`TwoBnInputs_WithDifferentSlowHandlers_StillShareOneWarning_NamingBnInput_KnownLimit`.
+
+**The accepted suppression.** `SlowHandlerProbe`'s two deliberately blocking handlers,
+`SlowOne` and `SlowTwo`, carry a site-scoped `#pragma warning disable BN0004` with the
+justification "a deliberate slow handler, the warning's subject". This is the analyzers doc's own
+documented escape hatch for a justified, scoped suppression, not a workaround: BN0004 is right
+that `Thread.Sleep` blocks a runtime thread, and blocking is the whole point of this probe page,
+which exists only to be clicked in a test.
+
+**Counts, re-measured on `4e3edb1`.** The .NET build was a clean
+`dotnet build BlazorNative.sln -c Release --no-incremental -v q`: 0 errors, the 24 warnings that
+already existed. Each project was then tested with `-c Release --no-build`. The JVM run followed
+a fresh `dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64`, exit 0 with 4
+IL2072, dll newer than the run; Gradle ran with `--rerun`. No instrumented or XCTest file changed
+on this branch, so Android and iOS are carried forward unchanged.
+
+| Surface | Before (16.2) | After | Change |
+|---|---|---|---|
+| .NET total | 1278 | **1295** | +17 |
+| · Renderer | 147 | 147 | 0 |
+| · Analyzers | 27 | 27 | 0 |
+| · Runtime | 1104 | 1121 | +17: `SlowHandlerWarningTests`, the last from the final review |
+| JVM | 190 | **191**, 0 failed | +1: `SlowHandlerProbeTest` |
+| Android | 233 | **233**, unchanged | no instrumented test changed on this branch |
+| iOS | 282 | **282**, unchanged | no XCTest file changed on this branch |
+
+**Open items:**
+- **#9**, the phase's own tracking issue, to be closed after the phase PR merges, with an evidence
+  comment pointing at the record and the counts above.
+
+#### Phase 16.4: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
+`CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 

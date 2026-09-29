@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1176 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1295 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (162 passed / 0 failed — the assertion is the step near the end of this
+#     (191 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -22,7 +22,7 @@
 #     Phase 8.1, M4 DoD #7 / M8 DoD #2) → artifacts for the instrumented
 #     (Gate 3) job.
 #
-#   ios-build (macos-latest) — THE iOS SHELL MUST COMPILE. Publish +
+#   ios-build (ubuntu-latest) — THE iOS SHELL MUST COMPILE. Publish +
 #     `xcodebuild build-for-testing`: Swift + Objective-C++ compiled, the app
 #     and the XCTest bundle LINKED. No simulator is booted and no test is run.
 #     Since Phase 14.4 the work is a TWO-LEG MATRIX — `iossimulator-arm64` and
@@ -2202,7 +2202,125 @@ jobs:
       # the release-notes parse guard (#302) is only worth running if its
       # release-please is the one release-please-action bundles; this pins
       # both ends of that pair against action-version.json.
-      - name: .NET tests (assert 1176 passed / 0 skipped)
+      # 1176 -> 1181 (15.5 docs samples, +5): DocsSamplesDriftTests -- every fence on a
+      # hand-written docs page whose language is razor/csharp/cs declares a known kind
+      # (component/file/statements/skip:<reason>), floor, positive control. The actual
+      # compile is the separate "Docs samples compile" step below, driven by the same
+      # tools/BlazorNative.DocSamples parser this pin calls (#291).
+      # 1181 -> 1182 (15.5 fix round 1, +1): NamedComponents_HaveValidUniqueIdentifiers --
+      # bn-sample=component:<Name> (added so testing-harness.md's two fences could
+      # reference one generated SettingsPage.razor) is held to a valid, globally unique
+      # C# identifier. The same round also found six indented "Compliant shape" samples
+      # on analyzers.md that the un-indented fence anchor had never seen (28 -> 35
+      # in-scope fences); that moves MinimumFences/MinimumCompiledSamples, not this count.
+      # 1182 -> 1183 (15.5 fix round 2, +1): NoNamedSampleComponent_CollidesWithAShippedType --
+      # a bn-sample=component:<Name> must not share a simple name with a public type in any
+      # of the seven shipped packages; state.md's BnThemedPanel (round 2 closed its
+      # NEEDS_CONTEXT by making the page's own consumer fence the real definition) is the
+      # second named sample this guards alongside testing-harness.md's SettingsPage.
+      # 1183 -> 1185 (15.5 docs names, +2): DocsNameDriftTests -- every inline `Bn…`/
+      # `BlazorNative…` span on a hand-written docs page (outside a fenced code block)
+      # resolves to something real, via a resolver built from the seven shipped packages'
+      # public surface, Kotlin/Swift/Objective-C++ shell declarations (plus a file-scoped
+      # member map), tracked repo file/directory names (plus file stems and <Assembly>.dll),
+      # and the BlazorNative.Analyzers diagnostic-category string literals; floor, positive
+      # control. DocsSamplesDriftTests holds the CODE half of a page to compiling; this is
+      # the PROSE half.
+      # 1185 -> 1186 (15.5 #298 pin, +1): ComponentDocs_NameTheAndroidWidgetClassTheShellActuallyBuilds --
+      # every component naming an Android widget, in its internal design comment ("Android: X")
+      # or its published `///` summary ("<c>X</c> on Android"), is held to WidgetMapper.kt's own
+      # node-type-to-widget-class derivation (reused from TextCollapseParityDriftTests). The claim
+      # set is DISCOVERED by scanning src/BlazorNative.Components, not a hand-written list, with a
+      # measured floor on each scan and a file->node-type lookup that reds on an unmapped
+      # discovery, checking every claim a file makes (Matches, not Match). The extractor pulls
+      # only the token adjacent to the claim -- the first version instead searched the whole
+      # file with a word-boundary regex, LANDED (816466f), and was found by review to PASS on
+      # #298's own pre-fix "SwitchMaterial/Switch" text (a second, standalone "Switch" after the
+      # slash matches \bSwitch\b); the next commit (50267a1) replaced it with the extractor. The
+      # positive control runs the same extractor on that exact planted string and asserts it
+      # disagrees with the derived class.
+      # 1186 -> 1192 (15.7 layout-surface family, +6): LayoutSurfaceSequenceBandTests'
+      # hand rosters ItemNames/ContainerNames are held to LayoutSurfacePinTests'
+      # ItemParameters/ContainerParameters in both directions, and the container emission
+      # rows get a measured floor of 4. The collision and band sweeps each get a positive
+      # control that feeds RenderTreeBuilder frames through the same extracted detector.
+      # LayoutSurfacePinTests gets a fixed-point control for the derivation scan, which
+      # with the allowlist removed must report exactly BnList<> and BnModal, and runs the
+      # in-file ShadowingHeightProbe through the redeclaration detector.
+      # 1192 -> 1196 (15.7 reflection-sweep family, +4): DefaultStructTrapSweepTests now
+      # compares new T() with the declared defaults by value through one Offenders helper,
+      # so an explicit ctor that chains to the wrong value is caught. It gains a fact proving
+      # that Activator.CreateInstance runs an explicit parameterless struct ctor, and a
+      # control for the nested-public visibility filter. LengthParameterNullabilityPinTests
+      # gains a control that runs a bare BnLength through the approved-shape detector, and
+      # BnComponentTests gains a control that runs a bare enum name through the prefix rule.
+      # 1196 -> 1197 (15.7 style partition and route menu, +2 -1): RouteMenuDriftTests
+      # extracts its Missing and Dangling detectors and gains a positive control for each,
+      # a planted ghost route and a planted dangling menu row. StyleAttributePartitionTests
+      # retires StyleAttributes_AreExactlyTheUnionOfTheYogaAndVisualHalves, a green tautology:
+      # NativeRenderer defines StyleAttributes as that union, per the NavigationTests 7.6 rule.
+      # 1197 -> 1198 (15.7 Rule 5 disclosures, +1): NotApiEditorBrowsableTests' Row 17
+      # widens direction 1 of MarkedSet_EqualsExpectedNotApiSet_InBothDirections from
+      # sweeping Runtime + Renderer to all seven shipped assemblies, each anchored by a
+      # typeof. It gains MarkedTypeNames_ReportsAPlantedStrayMark_FromTheAssemblyItIsGiven,
+      # which drives the extracted MarkedTypeNames helper over a fixture planted in the
+      # TEST assembly (a stray mark cannot be planted in product code this phase) and, as
+      # its own control, over the real ShippedAssemblies where the fixture is absent.
+      # 1198 -> 1200 (15.7 final review, +2): LayoutSurfacePinTests gains
+      # RazorEmitters_GrowingItIsADeliberateAct, holding the band pin's skip list and the
+      # collision pin's splat excuse at exactly 4 argued members. NotApiEditorBrowsableTests
+      # gains ShippedAssemblies_AreExactlyTheSevenShippedPackages, a floor on the widened
+      # sweep. The band control's extra plants and the deleted BnScrollDemoTests tautology
+      # change assertions inside existing facts, not the fact count.
+      # 1200 -> 1201 (15.8 re-audit review, +1): LayoutSurfaceSequenceBandTests gains
+      # TheLayoutRows_AreThereToBeChecked, a floor of 14 on the rows every theory in the
+      # file runs over, with BnText as the leaf anchor; a container-only filter had dropped
+      # 10 of 14 rows with every fact green. DispatchSurfaceDriftTests' manifest-derived
+      # anchors are assertions inside an existing fact, not a new one.
+      # 1201 -> 1255 (16.1 the render thread, +54): Renderer 139 -> 147 and Runtime
+      # 1035 -> 1081; Analyzers unchanged at 27. Renderer gains the eight facts of
+      # RenderThreadDispatcherTests: honest CheckAccess, InvokeAsync marshalling, the
+      # exception sink, Send propagation, cancel-after-shutdown, an await in flight at
+      # shutdown, and 13.2's Dispose recursion as a named regression. Runtime gains
+      # DispatchWindowScopeTests (10: the per-dispatch window, late-fault attribution
+      # in production mode, the nested hand-off, the flowing scope's restore),
+      # ShutdownQuiescenceTests (20 cases: the frame gate, the join, the session
+      # detach, re-registration epochs, pending work cancelled at shutdown, and a
+      # reset that never waits under s_lock), FaultNoticeTests (10 cases: #8's
+      # delivery), HostEventArmThreadTests (2), WireVocabularyCodegenTests (+3: the
+      # generated HostCallOp table) and GeneratedSymbolShadowTests (+1: the op
+      # constant shadow control). The flips of DispatchLaneBlockingTests (#345),
+      # MountSyncTests and RenderThreadWarningTests change assertions, not counts.
+      # 1255 -> 1276 (16.2 back off the main thread, +21): Runtime 1081 -> 1102;
+      # Renderer 147 and Analyzers 27 unchanged. Runtime gains BackStateNoticeTests
+      # (18: the BackState and BackUnhandled notices, op 6 and op 7, their order
+      # before the frame that shows the page on the direct, back and click-handler
+      # paths, the resend after a failed swap and on every mount, a back that yields
+      # and then resolves unhandled, and the slot clear), GeneratedSymbolShadowTests
+      # (+2: OpArmPattern_MatchesAnArm_AndNotABareReference and
+      # UnconsumedByDesign_IsKeyedByLanguage, the controls for the arm-only
+      # consumption rule and the shipped-sources-only scan) and
+      # DispatchSurfaceDriftTests (+1: MethodsWithADeclaredVisibility_MatchBothShells,
+      # floored on a named dispatchHostEventAndWait entry). The frozen-op list in
+      # WireVocabularyCodegenTests and the androidx.activity row in TemplateDriftTests
+      # change assertions inside existing facts, not the count.
+      # 1276 -> 1278 (16.2 final review, +2): the internal keyword pins visibility but
+      # enforces nothing a same-module/same-target caller can't already ignore, proven
+      # by reverting a fire-and-forget call back to the blocking one and watching every
+      # gate stay green. GeneratedSymbolShadowTests gains
+      # OffendingCallDetector_MatchesACall_AndNotTheDeclaration (the Rule 3 control) and
+      # NoShippedShellSource_CallsTheBlockingHostEventDispatch, a source scan that reds
+      # if any shipped Kotlin (src/main, src/androidMain, both template mirrors) or
+      # Swift (BnHost/) source calls dispatchHostEventAndWait outside its own
+      # declaration.
+      # 1278 -> 1294 (16.3, +16): the slow-handler warning (Renderer unchanged at 147,
+      # Analyzers unchanged at 27, Runtime 1104 -> 1120): SlowHandlerWarningTests, keyed
+      # by the handler's owner method, combined with the call site for framework-declared
+      # methods such as @bind, capped at 32 per session, timing the synchronous part only.
+      # 1294 -> 1295 (16.3 final review, +1): Runtime 1120 -> 1121,
+      # TheCallSiteMap_StaysFlat_AcrossFiftyReRendersOfCapturingLambdas pins that the
+      # call-site map holds live handlers only.
+      - name: .NET tests (assert 1295 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2220,9 +2338,20 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1176 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1176 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1295 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1295 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
+
+      # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
+      # parser is tools/BlazorNative.DocSamples — the same one DocsSamplesDriftTests
+      # holds to "every fence is classified", so a sample cannot dodge this by omission.
+      - name: Docs samples compile
+        shell: pwsh
+        run: |
+          dotnet run --project tools/BlazorNative.DocSamples -c Release -- --out artifacts/doc-samples
+          if ($LASTEXITCODE -ne 0) { throw "doc-samples generation failed (exit $LASTEXITCODE)" }
+          dotnet build artifacts/doc-samples/DocSamples.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw "a docs sample no longer compiles — see the <PageSlug>_<N> name in the error for the page and fence" }
 
       # ── NativeAOT publishes + ten-export verification ─────────────────────
       # Phase 8.0: the publish head is samples/BlazorNative.SampleApp (the app
@@ -2569,7 +2698,33 @@ jobs:
       #    call itself after measuring (not during) so it does not corrupt the
       #    ONE process-global native session every other JVM test class in this
       #    run shares.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 162 passed / 0 failed)
+      # 162 -> 170 (16.1 the render thread, +8): FaultNoticeTest (2: op 5, and a
+      #    fault after the first await reaching onError through BridgeRegistrar),
+      #    FrameProducerTest (3: the single-producer check, its negative, and its
+      #    wiring across a second session), ShutdownQuiescenceTest (2: no late
+      #    continuation frame reaches the host after shutdown, and its control) and
+      #    RetireLateContinuationTest (1: a HAZARD pin, retire() does not quiesce
+      #    .NET, #425). The #346 pin in HostEventTest and the frame-thread test in
+      #    DispatchEventTest were FLIPPED, not added: the first now asserts that
+      #    dispatchHostEventAndWait returns while a handler holds a host call, with
+      #    no rc, and the second that frames arrive serially on one non-lane thread
+      #    named BlazorNative-Render. Run locally with --rerun: testDebugUnitTest
+      #    does not declare the native dll as an input and can report a stale
+      #    UP-TO-DATE, #424.
+      # 170 -> 190 (16.2 back off the main thread, +20): BackNoticeTest (7: ops 6
+      #    and 7 routed by BridgeRegistrar and completed OK, a back at the root that
+      #    raises no onError with a navigate control that still does, the back state
+      #    riding the frame that mounts the page rather than the removal, including a
+      #    page whose first render is empty, and the BackHoldProbe control that the
+      #    blocking dispatch waits for the release), BackStateBufferTest (11: the
+      #    buffer's removal-only rule and handBackToPlatform's restore) and
+      #    DispatchHostEventAndWaitVisibilityTest (2: KVisibility.INTERNAL on the
+      #    compiled member, and a control that the check tells PUBLIC from INTERNAL).
+      # 190 -> 191 (16.3, +1): SlowHandlerProbeTest, the NativeAOT half of the
+      #    slow-handler warning's owner key — two BnButtons with different 500 ms
+      #    handlers, driven through the published win-x64 dll, read two warnings naming
+      #    SlowHandlerProbe.SlowOne and .SlowTwo, never BnButton.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 191 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2583,8 +2738,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 162 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 162 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 191 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 191 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
@@ -2618,8 +2773,9 @@ jobs:
       # app that installs, and rc 1 at first mount with nothing naming the cause.
       #
       # So this step GENERATES an app and PUBLISHES it, asserting the 8.0
-      # tripwire trio on GENERATED output — 4 IL2072 + the 9 exports + the
-      # page-presence probe. A text pin on the template's csproj was considered
+      # tripwire trio on GENERATED output — 4 IL2072 + the exports ARM 2 of
+      # template-smoke.ps1 enumerates + the page-presence probe. A text pin on
+      # the template's csproj was considered
       # and REFUSED: it proves the LINE IS IN THE FILE, and 8.0's own absence was
       # found by a PUBLISH, not by a read. The trio is mutation-proven — deleting
       # TrimmerRootAssembly from the template reds arms 1 and 3 together (both
@@ -3147,13 +3303,14 @@ jobs:
 
           # Phase 7.4: assert the export surface ON THE ARCHIVE, with VISIBILITY.
           # The post-link gate below proved blazornative_init can vanish from the
-          # linked dylib's global table while `nm -gU` on the .a still lists all
-          # nine exports — because nm -gU also lists private-external (N_PEXT)
-          # globals, which ld64 LOCALIZES in the output (no -exported_symbols_list
-          # is passed; a default-visibility global in a force_loaded member MUST
-          # surface as a dylib export, a private-external one MUST NOT). So "the
-          # nine symbols are in the .a" (ios.yml's check) does not prove the app
-          # will export them. `nm -m` names the verdict per symbol ("external"
+          # linked dylib's global table while `nm -gU` on the .a still lists every
+          # export the `expected` list below enumerates — because nm -gU also
+          # lists private-external (N_PEXT) globals, which ld64 LOCALIZES in the
+          # output (no -exported_symbols_list is passed; a default-visibility
+          # global in a force_loaded member MUST surface as a dylib export, a
+          # private-external one MUST NOT). So "they're all in the .a" (ios.yml's
+          # check) does not prove the app will export them. `nm -m` names the
+          # verdict per symbol ("external"
           # vs "private external"); assert it HERE so an ILC visibility flip
           # fails at its source with the discriminating evidence, not two
           # minutes later at the far end of an xcodebuild.
@@ -3575,10 +3732,13 @@ jobs:
   # Actions API call ON THE VERDICT PATH, which is exactly what it must not have.
   # So the roster is pinned OUTSIDE the workflow instead, by
   # `IosSliceMatrixDriftTests` in the required .NET suite: it asserts that
-  # `ios-build-slice` declares both `iossimulator-arm64` and `ios-arm64`, and that
-  # the job carries no `if:` and no `continue-on-error`. With those two facts held,
-  # "every leg the matrix declared succeeded" — all this job can honestly claim —
-  # is equivalent to "both slices compiled", by construction rather than by
+  # `ios-build-slice` declares both the `simulator`/`iossimulator-arm64` and the
+  # `device`/`ios-arm64` leg, with every field that decides which slice is
+  # actually built and what the LC_BUILD_VERSION gate compares against — not the
+  # RID alone (#365 F5) — and that the job carries no `if:` and no
+  # `continue-on-error`. With those facts held, "every leg the matrix declared
+  # succeeded" — all this job can honestly claim — is equivalent to "both
+  # slices, correctly configured, compiled", by construction rather than by
   # assertion. If you need a conditional leg, that pin reds and says so; decide the
   # trade out loud rather than editing it away.
   #

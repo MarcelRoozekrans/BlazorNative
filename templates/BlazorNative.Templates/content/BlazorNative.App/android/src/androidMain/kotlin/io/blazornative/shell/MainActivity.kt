@@ -6,8 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.FrameLayout
-import android.window.OnBackInvokedCallback
-import android.window.OnBackInvokedDispatcher
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
@@ -57,9 +56,9 @@ import kotlin.concurrent.thread
  * Phase 9.2 (M9 DoD #4): a FragmentActivity (not a plain Activity) — androidx
  * BiometricPrompt requires a FragmentActivity host to attach its internal
  * fragment, and AndroidShellBridge's op=Biometrics / op=SecureStorage prompt
- * against this activity. FragmentActivity extends ComponentActivity but adds NO
- * back-dispatcher callback of its own here (this activity registers none on the
- * onBackPressedDispatcher), so the manual predictive-back path below is unchanged.
+ * against this activity. FragmentActivity extends ComponentActivity, which is what
+ * gives this activity the AndroidX onBackPressedDispatcher that back rides since
+ * Phase 16.2 (see [backCallback]).
  *
  * Threading/lifetime notes:
  *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
@@ -89,15 +88,6 @@ class MainActivity : FragmentActivity() {
          * A custom scheme (no domain verification) is the simplest honest proof
          * of the launch-time deep-link mechanism; https App Links are later work. */
         const val DEEP_LINK_SCHEME = "blazornative"
-
-        /** Test seam (instrumented BnNotificationsAndroidTest): the rc of the most
-         * recent warm-tap "navigate" host_event — 0 = the live session re-routed,
-         * 1 = not handled / no session, 2 = faulted. Int.MIN_VALUE before any warm
-         * tap. Static because the test cannot reach the private Activity instance. */
-        @Volatile @JvmStatic var lastNavigateHostEventRcForTest: Int = Int.MIN_VALUE
-
-        /** Test seam: reset the warm-navigate rc probe between tests. */
-        @JvmStatic fun resetNavigateRcForTest() { lastNavigateHostEventRcForTest = Int.MIN_VALUE }
 
         /**
          * Phase 11.4 Gate B (#155): Intent-extra override for the framework log
@@ -138,7 +128,7 @@ class MainActivity : FragmentActivity() {
          *
          * A COMPANION member, not an instance one: it reads nothing but its
          * argument, and BnDeepLinkVectorTest must exercise the REAL parser rather
-         * than a copy — the same reason [lastNavigateHostEventRcForTest] is static.
+         * than a copy.
          * Both in-class call sites ([onCreate]'s launch parse and [onNewIntent]'s
          * warm re-route) still call it unqualified, so nothing else moved. */
         private fun parseDeepLinkRoute(intent: Intent): String? {
@@ -186,7 +176,7 @@ class MainActivity : FragmentActivity() {
     /**
      * Phase 5.1 boot guard: true only after [BlazorNativeRuntime.start] has
      * completed on the boot thread. Lifecycle callbacks (onResume/onPause/
-     * onDestroy) and predictive-back are host→.NET entry — they MUST NOT fire
+     * onDestroy) and back are host→.NET entry — they MUST NOT fire
      * before the mount, both because there is nothing to notify and (the real
      * hazard) because entering the dispatch lane while the boot thread is still
      * inside start() would put two threads in the .NET session at once (the
@@ -204,9 +194,22 @@ class MainActivity : FragmentActivity() {
      * first report. */
     private var lastReportedInsets: androidx.core.graphics.Insets? = null
 
-    /** The predictive-back callback (API 33+); null on lower APIs (they use the
-     * deprecated [onBackPressed] fallback). Held so it could be unregistered. */
-    private var backCallback: OnBackInvokedCallback? = null
+    /**
+     * Phase 16.2 (#346): THE back entry point, on every API level. An AndroidX callback on
+     * [getOnBackPressedDispatcher], which on API 33+ drives the platform's predictive back
+     * (the manifest sets `enableOnBackInvokedCallback`), and below it the classic back.
+     *
+     * It is ENABLED only while the shell must intercept back: a modal is open, or .NET has
+     * said it can go back. [WidgetMapper.onBackEnabledChanged] sets that, on main, in the same
+     * batch as the frame that shows the page (spec decision 2), so the screen the user sees
+     * decides what back does. Disabled, back takes the platform default (finish, or on API 31+
+     * a launcher task root moves to the background), without
+     * asking .NET, which is what closes #346: the main thread never waits on .NET for a back.
+     * Starts disabled, the root's answer, until the first batch says otherwise.
+     */
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = handleBack()
+    }
 
     /** Phase 9.0: the shell bridge, held as a field so [onRequestPermissionsResult]
      * can forward the OS permission callback into it. Assigned in onCreate; a
@@ -310,10 +313,24 @@ class MainActivity : FragmentActivity() {
                 runtime.dispatchEvent(h, "scroll", payload, done)
             })
 
+        // Phase 16.2 (#346): back follows the pushed back state, applied on main with the
+        // frame that shows the page. Wired before the runtime exists, so the mount's first
+        // batch already reaches the callback.
+        mapper.onBackEnabledChanged = { enabled -> backCallback.isEnabled = enabled }
+        onBackPressedDispatcher.addCallback(this, backCallback)
+
         val onError: (String, Throwable) -> Unit = { msg, t -> Log.e(tag, msg, t) }
         runtime = BlazorNativeRuntime(
             onFrame = { frame -> mapper.apply(frame) },
             onError = onError,
+            // Phase 16.2 (#346): on whatever thread .NET sent it from — only BUFFERED here,
+            // for the mapper's next batch to apply on main (spec decision 2).
+            onBackState = { canGoBack -> mapper.offerBackState(canGoBack) },
+            // Phase 16.2 (#346): a back reached .NET with nothing to go back to. Hand the press
+            // to the platform's default, so it is never swallowed: on API 31+ a launcher task
+            // root moves to the background rather than finishing, exactly as a back at the
+            // root does when the callback is disabled. Posted: this arrives off the main thread.
+            onBackUnhandled = { runOnUiThread { handBackUnhandledToPlatform() } },
         )
 
         // Phase 5.1 (M5 DoD #5): a VIEW-intent deep link (blazornative://<route>)
@@ -341,12 +358,6 @@ class MainActivity : FragmentActivity() {
             ?: deepLinkRoute?.let { routes[it] }
             ?: routes["/"]
             ?: "BnStarterPage"
-
-        // Phase 5.1: register predictive back on API 33+ (the AVD is API 34, so
-        // this IS the tested path). Lower APIs fall back to onBackPressed().
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerPredictiveBack()
-        }
 
         thread(name = "BlazorNative-Runtime-Boot") {
             try {
@@ -555,80 +566,35 @@ class MainActivity : FragmentActivity() {
      * (a killed app) is unchanged — it relaunches through onCreate's deep-link mount.
      *
      * `public` so the instrumented tap-through test can drive it; `setIntent` keeps
-     * getIntent() current. Reuses the "back" shape — a brief BLOCKING dispatch for
-     * the swap (dispatchHostEventAndWait runs on the dispatch lane; WidgetMapper
-     * posts its batch to the main handler, so there is no lane↔main deadlock). The
-     * returned rc is DATA the tap-through test asserts (0 = the live session
-     * re-routed).
+     * getIntent() current. FIRE-AND-FORGET since Phase 16.2 (#346): until then this
+     * blocked the main thread on the dispatch lane for the swap and only logged the
+     * rc. Now the swap's frames arrive like any other, and a re-route the live
+     * session refuses (rc 1, an unknown route) or that faults (rc 2) reaches the
+     * runtime's onError, so it is still reported and still ships in Release. The
+     * tap-through test asserts the page that lands, not an rc.
      */
     public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         val route = parseDeepLinkRoute(intent) ?: return
         if (!booted) return // nothing mounted yet — a (rare) pre-boot tap is dropped
-        // #200: narration (Info). The rc != 0 line below stays a bare Log.w —
-        // a re-route the live session refused is a bent contract, and warnings
-        // ship in Release.
+        // #200: narration (Info). A refused re-route is reported through onError
+        // (Log.e), which ships in Release.
         BnShellLog.info(tag, "[deep-link] warm re-route → $route")
-        val rc = try {
-            // Phase 9.1 — BnHostEvent.Navigate is the reserved host event for WARM
-            // notification tap-through, dispatched here with the route as the
-            // payload; .NET's DispatchHostEventCore maps it to NavigateToAsync (the
-            // "back" precedent — the name→verb mapping lives in .NET so every shell
-            // gets identical semantics). Its wire name must equal BnHostEvents.Navigate
-            // (BlazorNative.Core).
-            runtime.dispatchHostEventAndWait(BnHostEvent.Navigate, route)
-        } catch (t: Throwable) {
-            Log.e(tag, "navigate dispatch threw", t)
-            2
-        }
-        lastNavigateHostEventRcForTest = rc
-        if (rc != 0) Log.w(tag, "[deep-link] warm re-route '$route' → rc $rc")
+        // Phase 9.1 — BnHostEvent.Navigate is the reserved host event for WARM
+        // notification tap-through, dispatched here with the route as the
+        // payload; .NET's DispatchHostEventCore maps it to NavigateToAsync (the
+        // "back" precedent — the name→verb mapping lives in .NET so every shell
+        // gets identical semantics). Its wire name must equal BnHostEvents.Navigate
+        // (BlazorNative.Core).
+        runtime.dispatchHostEvent(BnHostEvent.Navigate, route)
     }
 
-    // ── Predictive / system back → NavigateBack (Phase 5.1) ──────────────────
-
-    /** Registers the API 33+ predictive-back callback (PRIORITY_DEFAULT on the
-     * activity's onBackInvokedDispatcher). It DELEGATES to [onBackPressed] so
-     * both the 33+ dispatcher path and the lower-API fallback share ONE back
-     * entry point — the instrumented test drives that single entry ([onBackPressed])
-     * directly, which is reliable, whereas committing a system predictive-back
-     * GESTURE under instrumentation is not. Split into its own method so the
-     * OnBackInvokedCallback class is only loaded under the version guard. */
-    private fun registerPredictiveBack() {
-        @Suppress("DEPRECATION")
-        val cb = OnBackInvokedCallback { onBackPressed() }
-        backCallback = cb
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(
-            OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
-    }
+    // ── System back → NavigateBack (Phase 5.1; off the main thread since 16.2) ──
 
     /**
-     * THE single back entry point (Phase 5.1). On API 33+ the registered
-     * [OnBackInvokedCallback] routes here; on lower APIs the framework calls
-     * this deprecated override directly (plain Activity has no
-     * onBackPressedDispatcher — that is ComponentActivity — so the deprecated
-     * onBackPressed IS the honest fallback). Handled (rc 0) → consume; not
-     * handled (rc 1 at-root / no session, rc 2 fault) → default back = finish.
-     */
-    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-    override fun onBackPressed() {
-        if (!handleBack()) {
-            @Suppress("DEPRECATION")
-            super.onBackPressed() // default = finish the root activity
-        }
-    }
-
-    /**
-     * Routes a system-back to .NET NavigateBack via the reserved "back" host
-     * event, BLOCKING for the handled/not-handled decision
-     * ([BlazorNativeRuntime.dispatchHostEventAndWait]). Returns true when .NET
-     * navigated back (rc 0 — consume the gesture), false when it did not (rc 1
-     * at-root / no session, or rc 2 fault — the caller lets default back
-     * proceed). Guarded by [booted]: a back before boot is "not handled" so the
-     * activity finishes normally. The main-thread block is brief (the swap is
-     * synchronous on the lane); WidgetMapper posts its batch to the main handler
-     * (non-blocking), so there is no lane↔main deadlock.
+     * [backCallback]'s body, so it runs only while back is ENABLED: a modal is open, or .NET
+     * said it can go back. It never waits on .NET (#346).
      *
      * ── PHASE 7.4 (design decision 3): BACK CONSULTS THE MODAL STACK FIRST ──
      * The rule, stated once: *on back-invoked, if the mapper has ≥ 1 live
@@ -639,19 +605,50 @@ class MainActivity : FragmentActivity() {
      * overlay — the shell never self-closes (the 7.3 state-owner lesson). A
      * back that races an in-flight dismissal is absorbed by construction
      * (Visible already false, the second VisibleChanged(false) moves nothing;
-     * a stale handler is rc-0 at-most-once). The consult sits AFTER the booted
-     * guard only for symmetry — no overlay can exist before the mount.
+     * a stale handler is rc-0 at-most-once).
+     *
+     * ── PHASE 16.2 (#346): NAVIGATION-BACK IS FIRE-AND-FORGET ──
+     * Until 16.2 this blocked the main thread on the dispatch lane for .NET's
+     * handled/not-handled rc, and a lane held by another handler held the main
+     * thread with it. Now the back is queued and this returns at once. .NET
+     * navigates back, and its BackState for the page it lands on arrives ahead of
+     * that page's frames; or, if it could not go back after all, its BackUnhandled
+     * notice hands the press to the platform's default (the runtime's
+     * onBackUnhandled), so a press that found a stale enabled state is never swallowed.
+     *
+     * Before boot there is no session to enter, and entering the lane then would put
+     * two threads in .NET at once. The mount's batches are posted before `booted`
+     * flips, so the callback CAN be enabled in that window; the press then takes the
+     * platform's default, as a pre-boot back always has.
      */
-    private fun handleBack(): Boolean {
-        if (!booted) return false
-        if (mapper.requestTopmostModalDismissal()) return true
-        return try {
-            runtime.dispatchHostEventAndWait(BnHostEvent.Back) == 0
-        } catch (t: Throwable) {
-            Log.e(tag, "back dispatch threw", t)
-            false
+    private fun handleBack() {
+        // A predictive-back gesture already in progress is delivered to its callback even
+        // after that callback was disabled mid-gesture. Disabled means the shell no longer
+        // intercepts back, so do nothing rather than act on a stale enabled state.
+        if (!backCallback.isEnabled) return
+        if (mapper.requestTopmostModalDismissal()) return
+        if (!booted) {
+            passBackToPlatform()
+            return
         }
+        runtime.dispatchHostEvent(BnHostEvent.Back)
     }
+
+    /** Phase 16.2 (#346): .NET's BackUnhandled, on main. Nothing to do once the activity is
+     * already going away; otherwise the press goes to the platform's default. */
+    private fun handBackUnhandledToPlatform() {
+        if (isFinishing || isDestroyed) return
+        passBackToPlatform()
+    }
+
+    /** Phase 16.2 (#346): the platform's default back, with [backCallback] put back to the
+     * state the mapper computes afterwards — never left disabled, or a later batch that
+     * computes `true` publishes nothing and back exits from a sub-page (handBackToPlatform). */
+    private fun passBackToPlatform() = handBackToPlatform(
+        setEnabled = { backCallback.isEnabled = it },
+        enabledNow = { mapper.backEnabled },
+        dispatch = { onBackPressedDispatcher.onBackPressed() },
+    )
 
     /**
      * Phase 11.0 (M11 DoD #1): the deep-link route → mount-component map, read

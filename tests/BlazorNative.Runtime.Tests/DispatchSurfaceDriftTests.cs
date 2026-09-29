@@ -46,7 +46,7 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class DispatchSurfaceDriftTests
 {
-    private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason);
+    private sealed record Method(string Name, string Semantics, string[]? Platforms, string? Reason, string? Visibility);
     private sealed record IgnoredMethod(string Name, string[]? Platforms, string? Reason);
 
     private static Method[] Surface()
@@ -65,7 +65,8 @@ public sealed class DispatchSurfaceDriftTests
                 m.GetProperty("name").GetString()!,
                 m.GetProperty("semantics").GetString()!,
                 platforms,
-                m.TryGetProperty("reason", out JsonElement r) ? r.GetString() : null));
+                m.TryGetProperty("reason", out JsonElement r) ? r.GetString() : null,
+                m.TryGetProperty("visibility", out JsonElement v) ? v.GetString() : null));
         }
 
         Assert.True(methods.Count >= 4,
@@ -312,6 +313,77 @@ public sealed class DispatchSurfaceDriftTests
         }
     }
 
+    /// <summary>Phase 16.2 Task 5 (#346) — <c>dispatchHostEventAndWait</c> became
+    /// internal and test-only by owner decision, and the manifest now carries an
+    /// optional <c>visibility</c> field to record it. This is the differential half:
+    /// the semantics fact above compares a method's LANE CALL to its declared
+    /// semantics; this one compares a method's ACCESS MODIFIER to its declared
+    /// visibility, in both shells, the same manifest-vs-both-shells shape #339's own
+    /// pin uses. <c>visibility</c> is optional — a method the manifest does not
+    /// restrict is skipped, exactly like an absent <c>platforms</c>/<c>reason</c>
+    /// pair elsewhere in this file — so this fact only ever grows the guarded set,
+    /// never shrinks what the other facts already check.
+    ///
+    /// <para>FIX ROUND 1 (Rule 2): optional means the loop below can iterate zero
+    /// times, which passed with nothing asserted at all when the manifest's one
+    /// <c>visibility</c> entry was removed and both shells made public — measured
+    /// in review. The floor below requires at least one entry, NAMED as
+    /// <c>dispatchHostEventAndWait</c> rather than merely counted, so the anchor
+    /// cannot be satisfied by some unrelated method while this one's own entry goes
+    /// missing.</para>
+    ///
+    /// <para>Kotlin's `internal` modifier keyword is source-level truth here, not the
+    /// compiled bytecode: a JVM member marked `internal` still comes out
+    /// `ACC_PUBLIC`, only its name gets a `$ModuleName` mangled suffix (measured with
+    /// javap against the compiled class) — the bytecode access flag alone cannot
+    /// distinguish `internal` from `public`. This fact reads the Kotlin SOURCE
+    /// keyword instead, which is unambiguous and is what
+    /// <c>DispatchHostEventAndWaitVisibilityTest</c> (the JVM suite, via
+    /// <c>KVisibility</c>) independently re-proves at the reflection level.</para></summary>
+    [Fact]
+    public void MethodsWithADeclaredVisibility_MatchBothShells()
+    {
+        string kotlin = KotlinRuntime();
+        string swift = SwiftRuntime();
+
+        // THE FLOOR (fix round 1): `visibility` is optional, so a loop with nothing to
+        // iterate would pass here having asserted nothing at all -- exactly the
+        // vacuous-pin shape pin-standard.md Rule 2 exists for, and exactly what the
+        // review measured by deleting the manifest's one `"visibility"` line and
+        // making both shells public: all five facts stayed green. A NAMED anchor,
+        // not just a count, so the floor cannot be satisfied by some unrelated method
+        // picking up a `visibility` entry later while dispatchHostEventAndWait's own
+        // goes missing.
+        Method[] declaredVisibility = [.. Surface().Where(m => m.Visibility is not null)];
+        Assert.True(declaredVisibility.Length > 0,
+            "no method in src/dispatch-surface.json declares a 'visibility' -- this fact's loop "
+            + "would run zero iterations and pass while checking nothing. dispatchHostEventAndWait "
+            + "must carry 'visibility': 'internal' (16.2 Task 5, #346).");
+        Assert.Contains(declaredVisibility, m => m.Name == "dispatchHostEventAndWait");
+
+        foreach (Method m in declaredVisibility)
+        {
+            Assert.Equal("internal", m.Visibility);
+            // The only value this fact knows how to check today — a future second
+            // value needs its own modifier-keyword mapping added here, deliberately.
+
+            bool wantKotlin = m.Platforms is null || m.Platforms.Contains("kotlin");
+            bool wantSwift = m.Platforms is null || m.Platforms.Contains("swift");
+
+            if (wantKotlin)
+                Assert.True(Regex.IsMatch(kotlin, $@"\binternal\s+fun\s+{Regex.Escape(m.Name)}\s*\("),
+                    $"src/dispatch-surface.json declares '{m.Name}' visibility 'internal', but the "
+                    + "Kotlin runtime does not declare it with the internal modifier — the manifest "
+                    + "and the shell disagree on visibility.");
+
+            if (wantSwift)
+                Assert.True(Regex.IsMatch(swift, $@"\binternal\s+func\s+{Regex.Escape(m.Name)}\s*\("),
+                    $"src/dispatch-surface.json declares '{m.Name}' visibility 'internal', but the "
+                    + "Swift runtime does not declare it with the internal modifier — the manifest "
+                    + "and the shell disagree on visibility.");
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Fix round 2 (final whole-branch review), Important #2 — THE COMPLETENESS
     // GUARD. Both facts above only ever look at methods THIS MANIFEST ALREADY
@@ -349,8 +421,9 @@ public sealed class DispatchSurfaceDriftTests
     /// act; re-point this with it.</summary>
     private const int MinimumSwiftDispatchDeclarations = 4;
 
-    /// <summary>THE FLOOR ON THE SCANNED SET — issue #357, open since 14.1, and the last
-    /// instance of census §4.2's shape in the pin population.
+    /// <summary>THE FLOOR ON THE SCANNED SET — issue #357, opened in 14.1 and closed on
+    /// 2026-09-25 with this fact as its fix, and the last instance of census §4.2's shape in
+    /// the pin population.
     ///
     /// <para><see cref="EveryDispatchNamedDeclaration_IsDeclaredOrIgnored"/> iterates
     /// <see cref="DispatchNamedDeclarations"/>, and the only anti-vacuity assertion it
@@ -376,12 +449,54 @@ public sealed class DispatchSurfaceDriftTests
     /// <para>It floors the two shells SEPARATELY rather than summing them. A combined
     /// floor is satisfiable by one healthy shell: Kotlin's eight names alone would clear
     /// any total low enough for Swift's five to matter, so an emptied Swift scan would
-    /// pass. Per shell, an emptied scan reds naming the shell.</para></summary>
+    /// pass. Per shell, an emptied scan reds naming the shell.</para>
+    ///
+    /// <para>THE COUNT FLOOR ALONE WAS NOT ENOUGH, and the 15.8 re-audit review proved it.
+    /// Its headroom, two names in Kotlin and one in Swift, was exactly the size of the
+    /// <c>*AndWait</c> methods — the blocking half of the #339 split, the very methods
+    /// this pin exists to guard. A <see cref="DispatchNamedDeclaration"/> made blind to
+    /// <c>AndWait</c> took Kotlin from 8 to 6 and Swift from 5 to 4, landing ON both floors,
+    /// and every fact stayed green. So the scan now also has NAMED ANCHORS, derived from
+    /// the manifest rather than restated: every name <c>src/dispatch-surface.json</c>
+    /// records for a shell, in <c>methods</c> or in <c>ignored</c>, must be one the scan
+    /// actually sees in that shell's source. A pattern that goes blind to any one known
+    /// name reds naming it, whatever the count. The count floor stays, as the check that
+    /// still means something if the manifest itself is emptied.</para>
+    ///
+    /// <para>WHAT THE ANCHORS DO NOT COVER: a name the manifest does not yet know about.
+    /// That is the completeness fact's job, and it is exactly the set the anchors cannot
+    /// name in advance.</para></summary>
     [Fact]
     public void TheDispatchDeclarationScan_IsNotVacuous()
     {
         FloorTheScannedSet("Kotlin", KotlinRuntime(), MinimumKotlinDispatchDeclarations);
         FloorTheScannedSet("Swift", SwiftRuntime(), MinimumSwiftDispatchDeclarations);
+
+        AnchorTheScannedSet("Kotlin", KotlinRuntime(), "kotlin");
+        AnchorTheScannedSet("Swift", SwiftRuntime(), "swift");
+
+        static void AnchorTheScannedSet(string shellLabel, string source, string platform)
+        {
+            string[] known =
+            [
+                .. Surface().Where(m => m.Platforms is null || m.Platforms.Contains(platform)).Select(m => m.Name),
+                .. Ignored().Where(i => i.Platforms is null || i.Platforms.Contains(platform)).Select(i => i.Name),
+            ];
+            Assert.True(known.Length >= 4,
+                $"the manifest records only {known.Length} dispatch names for {shellLabel}; the "
+                + "anchors below would check too little. src/dispatch-surface.json lost entries.");
+            Assert.Contains("dispatchHostEventAndWait", known);
+
+            HashSet<string> seen = DispatchNamedDeclarations(source).ToHashSet(StringComparer.Ordinal);
+            string[] unseen = [.. known.Where(n => !seen.Contains(n)).OrderBy(n => n, StringComparer.Ordinal)];
+
+            Assert.True(unseen.Length == 0,
+                $"the {shellLabel} runtime scan ({DispatchNamedDeclaration}) does not see "
+                + string.Join(", ", unseen) + ", which src/dispatch-surface.json records for this "
+                + "shell. Either the declaration pattern has gone blind to part of its subject, "
+                + "which is how an *AndWait-blind pattern once passed the count floor, or the "
+                + "method was retired and its manifest entry must go with it.");
+        }
 
         static void FloorTheScannedSet(string shellLabel, string source, int minimum)
         {

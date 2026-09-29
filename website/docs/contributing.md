@@ -42,14 +42,17 @@ and "we'll keep it updated" has never once been a mechanism.
 
 ## What a change is held to
 
-Three compile gates are required on every pull request — one per surface (.NET, Android,
-iOS). They are the contract, and they are worth understanding before you open a PR:
+A compile gate is required on every pull request for each surface — .NET, Android and iOS.
+They are the contract, and they are worth understanding before you open a PR:
 
 - **The counts are asserted, not observed.** A test-count drift fails the build. If your
   change adds tests, the number moves *deliberately*, in the same commit.
-- **Cross-shell facts are pinned by drift tests.** The style routing allow-list, the demo
-  frame tables and the shells' shared literals are parsed out of Kotlin, Swift and C# and
-  asserted equal, because a fact that lives in three languages drifts silently in all three.
+- **Cross-shell facts are generated or pinned.** A fact that lives in three languages drifts
+  silently in all three, so it gets one of two treatments. Where a generator can write every
+  copy — the style routing allow-list, node types, host-event names — the fact lives once in a
+  JSON manifest under `src/` and a test fails if a committed copy differs from what the
+  manifest produces. Where it cannot — the demo frame tables, for one — the copies are parsed
+  out of Kotlin, Swift and C# and asserted equal.
 - **The zero-warning bar applies**, including to the analyzers' own rules.
 
 If a gate reds on something that looks unrelated to your change, it is usually one of the
@@ -62,7 +65,7 @@ The site is a Docusaurus project in
 [`website/`](https://github.com/MarcelRoozekrans/BlazorNative/tree/main/website). Two things
 about it are worth knowing if you edit it:
 
-- **The component reference is generated** from `BlazorNative.Components`' XML docs at build
-  time and is not committed. To fix what it says, edit the `///` comment on the member — the
-  page is a printout, not a source.
+- **The API reference is generated** from each covered package's XML docs at build time and is
+  not committed. To fix what it says, edit the `///` comment on the member — the page is a
+  printout, not a source.
 - **A dead internal link fails the build.** That is deliberate.

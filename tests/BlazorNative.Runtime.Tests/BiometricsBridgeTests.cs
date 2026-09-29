@@ -40,7 +40,7 @@ public sealed class BiometricsBridgeTests
             await bridge.AuthenticateAsync("Prove it's you");
 
             Assert.True(FakeShellHost.LastHostCallRequestId > 0);
-            Assert.Equal((int)NativeShellBridge.HostCallOp.Biometrics, FakeShellHost.LastHostCallOp);
+            Assert.Equal((int)HostCallOp.Biometrics, FakeShellHost.LastHostCallOp);
             Assert.Contains("\"action\":\"authenticate\"", FakeShellHost.LastHostCallArgs);
             Assert.Contains("\"reason\":\"Prove it's you\"", FakeShellHost.LastHostCallArgs);
         }

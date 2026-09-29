@@ -275,6 +275,9 @@ class AndroidShellBridge(
             HostCallOp.BIOMETRICS -> handleBiometrics(requestId, argsJson)
             HostCallOp.SECURE_STORAGE -> handleSecureStorage(requestId, argsJson)
             HostCallOp.CAMERA -> handleCamera(requestId, argsJson)
+            // HostCallOp.FAULT_NOTICE (Phase 16.1) has no arm here ON PURPOSE: the shared
+            // BridgeRegistrar answers it before any ShellBridgeHandlers sees it, and routes
+            // it to the same onError MainActivity hands both of them.
             // An unknown op is DATA, not a crash: complete with Error so the
             // awaiting .NET ValueTask resolves rather than leaking pending.
             else -> {

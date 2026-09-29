@@ -24,9 +24,10 @@ public sealed class MountSyncTests
         // SetParametersAsync is awaited by Renderer.RenderRootComponentAsync,
         // so overriding it with a never-completing await guarantees the
         // returned MountAsync task is observably incomplete when Mount<T>
-        // inspects IsCompletedSuccessfully. (OnInitializedAsync isn't enough:
-        // ComponentBase fire-and-forgets its continuation onto pending tasks
-        // and the first render task completes anyway.)
+        // inspects IsCompletedSuccessfully. (An OnInitializedAsync that awaits
+        // would do too: measured in Phase 16.2, Mount<T> throws for it today,
+        // because the root render task stays incomplete until OnInitializedAsync
+        // finishes. This override is kept as the most direct way to hold it.)
         private static readonly TaskCompletionSource _neverCompletes = new();
 
         Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -78,14 +79,32 @@ public sealed class MountSyncTests
     }
 
     [Fact]
-    public void Renderer_uses_inline_dispatcher_so_mount_chain_completes_synchronously()
+    public void Renderer_mounts_synchronously_on_its_render_thread()
     {
-        // Regression guard: prevents anyone from reverting the InlineDispatcher swap.
-        // Dispatcher.CreateDefault() is not inline-only on Mono-WASI even when work
-        // completes synchronously — the swap is load-bearing (Phase 2.4 Task 4 defect #1).
+        // Flipped in 16.1: was Renderer_uses_inline_dispatcher_so_mount_chain_completes_synchronously, asserting the type name "InlineDispatcher" and CheckAccess() == true on the calling thread.
+        //
+        // Regression guard for the sync-mount contract the C ABI depends on: the first render
+        // completes before Mount returns. It now holds because Mount posts to the renderer's
+        // own render thread and waits, not because the dispatcher runs work inline — so this
+        // pins the BEHAVIOUR, never the dispatcher's type.
         var renderer = NewRenderer();
-        Assert.Equal("InlineDispatcher", renderer.Dispatcher.GetType().Name);
-        Assert.True(renderer.Dispatcher.CheckAccess(),
-            "InlineDispatcher.CheckAccess() must return true on the calling thread");
+        int frames = 0;
+        int emittingThread = 0;
+        renderer.Frames += (_, _) =>
+        {
+            Interlocked.Increment(ref frames);
+            Volatile.Write(ref emittingThread, Environment.CurrentManagedThreadId);
+            return ValueTask.CompletedTask;
+        };
+
+        // Honest CheckAccess: the test thread is not the render thread.
+        Assert.False(renderer.Dispatcher.CheckAccess(),
+            "CheckAccess() answered true on the test thread — the dispatcher is claiming a thread it does not own");
+
+        var id = renderer.Mount<SyncProbe>();
+
+        Assert.True(id >= 0, $"expected non-negative component id, got {id}");
+        Assert.True(Volatile.Read(ref frames) >= 1, "Mount returned before its first frame was emitted");
+        Assert.Equal(renderer.RenderThreadId, Volatile.Read(ref emittingThread));
     }
 }

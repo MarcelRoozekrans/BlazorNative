@@ -5,8 +5,10 @@ namespace BlazorNative.Components;
 
 /// <summary>
 /// A container: a box that holds other components and arranges them with
-/// flexbox. Renders as a plain native view — a <c>FrameLayout</c> on Android,
-/// a <c>UIView</c> on iOS — positioned by Yoga.
+/// flexbox. Renders as a plain native view — <c>BnYogaFrameLayout</c> on
+/// Android, a <c>FrameLayout</c> subclass that suppresses the framework's own
+/// layout pass so Yoga is the only one that places children, and a
+/// <c>UIView</c> on iOS — positioned by Yoga.
 /// </summary>
 /// <remarks>
 /// <para>

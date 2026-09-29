@@ -519,6 +519,8 @@ public sealed class TemplateDriftTests
             "android/src/main/kotlin/io/blazornative/shell/ImageContentModeTable.kt",
             "android/src/main/kotlin/io/blazornative/shell/ImageErrorDispatch.kt",
             "android/src/main/kotlin/io/blazornative/shell/ImageRequestGuard.kt",
+            // The shell — the back state held until its frame (Phase 16.2)
+            "android/src/main/kotlin/io/blazornative/shell/BackStateBuffer.kt",
         ];
 
         // THE SUBJECT IS WHAT GIT TRACKS. The pack ships tracked content; the
@@ -828,6 +830,10 @@ public sealed class TemplateDriftTests
             // WindowInsetsCompat.Type (added 1.5.0), which MainActivity's safe-area
             // listener needs. Same drift risk as every other gradle pin above.
             ["androidx.core"] = @"implementation\(""androidx\.core:core:([^""]+)""\)",
+            // Phase 16.2 (#346): androidx.activity, pinned explicitly — the shell's back is
+            // an AndroidX OnBackPressedCallback, and the transitive 1.1.0 predates predictive
+            // back. Same drift risk as every other gradle pin above.
+            ["androidx.activity"] = @"implementation\(""androidx\.activity:activity:([^""]+)""\)",
             ["compileSdk"] = @"(?m)^\s*compileSdk = (\d+)",
             ["minSdk"] = @"(?m)^\s*minSdk = (\d+)",
             ["targetSdk"] = @"(?m)^\s*targetSdk = (\d+)",

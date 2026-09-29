@@ -139,7 +139,32 @@ public sealed class LengthParameterNullabilityPinTests
     // deliberately strict: a length parameter must be EXACTLY `BnLength?` or
     // `BnAutoLength?`, so a bare struct, a `List<BnLength>` or any other shape that
     // merely mentions the type reds and has to be argued for on purpose.
+    //
+    // WHAT THIS DOES NOT COVER (Rule 5):
+    //
+    // - PUBLIC TYPES ONLY. The sweep reads types that are public or nested
+    //   public in BlazorNative.Components. An internal component, or anything
+    //   outside that assembly such as a sample-app or third-party component, is
+    //   never seen.
+    //
+    // - PROPERTIES ONLY. Only `[Parameter]` PROPERTIES are swept. A length
+    //   passed as a method argument, a field, or a cascading value that is not
+    //   a `[Parameter]` is out of reach.
+    //
+    // - FLOAT "LENGTHS" ARE OUT OF SCOPE BY DESIGN. A parameter the author
+    //   declared `float`, such as BnList's Height and ItemHeight, never mentions
+    //   BnLength, so the filter does not see it. That is deliberate, spec 3.4:
+    //   Height is BnListWindow.Compute's divisor and must be a point value.
+    //   BnListSurfaceTests below pins that decision. It also means a NEW length
+    //   parameter typed as a bare float is invisible to this pin.
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The length parameters found on 2026-09-26: 12 on BnLayoutItem, 6 on
+    /// BnLayoutContainer (Padding, Gap and the four per-edge paddings since 14.2), 3 on
+    /// BnModal and 1 on BnList&lt;TItem&gt;. Both facts floor at exactly this, with no
+    /// headroom. Adding a length parameter is fine and is covered automatically; losing
+    /// one reds, and the floor moves down in the same change that removes it.</summary>
+    private const int MeasuredLengthParameters = 22;
 
     private static bool IsALength(Type t)
         => t == typeof(BnLength) || t == typeof(BnAutoLength);
@@ -160,7 +185,12 @@ public sealed class LengthParameterNullabilityPinTests
     /// including <c>BnLayoutItem</c>, <c>BnLayoutContainer</c>, <c>BnModal</c> and
     /// <c>BnList&lt;TItem&gt;</c>, which are reached, not enumerated.</summary>
     private static List<PropertyInfo> LengthParameters()
-        => typeof(BnLayoutItem).Assembly.GetTypes()
+        => LengthParametersIn(typeof(BnLayoutItem).Assembly.GetTypes());
+
+    /// <summary>The filter behind <see cref="LengthParameters"/>, over any type list, so
+    /// the control runs a fixture through the same filter the fact uses.</summary>
+    private static List<PropertyInfo> LengthParametersIn(IEnumerable<Type> types)
+        => types
             .Where(t => t.IsPublic || t.IsNestedPublic)
             .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             .Where(p => p.IsDefined(typeof(ParameterAttribute), inherit: true))
@@ -169,19 +199,63 @@ public sealed class LengthParameterNullabilityPinTests
             .OrderBy(p => $"{p.DeclaringType!.Name}.{p.Name}", StringComparer.Ordinal)
             .ToList();
 
-    [Fact]
-    public void EveryLengthParameter_IsDeclaredNullable()
-    {
-        var offenders = LengthParameters()
+    /// <summary>The detector: every swept parameter that is not exactly
+    /// <c>BnLength?</c> or <c>BnAutoLength?</c>. Shared by the fact and its control.</summary>
+    private static List<string> Offenders(IEnumerable<PropertyInfo> parameters)
+        => parameters
             .Where(p => !IsTheApprovedShape(p.PropertyType))
             .Select(p => $"{p.DeclaringType!.Name}.{p.Name} is declared " +
                          $"{p.PropertyType.Name} — it must be BnLength? or BnAutoLength?")
             .ToList();
 
+    [Fact]
+    public void EveryLengthParameter_IsDeclaredNullable()
+    {
+        List<PropertyInfo> swept = LengthParameters();
+
+        // This fact's OWN floor. Before 15.7 it relied on its sibling below for
+        // non-vacuity, so run alone, or with the sibling deleted, it passed over
+        // an empty sweep.
+        Assert.True(swept.Count >= MeasuredLengthParameters,
+            $"The nullability pin swept only {swept.Count} length parameters, and it " +
+            $"swept {MeasuredLengthParameters} when measured. A sweep that reaches nothing " +
+            "passes vacuously.");
+
+        var offenders = Offenders(swept);
+
         Assert.True(offenders.Count == 0,
             "A length parameter is not nullable, so its `default` is a real value the " +
             "author never chose (spec §3.3, this repo's #178/#181 bug class):" +
             Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
+
+    /// <summary>A synthetic component for the control. It is never mounted.</summary>
+    public sealed class LengthShapeFixture
+    {
+        [Parameter] public BnLength Bare { get; set; }
+        [Parameter] public BnAutoLength BareAuto { get; set; }
+        [Parameter] public List<BnLength?>? Wrapped { get; set; }
+        [Parameter] public BnLength? Approved { get; set; }
+        [Parameter] public BnAutoLength? ApprovedAuto { get; set; }
+        [Parameter] public float NotALength { get; set; }
+    }
+
+    /// <summary>The positive control, run through the fact's own filter and detector. The
+    /// bare and wrapped shapes must be rejected, the two nullable shapes cleared, and a
+    /// float never swept at all.</summary>
+    [Fact]
+    public void TheDetector_RejectsABareLength_AndClearsTheNullableShape()
+    {
+        List<PropertyInfo> swept = LengthParametersIn([typeof(LengthShapeFixture)]);
+        Assert.Equal(
+            new[] { "Approved", "ApprovedAuto", "Bare", "BareAuto", "Wrapped" },
+            swept.Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
+
+        var offenders = Offenders(swept);
+        Assert.Contains(offenders, o => o.StartsWith("LengthShapeFixture.Bare is declared", StringComparison.Ordinal));
+        Assert.Contains(offenders, o => o.StartsWith("LengthShapeFixture.BareAuto is declared", StringComparison.Ordinal));
+        Assert.Contains(offenders, o => o.StartsWith("LengthShapeFixture.Wrapped is declared", StringComparison.Ordinal));
+        Assert.Equal(3, offenders.Count);
     }
 
     // Anti-vacuity, because the pin this one REPLACES was vacuous. A filter that
@@ -201,12 +275,16 @@ public sealed class LengthParameterNullabilityPinTests
         Assert.Contains("BnModal.ContentWidth",      found);
         Assert.Contains("BnList`1.Width",            found);
 
-        // 12 on BnLayoutItem + 2 on BnLayoutContainer + 3 on BnModal + 1 on
-        // BnList<TItem>. A floor, not an equality: adding a length parameter is
-        // fine and is covered automatically; LOSING the sweep is not.
-        Assert.True(found.Count >= 18,
+        // 12 on BnLayoutItem + 6 on BnLayoutContainer + 3 on BnModal + 1 on
+        // BnList<TItem> = 22, measured on 2026-09-26, floored at exactly that with
+        // no headroom. The comment said "2 on BnLayoutContainer" and floored at 18
+        // until 15.7, which left four parameters of silent headroom since 14.2.
+        // A floor, not an equality: adding a length parameter is fine and is
+        // covered automatically; LOSING one is not.
+        Assert.True(found.Count >= MeasuredLengthParameters,
             $"The length sweep found only {found.Count} parameters; it should reach at " +
-            "least 18. A sweep that reaches nothing makes the nullability pin vacuous.");
+            $"least {MeasuredLengthParameters}. A sweep that reaches nothing makes the " +
+            "nullability pin vacuous.");
     }
 }
 

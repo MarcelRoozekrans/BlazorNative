@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Phase 3.2 Gate 2 — blazornative_dispatch_event proven on the desktop JVM
@@ -136,24 +136,36 @@ class DispatchEventTest {
     // ── the PRODUCTION path: async lane (THREADING CONTRACT) ─────────────────
 
     @Test
-    fun async_dispatchEvent_rerenders_on_the_dispatch_lane() {
-        // dispatchEvent (not the blocking test seam): the event is queued on
-        // the BlazorNative-Dispatch lane, so the re-render frame must arrive
-        // asynchronously ON that lane thread — pinning the threading contract
-        // production shells rely on (UI listeners never enter the ABI
-        // directly).
+    fun async_dispatchEvent_rerenders_serially_on_one_non_lane_thread() {
+        // Phase 16.1: flipped from "rerenders on the dispatch lane": frames now come from .NET's render thread, not the lane.
+        // dispatchEvent (not the blocking test seam) queues the event on the
+        // BlazorNative-Dispatch lane, and the export returns once the handler's
+        // synchronous part has run. Every frame this runtime receives, the mount
+        // frame included, is delivered by .NET's render thread: ONE thread, never
+        // the lane, and never two frames at once. That is the producer contract
+        // WidgetMapper's main-thread hop relies on.
         val latch = CountDownLatch(1)
-        val rerenderThread = AtomicReference<String>()
+        val frameThreads = Collections.synchronizedList(mutableListOf<Thread>())
+        val inCallback = AtomicInteger(0)
+        val maxInCallback = AtomicInteger(0)
         val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
         val errors = Collections.synchronizedList(mutableListOf<String>())
         val runtime = BlazorNativeRuntime(
             onFrame = { f ->
-                frames.add(f)
-                if (f.patches.filterIsInstance<RenderPatch.ReplaceText>()
-                        .any { it.text.contains("taps: 1") }
-                ) {
-                    rerenderThread.set(Thread.currentThread().name)
-                    latch.countDown()
+                val depth = inCallback.incrementAndGet()
+                maxInCallback.accumulateAndGet(depth, ::maxOf)
+                try {
+                    frameThreads.add(Thread.currentThread())
+                    frames.add(f)
+                    // Widen the overlap window, so a second producer would be caught inside it.
+                    Thread.sleep(20)
+                    if (f.patches.filterIsInstance<RenderPatch.ReplaceText>()
+                            .any { it.text.contains("taps: 1") }
+                    ) {
+                        latch.countDown()
+                    }
+                } finally {
+                    inCallback.decrementAndGet()
                 }
             },
             onError = { msg, t -> errors.add("$msg: $t") },
@@ -167,11 +179,22 @@ class DispatchEventTest {
             latch.await(5, TimeUnit.SECONDS),
             "re-render frame did not arrive within 5 s via the async lane; errors=$errors"
         )
-        println("[DispatchEventTest] async re-render frame arrived on thread '${rerenderThread.get()}'")
+        val threads = frameThreads.toList()
+        val names = threads.map { it.name }
+        println("[DispatchEventTest] frame threads: $names")
+        // Anchor: the mount frame AND the re-render were both observed, so "one thread" compares two deliveries.
+        assertTrue(threads.size >= 2, "expected the mount frame and the re-render frame; got $names")
+        // Identity, not name: Thread.equals is identity, and the name alone would pass for two threads.
+        assertEquals(1, threads.toSet().size, "every frame for this mount must come from ONE thread; got $names")
         assertEquals(
-            "BlazorNative-Dispatch", rerenderThread.get(),
-            "the re-render frame must be delivered on the dispatch lane (THREADING CONTRACT)"
+            BlazorNativeRuntime.RENDER_THREAD_NAME, threads.first().name,
+            "frames must arrive on .NET's render thread, kept attached under its own name"
         )
+        assertTrue(
+            names.none { it == "BlazorNative-Dispatch" },
+            "no frame may be delivered on the dispatch lane since 16.1 (the render thread produces them); got $names"
+        )
+        assertEquals(1, maxInCallback.get(), "frames must never overlap: onFrame was entered concurrently")
         assertTrue(errors.isEmpty(), "async dispatch must not route to onError; got $errors")
         assertTrue(runtime.retire(), "the lane must drain after the dispatch completed")
     }

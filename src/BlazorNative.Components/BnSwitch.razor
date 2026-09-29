@@ -3,8 +3,10 @@
     BnSwitch — Phase 7.3 Task 1.2 (design decision 1 + 2), authored in
     .razor.
 
-    Emits the `switch` element → NodeType 9. Android: SwitchMaterial/Switch.
-    iOS: UISwitch — the SAME widget BnCheckbox maps to there (design
+    Emits the `switch` element → NodeType 9. Android: Switch — the framework
+    widget, not SwitchMaterial/SwitchCompat (this shell has no Material
+    dependency; see WidgetMapper.kt's CreateNode comment). iOS: UISwitch —
+    the SAME widget BnCheckbox maps to there (design
     decision 2: iOS has no native checkbox, so the two controls are
     semantically identical on iOS and visually distinct only on Android; the
     recorded "renders natively, not identically" divergence lives in

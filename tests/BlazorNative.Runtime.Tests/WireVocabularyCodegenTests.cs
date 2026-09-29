@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
@@ -372,5 +374,154 @@ public sealed class WireVocabularyCodegenTests
         Assert.True(checkedNames >= 2,
             $"only {checkedNames} reserved names checked — the manifest lost entries, or this "
             + "loop stopped seeing them");
+    }
+
+    // ── hostCallOps (Phase 16.1): the op integer on the ONE hostCallBegin slot ──
+    //
+    // Before 16.1 the op enum was hand-mirrored in three languages, agreeing only
+    // because three per-capability tests asserted their own constant. It is now
+    // generated. These three facts pin what generation alone cannot:
+    //   - the ids are FROZEN, because a shipped shell switches on the integer;
+    //   - every language's copy carries every op, read back out of the emitted AND
+    //     the committed text, both ways;
+    //   - the manifest refuses a duplicate id or name, which would route two
+    //     capabilities to one arm in every shell at once.
+    //
+    // DOES NOT COVER: that each shell has an ARM for every op. An op a shell does
+    // not route takes its unknown-op branch, which completes with Error and, on
+    // Android, reaches onError. FaultNotice's routing is pinned by the shells' own
+    // suites, FaultNoticeTest.kt and BnFaultNoticeTests.swift. Nor the ObjC++
+    // header, which carries no op table.
+
+    /// <summary>Frozen, not merely current: a released shell was compiled against these.</summary>
+    private static readonly (string Name, int Id)[] FrozenHostCallOps =
+    [
+        ("Geolocation", 0), ("Notifications", 1), ("Biometrics", 2),
+        ("SecureStorage", 3), ("Camera", 4), ("FaultNotice", 5),
+        ("BackState", 6), ("BackUnhandled", 7),
+    ];
+
+    [Fact]
+    public void TheHostCallOps_KeepTheirFrozenIds()
+    {
+        WireVocabulary v = LoadManifest();
+
+        // Rule 2: the manifest must still hold at least the eight ops this pins.
+        Assert.True(v.HostCallOps.Ops.Length >= FrozenHostCallOps.Length,
+            $"the manifest declares {v.HostCallOps.Ops.Length} host-call ops, fewer than the "
+            + $"{FrozenHostCallOps.Length} frozen ones. An op was deleted, and a shipped shell still "
+            + "switches on its integer.");
+
+        Dictionary<string, int> declared = v.HostCallOps.Ops.ToDictionary(o => o.Name, o => o.Id, StringComparer.Ordinal);
+        foreach ((string name, int id) in FrozenHostCallOps)
+        {
+            Assert.True(declared.TryGetValue(name, out int actual),
+                $"host-call op '{name}' is gone from the manifest. Its id {id} is on the wire in every "
+                + "released shell; renaming it is a break, and reusing the id is worse.");
+            Assert.True(actual == id,
+                $"host-call op '{name}' has id {actual} in the manifest, but {id} is frozen. A shell "
+                + "compiled against the old id routes the call to the wrong capability.");
+        }
+
+        // The compiled .NET enum is the generated one, so it must agree too.
+        foreach ((string name, int id) in FrozenHostCallOps)
+            Assert.Equal(id, (int)Enum.Parse<HostCallOp>(name));
+    }
+
+    /// <summary>The op block of one generated file: from <paramref name="header"/> to
+    /// the next line that is a lone closing brace.</summary>
+    private static string OpBlock(string text, string header, string where)
+    {
+        string normalized = Normalize(text);
+        int start = normalized.IndexOf(header, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"{where}: no '{header}' block. The emitter stopped writing it, or renamed it.");
+        int end = normalized.IndexOf("\n}", start, StringComparison.Ordinal);
+        Assert.True(end > start, $"{where}: the '{header}' block is never closed");
+        return normalized[start..end];
+    }
+
+    /// <summary>name → id, read with <paramref name="pattern"/>, whose two groups are
+    /// the spelling and the integer.</summary>
+    private static Dictionary<string, int> ReadOps(string block, string pattern)
+        => Regex.Matches(block, pattern, RegexOptions.Multiline)
+            .ToDictionary(m => m.Groups[1].Value,
+                          m => int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture),
+                          StringComparer.Ordinal);
+
+    [Fact]
+    public void TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages()
+    {
+        string root = BnRepo.Root();
+        WireVocabulary v = LoadManifest();
+
+        Dictionary<string, int> Expected(Func<HostCallOpEntry, string> spell)
+            => v.HostCallOps.Ops.ToDictionary(spell, o => o.Id, StringComparer.Ordinal);
+
+        // Per language: the committed copy, what the emitter produces now, the block
+        // header, the line pattern, and the manifest spelled that language's way.
+        var languages = new (string Lang, string Path, string Emitted, string Header, string Pattern, Dictionary<string, int> Want)[]
+        {
+            ("C#", "src/BlazorNative.Runtime/BnHostCallOps.g.cs", Emitters.EmitCSharpHostCallOps(v),
+                "internal enum HostCallOp", @"^\s*(\w+)\s*=\s*(\d+),", Expected(o => o.Name)),
+            ("Kotlin", "src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt", Emitters.EmitKotlin(v),
+                "object HostCallOp", @"^\s*const val (\w+) = (\d+)$", Expected(o => o.KotlinName)),
+            ("Swift", "src/BlazorNative.Apple/BnHost/BnWireVocabulary.g.swift", Emitters.EmitSwift(v),
+                "enum BnHostCallOp", @"^\s*static let (\w+): Int32 = (\d+)$", Expected(o => o.SwiftName)),
+        };
+
+        int languagesChecked = 0;
+        foreach (var l in languages)
+        {
+            string committed = File.ReadAllText(Path.Combine(root, l.Path.Replace('/', Path.DirectorySeparatorChar)));
+            foreach ((string source, string text) in new[] { ("emitted", l.Emitted), ("committed", committed) })
+            {
+                string where = $"{l.Lang} ({source}, {l.Path})";
+                Dictionary<string, int> read = ReadOps(OpBlock(text, l.Header, where), l.Pattern);
+
+                // Rule 2: a pattern that stopped matching reads nothing and agrees with
+                // nothing, so the floor and the anchor come before the comparison.
+                Assert.True(read.Count >= 6,
+                    $"{where}: read {read.Count} ops, expected at least 6. The block lost ops or the "
+                    + "pattern no longer matches the emitted shape.");
+                string camera = l.Want.Single(kv => kv.Value == 4).Key;
+                Assert.True(read.TryGetValue(camera, out int cameraId) && cameraId == 4,
+                    $"{where}: no '{camera} = 4'. The anchor op is missing or renumbered.");
+
+                // Both ways: every manifest op is present with its id, and nothing else is.
+                Assert.Equal(
+                    l.Want.OrderBy(kv => kv.Key, StringComparer.Ordinal),
+                    read.OrderBy(kv => kv.Key, StringComparer.Ordinal));
+            }
+            languagesChecked++;
+        }
+        Assert.Equal(3, languagesChecked);
+    }
+
+    [Fact]
+    public void TheManifest_RejectsADuplicateOpId()
+    {
+        static string Manifest(int secondId, string secondName) => $$"""
+            {
+              "yogaStyles":   { "groups": [ { "name": "G", "names": ["width"] } ] },
+              "visualStyles": { "groups": [ { "name": "V", "names": ["color"] } ] },
+              "nodeTypes":    { "fallbackName": "?", "types": [ { "id": 0, "enum": "None", "wireName": null } ] },
+              "hostEvents":   { "events": [ { "name": "back", "tier": "reserved" } ] },
+              "hostCallOps":  { "ops": [
+                { "name": "Geolocation", "id": 0, "doc": "the first op" },
+                { "name": "{{secondName}}", "id": {{secondId}}, "doc": "the second op" }
+              ] }
+            }
+            """;
+
+        // Rule 3, the positive control through the same detector: distinct ids and names load.
+        WireVocabulary ok = WireVocabulary.Load(Manifest(1, "Camera"));
+        Assert.Equal(2, ok.HostCallOps.Ops.Length);
+
+        var dupId = Assert.Throws<InvalidDataException>(() => WireVocabulary.Load(Manifest(0, "Camera")));
+        Assert.Contains("hostCallOps.id", dupId.Message);
+
+        var dupName = Assert.Throws<InvalidDataException>(() => WireVocabulary.Load(Manifest(1, "Geolocation")));
+        Assert.Contains("hostCallOps.name", dupName.Message);
+        Assert.Contains("Geolocation", dupName.Message);
     }
 }

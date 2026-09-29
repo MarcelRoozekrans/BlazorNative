@@ -73,7 +73,10 @@ final class BnDeepLink {
     /// the serial lane — the ABI must not be called from UIKit's arbitrary thread
     /// directly. Its being non-nil is ALSO the "a live session exists" signal that
     /// chooses warm re-route over cold stash, exactly as `BnNotifications` does.
-    var navigateDispatcher: ((String) -> Int32)?
+    ///
+    /// Returns nothing since 16.2 (#346): the dispatch is fire-and-forget, so there is no
+    /// rc to hand back, and a type that returned one would have to invent it.
+    var navigateDispatcher: ((String) -> Void)?
 
     // ── Parsing ──────────────────────────────────────────────────────────────
 
@@ -117,7 +120,7 @@ final class BnDeepLink {
         if let dispatcher = navigateDispatcher {
             // WARM: a live session. .NET owns the route table.
             BnLog.info("BnDeepLink", "[deep-link] warm route → \(route)")   // route = app data → redacted (the default)
-            _ = dispatcher(route)
+            dispatcher(route)
         } else {
             // COLD: launched by the link. Seed the mount instead.
             BnLog.info("BnDeepLink", "[deep-link] startup route → \(route)")   // route = app data → redacted (the default)

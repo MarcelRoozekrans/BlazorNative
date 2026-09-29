@@ -33,8 +33,8 @@
     arbitrary platform constant no two platforms share — declaring it is what
     makes "the slider is 240dp wide" one assertion on both shells). The
     checkboxes and switches deliberately declare NOTHING: their sizes are the
-    platforms' own intrinsics (a UISwitch is 51×31pt, a MaterialCheckBox is
-    whatever Material says), asserted PER-platform against the platform's own
+    platforms' own intrinsics (a UISwitch is 51×31pt, a framework CheckBox is
+    whatever the device theme says), asserted PER-platform against the platform's own
     measurement (the 6.3 oracle method) — frame parity applies to LAYOUT,
     never to intrinsic control sizes.
 

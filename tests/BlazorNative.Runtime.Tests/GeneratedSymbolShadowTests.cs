@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using BlazorNative.Tests.Shared;
 
@@ -34,13 +35,14 @@ namespace BlazorNative.Runtime.Tests;
 
 public sealed class GeneratedSymbolShadowTests
 {
-    /// <summary>How many symbols the three generated shell files hold TODAY (5 Swift,
-    /// 6 Kotlin — the 5 BnWireVocabulary members plus BnHostEvent's constructor
-    /// property `wireName`, which Swift has no equivalent of because Swift's
-    /// BnHostEvent consumes the built-in `.rawValue` instead — and 3 C). The floor
-    /// below is measured, not guessed; if the manifest legitimately loses a name,
+    /// <summary>How many symbols the three generated shell files hold TODAY (11 Swift,
+    /// 12 Kotlin and 3 C). Swift: the 5 BnWireVocabulary members and the 6 BnHostCallOp
+    /// constants. Kotlin: the same 11, plus BnHostEvent's constructor property
+    /// `wireName`, which Swift has no equivalent of because Swift's BnHostEvent consumes
+    /// the built-in `.rawValue` instead. The op constants arrived with Phase 16.1. The
+    /// floor below is measured, not guessed; if the manifest legitimately loses a name,
     /// lower it in the same commit.</summary>
-    private const int GeneratedSymbolFloor = 14;
+    private const int GeneratedSymbolFloor = 26;
 
     /// <summary>Swift `static let NAME` / Kotlin `val NAME` / `@JvmField val NAME`.</summary>
     private const string SwiftKotlinDeclaration = @"\b(?:static\s+let|val)\s+([A-Za-z_][A-Za-z0-9_]*)\b";
@@ -56,6 +58,12 @@ public sealed class GeneratedSymbolShadowTests
     /// to the block's closing brace is a member of that enum, not of the
     /// `BnWireVocabulary` object — see the note on <see cref="GeneratedSymbols"/>.</summary>
     private const string HostEventEnumOpen = @"\benum\s+(?:class\s+)?BnHostEvent\b";
+
+    /// <summary>A top-level host-call op table: Kotlin's <c>object HostCallOp {</c> and
+    /// Swift's <c>enum BnHostCallOp {</c> (Phase 16.1). Group 1 is the type name, which is
+    /// how its constants are referenced: <c>HostCallOp.CAMERA</c>, <c>BnHostCallOp.camera</c>.
+    /// Anchored at column 0 so prose that mentions the type cannot open the block.</summary>
+    private const string HostCallOpTableOpen = @"^(?:object|enum)\s+(HostCallOp|BnHostCallOp)\b";
 
     /// <summary>Every symbol WireGen emits into a shell, by generated-file path, plus
     /// whether it was declared inside the <c>BnHostEvent</c> enum rather than the
@@ -77,7 +85,7 @@ public sealed class GeneratedSymbolShadowTests
     /// them over an empty set — the exact silent-degradation shape this phase
     /// exists to remove, sitting inside its own flagship guard. `File.Exists`
     /// guards the file MOVING; only a count guards the parse FAILING.</para></summary>
-    private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum)> GeneratedSymbols()
+    private static IReadOnlyList<(string File, string Symbol, bool InHostEventEnum, string? OpTable)> GeneratedSymbols()
     {
         string root = BnRepo.Root();
         (string Path, string Pattern)[] generated =
@@ -87,28 +95,34 @@ public sealed class GeneratedSymbolShadowTests
             (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.h"), CArrayDeclaration),
         ];
 
-        var symbols = new List<(string File, string Symbol, bool InHostEventEnum)>();
+        var symbols = new List<(string File, string Symbol, bool InHostEventEnum, string? OpTable)>();
         foreach ((string path, string pattern) in generated)
         {
             Assert.True(File.Exists(path), $"generated file missing: {path}");
 
             bool inHostEventEnum = false;
+            string? opTable = null;
             foreach (string line in File.ReadAllLines(path))
             {
                 // Entering counts on the SAME line: Kotlin declares the enum and its
                 // `wireName` property in one statement (`BnHostEvent(val wireName: ...)`).
                 if (!inHostEventEnum && Regex.IsMatch(line, HostEventEnumOpen))
                     inHostEventEnum = true;
+                Match open = Regex.Match(line, HostCallOpTableOpen);
+                if (opTable is null && open.Success)
+                    opTable = open.Groups[1].Value;
 
                 Match m = Regex.Match(line, pattern);
                 if (m.Success)
-                    symbols.Add((path, m.Groups[1].Value, inHostEventEnum));
+                    symbols.Add((path, m.Groups[1].Value, inHostEventEnum, opTable));
 
-                // Both generated files close their last top-level type with an
-                // unindented `}` and declare nothing after BnHostEvent, so this is
-                // sufficient without a full brace-depth parser.
-                if (inHostEventEnum && line.Trim() == "}")
+                // Every top-level type in these files closes with an unindented `}`,
+                // so this is sufficient without a full brace-depth parser.
+                if (line.Trim() == "}")
+                {
                     inHostEventEnum = false;
+                    opTable = null;
+                }
             }
         }
 
@@ -176,9 +190,23 @@ public sealed class GeneratedSymbolShadowTests
     /// use of it. In C, specifically a definition with its own initializer;
     /// `kYogaStyles[i]` and `sizeof(kYogaStyles[0])` index with something and do not
     /// match.</summary>
-    private static string DeclarationPattern(string symbol, bool c) => c
+    private static string DeclarationPattern(string symbol, bool c, bool opConstant = false) => c
         ? $@"\b{Regex.Escape(symbol)}\s*\[\s*\]\s*=\s*\{{"
-        : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
+        : opConstant
+            ? OpConstantDeclarationPattern(symbol)
+            : $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\b";
+
+    /// <summary>A hand-written twin of a host-call op constant: the same name bound to an
+    /// INTEGER LITERAL, e.g. <c>static let camera: Int32 = 4</c> or
+    /// <c>const val CAMERA = 4</c> (Phase 16.1).
+    ///
+    /// <para>NARROWER THAN THE NAME ALONE, on purpose. The op names are also the natural
+    /// names of the capability objects: <c>let camera = BnCamera()</c> in
+    /// AppleShellBridge.swift is a property, not an op, and a name-only pattern flags it.
+    /// What makes a declaration a second copy of the WIRE value is the literal integer, so
+    /// that is what this matches.</para></summary>
+    private static string OpConstantDeclarationPattern(string symbol)
+        => $@"\b(?:static\s+let|let|val|var)\s+{Regex.Escape(symbol)}\s*(?::\s*\w+)?\s*=\s*-?(?:0[xX][0-9A-Fa-f]+|\d+)\s*$";
 
     /// <summary>THE FORWARDING WINDOW — the pin's SUPPRESSION BRANCH, and therefore the
     /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
@@ -202,11 +230,11 @@ public sealed class GeneratedSymbolShadowTests
     /// LINES rather than a path is what lets the control splice a real declaration into
     /// real source and run the production detector over the result, instead of
     /// controlling a copy of it.</para></summary>
-    private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c)
+    private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c, bool opConstant = false)
     {
         var sites = new List<(int, bool)>();
         for (int i = 0; i < lines.Length; i++)
-            if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c)))
+            if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c, opConstant)))
                 sites.Add((i + 1, !c && Forwards(lines, i, symbol)));
         return sites;
     }
@@ -219,11 +247,11 @@ public sealed class GeneratedSymbolShadowTests
     private static List<DeclarationSite> DeclarationSites()
     {
         var sites = new List<DeclarationSite>();
-        foreach ((string file, string symbol, _) in GeneratedSymbols())
+        foreach ((string file, string symbol, _, string? opTable) in GeneratedSymbols())
         {
             bool c = IsCHeader(file);
             foreach (string source in ShellSources(file))
-                foreach ((int line, bool forwards) in DeclarationSitesIn(CodeLines(source), symbol, c))
+                foreach ((int line, bool forwards) in DeclarationSitesIn(CodeLines(source), symbol, c, opTable is not null))
                     sites.Add(new DeclarationSite(source, symbol, line, forwards));
         }
         return sites;
@@ -357,7 +385,7 @@ public sealed class GeneratedSymbolShadowTests
         }
 
         // ── C: a fixture, built from the real definition and the real consumer ──
-        (string header, string cSymbol, bool _) = GeneratedSymbols().First(s => IsCHeader(s.File));
+        (string header, string cSymbol, bool _, string? _) = GeneratedSymbols().First(s => IsCHeader(s.File));
         string pattern = DeclarationPattern(cSymbol, c: true);
 
         string[] generated = File.ReadAllLines(header);
@@ -401,26 +429,102 @@ public sealed class GeneratedSymbolShadowTests
             + "to C, which it must never be — C has no qualified form to forward through.");
     }
 
+    /// <summary>THE POSITIVE CONTROL for the op-constant shadow shape (Rule 3, Phase 16.1).
+    /// The tree must hold no hand-written op twin, so the anchor is a FIXTURE built from
+    /// real parts, as the C half above does: the generated Swift and Kotlin constant lines
+    /// themselves, spliced into the real files that route on them. Each must be reported
+    /// at the spliced line; the unspliced files must report none, which is the negative
+    /// for <c>let camera = BnCamera()</c>, a property that shares an op's name.
+    ///
+    /// <para>A HEX twin, <c>static let camera: Int32 = 0x4</c>, is matched too: the control
+    /// splices the generated line rewritten in hex as a second fixture.</para>
+    ///
+    /// <para>DOES NOT COVER (Rule 5):
+    /// <list type="bullet">
+    /// <item>an op twin written with a non-literal initializer, such as
+    /// <c>let camera: Int32 = 2 + 2</c>;</item>
+    /// <item>an op twin written as an enum CASE, <c>case camera = 4</c> inside an
+    /// <c>enum …: Int32</c>. The pattern matches only <c>let</c>/<c>val</c>/<c>var</c>
+    /// bindings, and a case is not one.</item>
+    /// </list>
+    /// Both are left to review; the consumption pin still reds if the generated constant
+    /// goes dead.</para></summary>
+    [Fact]
+    public void TheOpConstantShadowDetector_MatchesAnIntegerTwin_AndNotACapabilityProperty()
+    {
+        var ops = GeneratedSymbols().Where(s => s.OpTable is not null).ToList();
+        Assert.True(ops.Count >= 12, $"parsed {ops.Count} host-call op constants, expected at least 12 (6 per language)");
+
+        (string Consumer, string Symbol)[] fixtures =
+        [
+            (Path.Combine("BlazorNative.Apple", "BnHost", "AppleShellBridge.swift"), "camera"),
+            (Path.Combine("BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni", "ShellBridge.kt"), "CAMERA"),
+        ];
+        foreach ((string consumer, string symbol) in fixtures)
+        {
+            var op = ops.Single(o => o.Symbol == symbol);
+            string? twin = File.ReadAllLines(op.File).SingleOrDefault(l => Regex.IsMatch(l, OpConstantDeclarationPattern(symbol)));
+            Assert.True(twin is not null,
+                $"the op-constant pattern no longer matches the generated declaration of '{symbol}' in "
+                + $"{Path.GetFileName(op.File)}, the very shape a hand-written twin would copy. The "
+                + "detector is blind, and the shadow pin is green over nothing for op constants.");
+
+            string[] real = CodeLines(Path.Combine(BnRepo.Root(), "src", consumer));
+            var unspliced = DeclarationSitesIn(real, symbol, c: false, opConstant: true);
+            Assert.True(unspliced.Count == 0,
+                $"the op-constant pattern matches '{symbol}' in the unspliced {consumer} at line(s) "
+                + $"{string.Join(", ", unspliced.Select(u => u.Line))}. It has widened past the integer "
+                + "literal and now flags a capability property that merely shares the op's name.");
+
+            // The generated line as written, then the same binding with its id in hex.
+            string hexTwin = Regex.Replace(twin, @"=\s*(\d+)\s*$",
+                m => "= 0x" + int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture).ToString("X", CultureInfo.InvariantCulture));
+            Assert.NotEqual(twin, hexTwin);
+            foreach (string candidate in new[] { twin, hexTwin })
+            {
+                var spliced = real.ToList();
+                spliced.Insert(1, candidate);
+                var found = DeclarationSitesIn([.. spliced], symbol, c: false, opConstant: true);
+                Assert.True(found.Count == 1 && found[0].Line == 2 && !found[0].Forwards,
+                    $"the op-constant shadow detector did not report the spliced twin '{candidate.Trim()}' "
+                    + $"at line 2 of {consumer}; found {found.Count}. A hand-written op constant would no "
+                    + "longer be detected.");
+            }
+        }
+    }
+
     /// <summary>Generated symbols that nothing consumes, each with a written reason.
     ///
     /// <para>Being on this list is not an accusation — a generated symbol with no
     /// consumer and no hand-written twin is harmless. It is here so that ADDING one
     /// is a decision somebody wrote down, rather than a file quietly growing a dead
     /// symbol that a future hand-written twin can then shadow. That progression is
-    /// exactly how #279 happened.</para></summary>
-    private static readonly Dictionary<string, string> UnconsumedByDesign = new(StringComparer.Ordinal)
+    /// exactly how #279 happened.</para>
+    ///
+    /// <para>KEYED BY LANGUAGE AND SYMBOL, not by symbol alone (Phase 16.2). An entry
+    /// is a reason about ONE generated file's copy of a name: Swift's
+    /// <c>yogaStyles</c> being test-only says nothing about a Kotlin or C symbol that
+    /// happens to share the spelling. Keyed by name alone, one entry would silently
+    /// exempt every language's copy. <see cref="UnconsumedByDesign_IsKeyedByLanguage"/>
+    /// pins the keying.</para></summary>
+    private static readonly Dictionary<(string Language, string Symbol), string> UnconsumedByDesign = new()
     {
-        ["visualStyles"] =
+        [("Swift", "visualStyles")] =
             "Swift has no visual-style routing of its own — BnWidgetMapper switches on style names "
             + "directly. Emitted for symmetry with Kotlin and byte-pinned by the codegen tests.",
-        ["scrollIgnoredContainerStyles"] =
+        [("Swift", "scrollIgnoredContainerStyles")] =
             "Same: the Swift scroll path checks the names inline. Emitted for symmetry, byte-pinned.",
-        ["VISUAL_STYLES"] =
+        [("Swift", "yogaStyles")] =
+            "Swift's layout path never names it: the Yoga style question is answered in "
+            + "Objective-C++ by bn_yoga_is_layout_style over the C header's kYogaStyles, which IS "
+            + "consumed. Only BnHostTests reads the Swift copy, and tests are not consumers (Phase "
+            + "16.2: ShippedShellSources). Emitted for symmetry, byte-pinned by the codegen tests.",
+        [("Kotlin", "VISUAL_STYLES")] =
             "Kotlin's WidgetMapper.kt switches on style-name literals directly (\"backgroundColor\" ->, "
             + "\"color\" ->, \"fontSize\" ->) rather than checking membership in this set — the same "
             + "pattern as Swift's visualStyles. Verified no hand-written twin exists (not a #279 shadow). "
             + "Emitted for symmetry, byte-pinned by the codegen tests.",
-        ["kNodeTypes"] =
+        [("C", "kNodeTypes")] =
             "The Objective-C++ layer is a YOGA seam and nothing else: BnYogaLayout.mm and BnYogaProbe.mm "
             + "answer style questions (bn_yoga_is_layout_style, bn_yoga_is_scroll_ignored_container_style) "
             + "and never see a node type — the wire byte is decoded and routed entirely in Swift, where "
@@ -428,7 +532,133 @@ public sealed class GeneratedSymbolShadowTests
             + "consumed and this one is emitted for symmetry with them, byte-pinned by the codegen tests. "
             + "Verified no hand-written twin exists in the Apple tree (not a #279 shadow): `kNodeTypes` "
             + "occurs exactly once, in its own generated declaration.",
+        // A generated op that lands before its shell arms goes here as a TEMPORARY entry with
+        // the reason PendingShellArm; the stale-entry check in the pin below reds the moment an
+        // arm consumes the symbol, so it cannot outlive the arm. Phase 16.2 used it for ops 6
+        // and 7, and removed both once the Android and iOS arms landed.
     };
+
+    private const string PendingShellArm =
+        "Generated before the shells route it. Until the arm lands the op takes the shell's "
+        + "unknown-op branch, which completes with Error. REMOVE this entry when the arm lands; "
+        + "the stale-entry check forces it.";
+
+    /// <summary>The language a generated shell file is written in, which is the first half of
+    /// an <see cref="UnconsumedByDesign"/> key. Throws for a file it does not know, so a new
+    /// generated file is keyed deliberately rather than falling into another language.</summary>
+    private static string LanguageOf(string generatedFile) =>
+        generatedFile.EndsWith(".swift", StringComparison.Ordinal) ? "Swift"
+        : generatedFile.EndsWith(".kt", StringComparison.Ordinal) ? "Kotlin"
+        : IsCHeader(generatedFile) ? "C"
+        : throw new InvalidOperationException($"no language for generated file {generatedFile}");
+
+    /// <summary>The written reason <paramref name="symbol"/>, as generated into
+    /// <paramref name="generatedFile"/>, has no consumer, or null if it has none.</summary>
+    private static string? UnconsumedReason(string generatedFile, string symbol) =>
+        UnconsumedByDesign.TryGetValue((LanguageOf(generatedFile), symbol), out string? reason) ? reason : null;
+
+    /// <summary>The shell source that SHIPS: <see cref="ShellSources"/> minus the test trees,
+    /// `BnHostTests/`, `src/test/` and `src/androidTest/`.
+    ///
+    /// <para>Phase 16.2: a test naming a generated symbol is not a consumer. With the tests
+    /// scanned, deleting the Swift `BnHostCallOp.backState` arm left the consumption pin
+    /// green, because `BnBackOffMainTests.swift` names the op, so the pin could not see its
+    /// subject leave (pin standard Rule 4). Only the consumption pin uses this. The shadow
+    /// pin keeps scanning the tests: a hand-written twin there is still worth flagging.</para></summary>
+    private static string[] ShippedShellSources(string generatedFile)
+    {
+        char s = Path.DirectorySeparatorChar;
+        string[] testTrees = [$"{s}BnHostTests{s}", $"{s}src{s}test{s}", $"{s}src{s}androidTest{s}"];
+        return [.. ShellSources(generatedFile)
+            .Where(f => !testTrees.Any(t => f.Contains(t, StringComparison.Ordinal)))];
+    }
+
+    /// <summary>A host-call op is CONSUMED only by a routing arm: Swift's
+    /// <c>case BnHostCallOp.backState:</c> or Kotlin's <c>HostCallOp.BACK_STATE -&gt;</c>, alone
+    /// or among other ops in one arm. A bare reference is not enough.
+    ///
+    /// <para>Phase 16.2: Kotlin's <c>deliverBackState</c> ends in
+    /// <c>completeNotice(HostCallOp.BACK_STATE, requestId)</c>. With the name-only check,
+    /// deleting the <c>HostCallOp.BACK_STATE -&gt;</c> arm left that call naming the op, and the
+    /// pin stayed green while BackState took the unknown-op branch. The arm, not the name, is
+    /// what an op's consumption means.</para></summary>
+    private static string OpArmPattern(string opTable, string symbol)
+    {
+        string t = Regex.Escape(opTable);
+        string op = $@"{t}\.{Regex.Escape(symbol)}\b";
+        string other = $@"{t}\.\w+";
+        return opTable == "BnHostCallOp"
+            ? $@"^\s*case\s+(?:{other}\s*,\s*)*{op}\s*(?:,\s*{other}\s*)*:"
+            : $@"^\s*(?:{other}\s*,\s*)*{op}\s*(?:,\s*{other}\s*)*->";
+    }
+
+    /// <summary>Rule 3 control for <see cref="OpArmPattern"/>: it matches an arm, alone and
+    /// among other ops, in both languages, and does NOT match a call that merely names the op,
+    /// which is the Kotlin shape that hid a deleted arm.
+    ///
+    /// <para>DOES NOT COVER: an arm that routes through a `let` or a range, or a Swift
+    /// `case` split over several lines. None exists today; each would read as unconsumed and
+    /// fail RED, not green.</para></summary>
+    [Fact]
+    public void OpArmPattern_MatchesAnArm_AndNotABareReference()
+    {
+        string swift = OpArmPattern("BnHostCallOp", "backState");
+        Assert.Matches(swift, "        case BnHostCallOp.backState:");
+        Assert.Matches(swift, "        case BnHostCallOp.faultNotice, BnHostCallOp.backState:");
+        Assert.DoesNotMatch(swift, "        let rc = bridge.hostCallBegin(60, BnHostCallOp.backState, \"{}\")");
+        Assert.DoesNotMatch(swift, "        case BnHostCallOp.backStateX:");
+
+        string kotlin = OpArmPattern("HostCallOp", "BACK_STATE");
+        Assert.Matches(kotlin, "                HostCallOp.BACK_STATE -> deliverBackState(requestId, argsJson)");
+        Assert.Matches(kotlin, "                HostCallOp.FAULT_NOTICE, HostCallOp.BACK_STATE -> x()");
+        Assert.DoesNotMatch(kotlin, "            completeNotice(HostCallOp.BACK_STATE, requestId)");
+        Assert.DoesNotMatch(kotlin, "                HostCallOp.BACK_STATE_X -> x()");
+    }
+
+    /// <summary>Rule 3 control for the keying and the test-tree exclusion together. An
+    /// entry exempts one language's copy only, so the Swift <c>yogaStyles</c> entry must not
+    /// exempt the same spelling generated into Kotlin or C. And the exclusion must still
+    /// be doing work: the Swift tests DO name <c>yogaStyles</c>, so it is dead only because
+    /// they are no longer scanned, and each test tree must still exist and hold source.
+    ///
+    /// <para>DOES NOT COVER: a NEW test tree under a path the exclusion does not name, such
+    /// as a future `src/iosTest/`. That fails GREEN: the consumption pin would count its
+    /// references as consumers again. A RENAMED tree is covered, because the existence
+    /// checks below red when one of the three named trees disappears.</para></summary>
+    [Fact]
+    public void UnconsumedByDesign_IsKeyedByLanguage()
+    {
+        string root = BnRepo.Root();
+        string swift = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.swift");
+        string kotlin = Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative", "jni", "BnWireVocabulary.g.kt");
+        string c = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnWireVocabulary.g.h");
+
+        Assert.NotNull(UnconsumedReason(swift, "yogaStyles"));
+        Assert.Null(UnconsumedReason(kotlin, "yogaStyles"));
+        Assert.Null(UnconsumedReason(c, "yogaStyles"));
+
+        foreach (string tree in new[]
+        {
+            Path.Combine(root, "src", "BlazorNative.Apple", "BnHostTests"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "test"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidTest"),
+        })
+        {
+            Assert.True(Directory.Exists(tree),
+                $"the test tree {tree} is gone. ShippedShellSources excludes it by path; re-point the "
+                + "exclusion deliberately, or test references count as consumers again.");
+        }
+
+        string[] all = ShellSources(swift);
+        string[] shipped = ShippedShellSources(swift);
+        string reference = @"BnWireVocabulary\.yogaStyles\b";
+        Assert.True(all.Any(f => CodeLines(f).Any(l => Regex.IsMatch(l, reference))),
+            "no Swift source names BnWireVocabulary.yogaStyles any more, so this control no longer "
+            + "shows the exclusion doing work. Re-point it at another test-only reference.");
+        Assert.False(shipped.Any(f => CodeLines(f).Any(l => Regex.IsMatch(l, reference))),
+            "shipped Swift now names BnWireVocabulary.yogaStyles: remove its UnconsumedByDesign entry "
+            + "and re-point this control, or the exclusion has stopped excluding BnHostTests.");
+    }
 
     /// <summary>Advisory pin: a generated symbol is consumed, or it is on the list above
     /// with a reason. Catches the state that PRECEDES a shadow — a dead generated symbol
@@ -445,8 +675,8 @@ public sealed class GeneratedSymbolShadowTests
     /// (`event.wireName`), and no `BnWireVocabulary.wireName` will ever exist for it
     /// to match. Without this third shape the detector reports every enum property
     /// dead regardless of real use, which is what happened here: `wireName` is
-    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt`. <see cref="ShellSources"/>
-    /// itself only walks `src/BlazorNative.Jni` — the `templates/` mirror is NOT
+    /// consumed as `event.wireName` in `BlazorNativeRuntime.kt`. <see cref="ShippedShellSources"/>
+    /// itself only walks `src/BlazorNative.Jni`, minus its test trees — the `templates/` mirror is NOT
     /// independently scanned here; it is held byte-identical to that file by
     /// TemplateDriftTests instead, which is how consumption in the template copy
     /// is actually guaranteed, not by this test reaching it directly. The old
@@ -459,27 +689,39 @@ public sealed class GeneratedSymbolShadowTests
     public void EveryGeneratedSymbol_IsConsumed_OrAllowlistedWithAReason()
     {
         var dead = new List<string>();
+        var stale = new List<string>();
 
-        foreach ((string file, string symbol, bool inHostEventEnum) in GeneratedSymbols())
+        foreach ((string file, string symbol, bool inHostEventEnum, string? opTable) in GeneratedSymbols())
         {
-            if (UnconsumedByDesign.ContainsKey(symbol))
-                continue;
-
             // BnWireVocabulary members are named through that object; a BnHostEvent
             // enum member is named through property access on an enum instance
-            // instead; C `#include`s the header and names its arrays bare.
+            // instead; a host-call op constant is named through its own table type;
+            // C `#include`s the header and names its arrays bare.
             string reference = IsCHeader(file)
                 ? $@"\b{Regex.Escape(symbol)}\b"
-                : inHostEventEnum
-                    ? $@"\.{Regex.Escape(symbol)}\b"
-                    : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
+                : opTable is not null
+                    ? OpArmPattern(opTable, symbol)
+                    : inHostEventEnum
+                        ? $@"\.{Regex.Escape(symbol)}\b"
+                        : $@"BnWireVocabulary\.{Regex.Escape(symbol)}\b";
 
-            bool referenced = ShellSources(file)
+            // Shipped source only: a test naming the symbol is not a consumer (Phase 16.2).
+            bool referenced = ShippedShellSources(file)
                 .Any(src => CodeLines(src).Any(line => Regex.IsMatch(line, reference)));
 
-            if (!referenced)
+            string? reason = UnconsumedReason(file, symbol);
+            if (!referenced && reason is null)
                 dead.Add($"{symbol} (generated into {Path.GetFileName(file)})");
+            else if (referenced && reason == PendingShellArm)
+                stale.Add($"{symbol} (generated into {Path.GetFileName(file)})");
         }
+
+        // A temporary entry whose symbol is now consumed is a reason that has become false.
+        // Scoped to PendingShellArm entries: the older entries are permanent by design.
+        Assert.True(stale.Count == 0,
+            "A generated symbol is consumed but still allowlisted as waiting for its shell arm. "
+            + "The arm has landed, so the reason is false: remove the entry from UnconsumedByDesign.\n  "
+            + string.Join("\n  ", stale));
 
         Assert.True(dead.Count == 0,
             "A generated symbol has no consumer and no written reason. It is harmless TODAY — but a "
@@ -795,5 +1037,168 @@ public sealed class GeneratedSymbolShadowTests
             + "behind it. An EMPTY declared set means this scan stopped recognising a Kotlin "
             + "declaration — pattern: " + SeamDeclarationPattern + " — which is the same failure "
             + "wearing a different hat: re-point it rather than editing the list to match.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 16.2 Task 5 fix round (final whole-branch review, Important #1) —
+    // dispatchHostEventAndWait BECOMES A DOOR NOTHING CAN OPEN, NOT JUST A KEYWORD
+    // NOBODY CHECKS.
+    //
+    // Task 5 made the method `internal` in both shells and pinned the KEYWORD:
+    // DispatchSurfaceDriftTests.MethodsWithADeclaredVisibility_MatchBothShells and the
+    // JVM DispatchHostEventAndWaitVisibilityTest. Neither stops a CALLER. Kotlin's
+    // `internal` is module-wide and MainActivity shares BlazorNativeRuntime's module;
+    // Swift's BnHost is an app target where a class with no modifier is already
+    // `internal`, so the new keyword changed nothing a same-target caller could not
+    // already do. The review measured it directly: reverting onNewIntent's call back
+    // to the blocking one, in the repo copy only, left Runtime at 1102/1102 and the
+    // JVM suite green — the #346 shape back on main with every existing gate still
+    // green.
+    //
+    // THE FIX IS A SOURCE SCAN, not a stronger keyword — there is no stronger
+    // Kotlin/Swift visibility available that still reaches same-module/`@testable`
+    // tests. So the guard is "nothing SHIPPED calls it", read from source, the same
+    // shape NoProductionShellSource_CallsTheHostEventSeamsDirectly already uses for
+    // the raw-String doors — except this one must also see the method's OWN home
+    // file, because the exact regression (a navigator closure inside BnRuntime.swift,
+    // or MainActivity's onNewIntent) can sit right next to the declaration it must
+    // not call. Excluding the home file by name, the way ProductionHostEventSources
+    // excludes BlazorNativeRuntime.kt for the seam pin, would have hidden precisely
+    // the bug this pin exists to catch. So the detector excludes only the
+    // DECLARATION LINE itself (`fun`/`func dispatchHostEventAndWait(`), never the file.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Every production Kotlin file under `src/main/kotlin` and
+    /// `src/androidMain/kotlin`, repo AND template mirror — deliberately NOT filtered by
+    /// filename the way <see cref="ProductionHostEventSources"/> excludes
+    /// `BlazorNativeRuntime.kt`. That exclusion is right for the raw-String-seam pin,
+    /// whose only legitimate callers live outside the seam's home file; it would be
+    /// WRONG here, because the exact regression this pin exists to catch — a caller
+    /// reaching back for the blocking overload — can sit in the SAME file as the
+    /// declaration. <see cref="IsOffendingCallLine"/> excludes only the declaration
+    /// line, not the file, so a call anywhere else in it is still caught.</summary>
+    private static string[] AllProductionKotlinSources()
+    {
+        string root = BnRepo.Root();
+        string[] roots =
+        [
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin"),
+            Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidMain", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "main", "kotlin"),
+            Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "androidMain", "kotlin"),
+        ];
+
+        return [.. roots
+            .Where(Directory.Exists)
+            .SelectMany(dir => Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}build{Path.DirectorySeparatorChar}", StringComparison.Ordinal))];
+    }
+
+    /// <summary>Every Swift file in `BnHost/` — the production Apple shell target.
+    /// `BnHostTests/` is a SIBLING directory, not a subdirectory, so walking `BnHost/`
+    /// alone already excludes the test tree without a separate filter.</summary>
+    private static string[] BnHostProductionSwiftSources()
+    {
+        string dir = Path.Combine(BnRepo.Root(), "src", "BlazorNative.Apple", "BnHost");
+        if (!Directory.Exists(dir))
+            return [];
+
+        return [.. Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories)];
+    }
+
+    /// <summary>A MENTION of `dispatchHostEventAndWait` immediately followed by `(` — matches
+    /// both a real call and the method's own declaration line, which is why
+    /// <see cref="IsOffendingCallLine"/> exists.</summary>
+    private static readonly Regex DispatchHostEventAndWaitMention = new(@"\bdispatchHostEventAndWait\s*\(");
+
+    /// <summary>The method's own declaration, in either language — the one shape
+    /// <see cref="DispatchHostEventAndWaitMention"/> must NOT be allowed to count as a
+    /// call.</summary>
+    private static readonly Regex DispatchHostEventAndWaitDeclaration =
+        new(@"\b(?:internal\s+)?(?:fun|func)\s+dispatchHostEventAndWait\s*\(");
+
+    /// <summary>A CALL to `dispatchHostEventAndWait` on this line — a mention immediately
+    /// followed by `(`, and NOT that same line's own `fun`/`func` declaration.</summary>
+    private static bool IsOffendingCallLine(string line) =>
+        DispatchHostEventAndWaitMention.IsMatch(line) && !DispatchHostEventAndWaitDeclaration.IsMatch(line);
+
+    /// <summary>THE POSITIVE CONTROL (pin standard Rule 3), fed synthetic lines rather than a
+    /// tree walk: proves the detector recognises a real call in BOTH languages, and does not
+    /// mistake either language's declaration for one — the exact confusion that would leave
+    /// the pin below blind to a call sitting right next to the method it must not reach.</summary>
+    [Fact]
+    public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
+    {
+        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"));
+        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"));
+        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"));
+
+        Assert.False(IsOffendingCallLine(
+            "    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {"));
+        Assert.False(IsOffendingCallLine(
+            "    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {"));
+    }
+
+    /// <summary>THE PIN (final whole-branch review, Important #1). No shipped shell source may
+    /// call the blocking `dispatchHostEventAndWait` — Task 5 made it internal and test-only by
+    /// owner decision, but `internal` alone enforces nothing a caller in the SAME
+    /// module/target cannot ignore, and the review proved it: reverting `onNewIntent`'s call
+    /// in the repo copy left the whole Runtime suite and the JVM suite green. This scan is the
+    /// actual enforcement — the third of the three mechanisms this phase ends with, alongside
+    /// the keyword and the manifest.
+    ///
+    /// <para>ANCHORS (Rule 2), NAMED rather than counted: both `MainActivity.kt` copies and
+    /// `BnRuntime.swift` must be among the scanned files, because those three are exactly
+    /// where the regression the review measured, and #346 before it, lived.</para>
+    ///
+    /// <para>DOES NOT COVER (Rule 5): `dispatchEventAndWait`, the Inspector's JVM-host-only
+    /// blocking seam — a different, allowed method (`src/dispatch-surface.json` scopes it
+    /// `platforms: ["kotlin"]` for exactly that reason) — which this fact does not touch at
+    /// all, by name, not by tree exclusion; `src/jvmHost/kotlin`, which this scan's roots
+    /// never include; a call reached through reflection or a stored function reference rather
+    /// than a literal name; and Objective-C++, which cannot call a Swift member across the
+    /// language boundary in the first place.</para></summary>
+    [Fact]
+    public void NoShippedShellSource_CallsTheBlockingHostEventDispatch()
+    {
+        string root = BnRepo.Root();
+        string[] kotlinSources = AllProductionKotlinSources();
+        string[] swiftSources = BnHostProductionSwiftSources();
+
+        string repoMainActivity = Path.Combine(root, "src", "BlazorNative.Jni", "src", "androidMain",
+            "kotlin", "io", "blazornative", "shell", "MainActivity.kt");
+        string templateMainActivity = Path.Combine(root, "templates", "BlazorNative.Templates", "content",
+            "BlazorNative.App", "android", "src", "androidMain", "kotlin", "io", "blazornative", "shell",
+            "MainActivity.kt");
+        string bnRuntimeSwift = Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnRuntime.swift");
+
+        Assert.True(kotlinSources.Contains(repoMainActivity),
+            $"the Kotlin scan did not see {repoMainActivity} — either the source-set layout moved "
+            + "or the walk found nothing, and this pin would then be checking an empty set.");
+        Assert.True(kotlinSources.Contains(templateMainActivity),
+            $"the Kotlin scan did not see the template mirror {templateMainActivity} — the template "
+            + "copy is exactly where the #346 shape could regress unnoticed if only the repo copy "
+            + "were scanned.");
+        Assert.True(swiftSources.Contains(bnRuntimeSwift),
+            $"the Swift scan did not see {bnRuntimeSwift} — the method's own home file, and the "
+            + "file the review's Swift-navigator mutation lives in.");
+
+        var offenders = new List<string>();
+        foreach (string file in kotlinSources.Concat(swiftSources))
+        {
+            string[] lines = CodeLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (IsOffendingCallLine(lines[i]))
+                    offenders.Add($"{Path.GetFileName(file)}:{i + 1}: {lines[i].Trim()}");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Shipped shell code calls dispatchHostEventAndWait, the blocking host-event dispatch "
+            + "Phase 16.2 Task 5 made internal and test-only (#346). A caller blocked here waits "
+            + "on .NET; the sanctioned production entry point is the fire-and-forget "
+            + "dispatchHostEvent. See this fact's DOES NOT COVER note for dispatchEventAndWait, a "
+            + "different method this scan does not touch.\n  " + string.Join("\n  ", offenders));
     }
 }

@@ -8,12 +8,33 @@ namespace BlazorNative.Runtime.Tests;
 //
 // The `items` wire grammar's writer half, pinned. The NORMATIVE grammar lives
 // in BnItemsJson.cs; the shells' strict parsers (Gates 2/3) are written FROM
-// that comment, and these expected strings are the literals a Kotlin/Swift
-// parser test can transcribe — the drift-catcher shape FlatJsonTests set for
-// the dispatch-args matrix in 3.1.
+// that comment, and these expected strings are the literals a Kotlin or Swift
+// parser test can transcribe. THIS FILE IS NOT that drift-catcher, though:
+// every comparison below is between TWO .NET WRITERS in this one assembly
+// (BnItemsJson.Write and NativeShellBridge.WriteFlatJsonObject) — the same
+// same-language posture FlatJsonTests uses for the dispatch-args matrix in
+// 3.1, not a cross-shell one. Whether the Kotlin and Swift parsers still
+// accept and reject these vectors is proven, if at all, by their own suites,
+// which nothing here reads or runs.
 //
 // Pure function — no bridge/session state, so no "host-session" collection
 // membership (the FlatJsonTests posture).
+//
+// WHAT THIS DOES NOT COVER (Rule 5):
+//
+// - MATRIX-LIMITED. Write_EscapesExactlyLikeTheDispatchArgsWriter,
+//   Write_ControlChar_EscapesExactlyLikeTheDispatchArgsWriter and
+//   Write_BoundaryControls_U001fEscapes_U007fRidesRaw hold the two .NET
+//   writers to each other only over the rows listed — plain text, quotes and
+//   backslashes, the two named control escapes, the U+001F/U+007F boundary.
+//   A character both writers happen to mishandle THE SAME WAY, but that no
+//   row here exercises, is invisible to this cross-writer pin.
+//
+// - COMMON-MODE BLINDNESS. Both sides of every comparison in this file are
+//   .NET code built from this one repo; neither is a Kotlin or Swift parser.
+//   A real shell parser disagreeing with this normative grammar — the exact
+//   failure the shells' Gates 2/3 strict parsers exist to prevent — cannot be
+//   caught by any fact here, no matter how wide the matrix grows.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class BnItemsJsonTests

@@ -32,9 +32,15 @@
 # parsed). A body-level check is a real option, is NOT what decision 5 refused,
 # and is ledgered rather than taken here.
 #
-# ADVISORY BY DESIGN — THIS IS NOT A FOURTH REQUIRED CHECK. The three required
-# gates keep their names and contexts: `build-test`, `android-build`, `ios-build`.
-# 8.2 set this precedent for release.yml and the reasoning is the same here.
+# DESIGNED ADVISORY, THEN LATER PROMOTED. The reasoning below is the ORIGINAL
+# design decision, restated rather than deleted because it still explains why
+# a mis-titled PR's blast radius stayed bounded enough to promote. `pr-title`
+# and `footer-check` ARE now required contexts on main's branch protection —
+# confirmed via `gh api repos/{owner}/{repo}/branches/main/protection`, the
+# live source, not this comment, which a docs/GITHUB-SETUP.md review found had
+# drifted first (#365 fix round 1). 8.2 set the advisory-by-default precedent
+# for release.yml; the reasoning below explains why THIS lane was judged safe
+# to promote anyway.
 #
 # THE HONEST CONSEQUENCE, stated rather than hidden: A MIS-TITLED PR CAN MERGE,
 # and release-please will silently ignore it — no changelog line, no bump
@@ -56,8 +62,8 @@
 # the release PR before merging it. The unbounded hazard was never the subject —
 # it is a release-as footer in a BODY, and footer-check is the lane for that.
 #
-# Promoting this to required is the owner's call and a branch-protection change.
-# It is not taken here.
+# Promoting this to required was the owner's call and a branch-protection
+# change — it has since been taken; see the note above this lane's header.
 #
 # ✅ THE THING THAT MAKES THIS LINT SOUND IS NOT IN THIS FILE — AND IT IS DONE.
 #

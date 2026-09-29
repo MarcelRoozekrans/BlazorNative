@@ -227,10 +227,7 @@ public sealed class BnScrollDemoTests
         Assert.InRange(ImageRowIndex, 0, BnScrollDemo.RowCount - 1);
         Assert.Equal(ImageRowIndex, BnScrollDemo.ImageRowIndex);
 
-        // The fixture is the SAME one BnImageDemo's fixed case uses — one fixture,
-        // one loopback origin, both demos (the shells stand up one server, and CI
-        // never touches the public internet — non-negotiable #5).
-        Assert.Equal(BnImageDemo.FixedSrc, BnScrollDemo.RowImageSrc);
+        // No fixture equality (15.7 final review): the page defines RowImageSrc as `= BnImageDemo.FixedSrc`, so comparing them could never red.
     }
 
     /// <summary>A dp constant as the renderer puts it on the wire — bare, invariant,

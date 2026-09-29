@@ -4,7 +4,9 @@
     .razor (the 7.1 recipe: everything new is .razor).
 
     Emits the `checkbox` element → NodeType 8 (new in 7.3 — a wire-vocabulary
-    extension, not an ABI change). Android: MaterialCheckBox. iOS: UISwitch —
+    extension, not an ABI change). Android: CheckBox — the framework widget,
+    not MaterialCheckBox (this shell has no Material dependency; see
+    WidgetMapper.kt's CreateNode comment). iOS: UISwitch —
     design decision 2, the RECORDED "renders natively, not identically"
     divergence: iOS has no native checkbox (UIKit's toggle is UISwitch; React
     Native ships only Switch for the same reason), so BnCheckbox and BnSwitch
@@ -34,7 +36,7 @@
 
     A leaf with a FIXED INTRINSIC SIZE via the measure func (by NodeType —
     the 6.1 law). The intrinsic size is the platform's own (a UISwitch is
-    51×31pt, a MaterialCheckBox is whatever Material says): frame parity
+    51×31pt, a framework CheckBox is whatever the device theme says): frame parity
     applies to LAYOUT — declared sizes and placement — never to intrinsic
     control sizes (design §Measurement). The flex ITEM surface (how this
     control is placed IN ITS PARENT) is inherited from BnLayoutItem and

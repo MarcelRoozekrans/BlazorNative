@@ -40,17 +40,9 @@
 import CoreLocation
 import Foundation
 
-/// The generic host-call op enum (mirror of NativeShellBridge.HostCallOp / Kotlin
-/// HostCallOp). 9.0 wired one op; 9.1 adds a SECOND — and adding an op-enum value is
-/// wire vocabulary carried in the existing `int op` field, NOT a struct grow or a new
-/// export (the bridge stays 80 bytes / 10 slots). The shape is capability-agnostic.
-enum BnHostCallOp {
-    static let geolocation: Int32 = 0    // Phase 9.0
-    static let notifications: Int32 = 1  // Phase 9.1 (mirror of .NET HostCallOp.Notifications = 1 / Kotlin NOTIFICATIONS = 1)
-    static let biometrics: Int32 = 2     // Phase 9.2 (mirror of .NET HostCallOp.Biometrics = 2 / Kotlin BIOMETRICS = 2)
-    static let secureStorage: Int32 = 3  // Phase 9.2 (mirror of .NET HostCallOp.SecureStorage = 3 / Kotlin SECURE_STORAGE = 3)
-    static let camera: Int32 = 4         // Phase 9.3 (mirror of .NET HostCallOp.Camera = 4 / Kotlin CAMERA = 4)
-}
+// The generic host-call op integers are `BnHostCallOp`, GENERATED since Phase 16.1 into
+// BnWireVocabulary.g.swift from src/wire-vocabulary.json. They were hand-mirrored here
+// until then; the constants and their spelling at every call site are unchanged.
 
 /// The wire-mirrored tri-state status (mirror of GeolocationStatus / Kotlin
 /// HostCallStatus, byte-identical): denial (1/2/3), unavailability (4) and error (5)
@@ -165,6 +157,14 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
     /// unknown-op posture). Not routed through the in-flight slot (never recorded).
     func completeUnknownOp(requestId: Int64) {
         complete(requestId, BnHostCallStatus.error, nil)
+    }
+
+    /// Phase 16.1: a notice is answered OK (0) with no payload once the shell has handled
+    /// it. The `completeUnknownOp` twin, through the same funnel, so `completeHookForTest`
+    /// observes it and .NET removes the notice's pending entry. Used by FaultNotice and,
+    /// since 16.2, by BackState and BackUnhandled, which iOS acknowledges and ignores.
+    func completeNotice(requestId: Int64) {
+        complete(requestId, BnHostCallStatus.granted, nil)
     }
 
     // ── The CLLocationManagerDelegate callbacks (the REAL delegate code) ──────────

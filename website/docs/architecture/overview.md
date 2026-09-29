@@ -74,19 +74,22 @@ gate: the frames are asserted equal across platforms in CI. See
 
 | Package | What it is |
 |---|---|
-| `BlazorNative.Core` | The `IMobileBridge` contract and the bridge implementations. A pure library. |
+| `BlazorNative.Core` | The `IMobileBridge` contract, the capability result types, and `DevHostBridge`, the in-process mock bridge. A pure library. The on-device bridge lives in `BlazorNative.Runtime`. |
 | `BlazorNative.Renderer` | The headless `NativeRenderer` and the `RenderPatch` model. A pure library. |
 | `BlazorNative.Http` | `BridgeHttpHandler` + DI — plain `HttpClient` over the shell's fetch. |
 | `BlazorNative.Components` | The `Bn*` component library. [Reference](../components/overview.md). |
+| `BlazorNative.Device` | The `[Inject]`-able device façades — geolocation, notifications, biometrics, secure storage, camera — over `IMobileBridge`. |
 | `BlazorNative.Analyzers` | Compile-time guards for the native runtime. [Rules](../analyzers.md). |
-| `BlazorNative.Runtime` | The publishable composition root: DI wiring + the `[UnmanagedCallersOnly]` export surface. |
+| `BlazorNative.Runtime` | The publishable composition root: DI wiring, the on-device bridge, and the `[UnmanagedCallersOnly]` export surface. |
+| `BlazorNative.Testing` | A test-project-only harness: mount a page in a unit test and assert the widget tree it rendered. See [Testing a page](../getting-started/quick-start.md#testing-a-page). |
 
 ## Where the drift is caught
 
-The style routing table is hand-written in **three places** — the renderer's C#, the
-Android shell's Kotlin, and the iOS shell's Objective-C++. A name present in one and
-missing from another is *silently dropped*, not a build error, so a drift test in the
-required CI lane parses all three and asserts set-equality.
+The style routing table is needed in **every language** — the renderer's C#, the Android
+shell's Kotlin, and the iOS shell's Objective-C++ and Swift. A name present in one copy and
+missing from another is *silently dropped*, not a build error, so no copy is written by hand:
+the names live once in `src/wire-vocabulary.json`, a generator emits every copy, and a test in
+the required CI lane regenerates them and fails if a committed copy differs.
 
 That pattern — *if it can drift silently, a gate reads it* — is the one this project reaches
 for repeatedly, and it is why the architecture pages here point at the code and the

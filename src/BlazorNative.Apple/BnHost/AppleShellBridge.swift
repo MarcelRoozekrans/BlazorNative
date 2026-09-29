@@ -34,6 +34,19 @@
 
 import UIKit
 
+/// Phase 16.1 (#8): a FaultNotice as an Error for the onError sink, the `BnDispatchError`
+/// twin. It carries the four notice fields and nothing else: no stack trace and no event
+/// payload ever cross the wire.
+struct BnFaultNotice: Error, CustomStringConvertible {
+    let handlerId: String
+    let eventName: String
+    let type: String
+    let message: String
+    var description: String {
+        "handler \(handlerId) '\(eventName)' faulted after its first await: \(type): \(message)"
+    }
+}
+
 final class AppleShellBridge {
 
     /// Routes the nine `@convention(c)` trampolines to the live instance (the
@@ -225,11 +238,39 @@ final class AppleShellBridge {
             secureStorage.begin(requestId: requestId, argsJson: argsJson)
         case BnHostCallOp.camera:
             camera.begin(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.faultNotice:
+            deliverFaultNotice(requestId: requestId, argsJson: argsJson)
+        case BnHostCallOp.backState:
+            geolocation.completeNotice(requestId: requestId) // iOS has no system back: nothing to enable.
+        case BnHostCallOp.backUnhandled:
+            geolocation.completeNotice(requestId: requestId) // iOS has no system back: nothing to hand on.
         default:
             BnLog.warn("AppleShellBridge", "hostCallBegin: unknown op \(op) (request \(requestId)) — completing Error")
             geolocation.completeUnknownOp(requestId: requestId)
         }
         return 0
+    }
+
+    /// Phase 16.1 (#8): a .NET handler faulted AFTER its first await, too late to be its
+    /// dispatch rc 2. The Kotlin `BridgeRegistrar.deliverFaultNotice` twin: routed to the
+    /// live runtime's `onError`, whose default logs through `BnLog.error`, or straight to
+    /// `BnLog.error` when no runtime is booted; then completed OK with no payload. The args
+    /// are flat JSON: handlerId (0 for a reserved host event), event, type and message. They
+    /// never carry a stack trace or the event payload.
+    private func deliverFaultNotice(requestId: Int64, argsJson: String) {
+        let args = BnFlatJson.parseObject(argsJson) ?? [:]
+        let fault = BnFaultNotice(
+            handlerId: args["handlerId"] ?? "?",
+            eventName: args["event"] ?? "?",
+            type: args["type"] ?? "?",
+            message: args["message"] ?? "")
+        let msg = "handler fault after await: \(fault.type): \(fault.message) (handler \(fault.handlerId), event '\(fault.eventName)')"
+        if let runtime = BnRuntime.shared {
+            runtime.onError(msg, fault)
+        } else {
+            BnLog.error("AppleShellBridge", msg)
+        }
+        geolocation.completeNotice(requestId: requestId)
     }
 
     // ── the -needed buffer-write helper (twin of ShellBridge.writeUtf8) ──────

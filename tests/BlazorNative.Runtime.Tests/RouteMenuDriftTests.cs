@@ -26,7 +26,16 @@ namespace BlazorNative.Runtime.Tests;
 // "/", say — the exemption assertions below fail rather than quietly widening.
 //
 // Each comparison fact carries its own floor (15.4, #375): an empty page list or an empty menu
-// reds the fact that would otherwise compare nothing, not only its sibling.
+// reds the fact that would otherwise compare nothing, not only its sibling. Since 15.7 the floor is
+// the MEASURED size of each side (14 routed pages, 12 menu rows, zero headroom), not mere presence,
+// and MenuRows_AreUniqueAndLabelled carries it too: its uniqueness counts and its Assert.All both
+// passed on an empty menu, which the 15.6 audit's mutation showed.
+//
+// POSITIVE CONTROLS (Rule 3, 15.7). Both comparison facts are ABSENCE detectors: they pass when the
+// list of offenders is empty, which is also what a detector that never detects returns. So the
+// detection lives in Missing and Dangling, the facts call them, and two controls feed each helper
+// one planted defect it must report: a ghost route that is routed but has no menu row, and a menu
+// row that points at no routed page.
 //
 // WHAT THIS DOES NOT COVER (Rule 5):
 //   - Only the in-memory comparison between `SampleAppPages.All` and `BnDemo.Destinations` — as
@@ -46,15 +55,52 @@ public sealed class RouteMenuDriftTests
             .Where(p => p.Route is not null)
             .Select(p => p.Route!)];
 
+    /// <summary>The measured size of each side, at zero headroom. Adding a page or a row raises
+    /// the count past the floor and nothing reds; removing one reds here, so the removal is a
+    /// decision on the record, made by lowering the number in the same commit.</summary>
+    private const int MeasuredRoutedPages = 14;
+    private const int MeasuredMenuRows = 12;
+
     /// <summary>Rule 2, per fact: each comparison below is <i>for every X, assert Y</i>, which
     /// passes over an empty X. Until 15.4 only a SIBLING fact noticed an empty input; each fact now
-    /// refuses to compare nothing on its own, naming the collection that came back empty.</summary>
+    /// refuses to compare nothing on its own, naming the collection that came back short. Since 15.7
+    /// the floor is the measured count rather than presence: one page and one row used to pass.</summary>
     private static void AssertBothSidesNonEmpty(string[] routed)
     {
-        Assert.True(routed.Length > 0,
-            "SampleAppPages.All yields no routed page — this fact would compare nothing and pass (Rule 2).");
-        Assert.True(BnDemo.Destinations.Length > 0,
-            "BnDemo.Destinations is empty — this fact would compare nothing and pass (Rule 2).");
+        Assert.True(routed.Length >= MeasuredRoutedPages,
+            $"SampleAppPages.All yields {routed.Length} routed pages, and {MeasuredRoutedPages} were "
+            + "measured. An empty or gutted list makes this fact compare nothing and pass (Rule 2); "
+            + "if a page was deliberately removed, lower the floor in the same commit.");
+        Assert.True(BnDemo.Destinations.Length >= MeasuredMenuRows,
+            $"BnDemo.Destinations has {BnDemo.Destinations.Length} rows, and {MeasuredMenuRows} were "
+            + "measured. An empty or gutted menu makes this fact compare nothing and pass (Rule 2); "
+            + "if a row was deliberately removed, lower the floor in the same commit.");
+    }
+
+    /// <summary>The routed pages, other than the two exemptions, that have no menu row. The
+    /// detector of <see cref="EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow"/>, extracted so
+    /// <see cref="Missing_ReportsAPlantedGhostRoute"/> can drive the same code.</summary>
+    private static string[] Missing(string[] routed, (string Label, string Route)[] menu)
+    {
+        var inMenu = menu.Select(d => d.Route).ToHashSet(StringComparer.Ordinal);
+
+        return routed
+            .Where(r => r != SelfRoute && r != SettingsRoute)
+            .Where(r => !inMenu.Contains(r))
+            .ToArray();
+    }
+
+    /// <summary>The menu rows whose route no page serves. The detector of
+    /// <see cref="EveryMenuRow_PointsAtARoutedPage"/>, extracted so
+    /// <see cref="Dangling_ReportsAPlantedDanglingRow"/> can drive the same code.</summary>
+    private static string[] Dangling(string[] routed, (string Label, string Route)[] menu)
+    {
+        var routedSet = routed.ToHashSet(StringComparer.Ordinal);
+
+        return menu
+            .Select(d => d.Route)
+            .Where(r => !routedSet.Contains(r))
+            .ToArray();
     }
 
     [Fact]
@@ -63,12 +109,7 @@ public sealed class RouteMenuDriftTests
         var routed = RoutedPages();
         AssertBothSidesNonEmpty(routed);
 
-        var inMenu = BnDemo.Destinations.Select(d => d.Route).ToHashSet(StringComparer.Ordinal);
-
-        var missing = routed
-            .Where(r => r != SelfRoute && r != SettingsRoute)
-            .Where(r => !inMenu.Contains(r))
-            .ToArray();
+        var missing = Missing(routed, BnDemo.Destinations);
 
         Assert.True(missing.Length == 0,
             "these routed pages are in SampleAppPages.All but have no row in BnDemo.Destinations, "
@@ -79,18 +120,39 @@ public sealed class RouteMenuDriftTests
     [Fact]
     public void EveryMenuRow_PointsAtARoutedPage()
     {
-        string[] routedPages = RoutedPages();
-        AssertBothSidesNonEmpty(routedPages);
-        var routed = routedPages.ToHashSet(StringComparer.Ordinal);
+        string[] routed = RoutedPages();
+        AssertBothSidesNonEmpty(routed);
 
-        var dangling = BnDemo.Destinations
-            .Select(d => d.Route)
-            .Where(r => !routed.Contains(r))
-            .ToArray();
+        var dangling = Dangling(routed, BnDemo.Destinations);
 
         Assert.True(dangling.Length == 0,
             "these BnDemo.Destinations rows name a route no page in SampleAppPages.All serves, so "
             + $"tapping them navigates nowhere: {string.Join(", ", dangling)}");
+    }
+
+    /// <summary>Rule 3 control for <see cref="Missing"/>: the real pages plus one planted ghost
+    /// route, against the real menu. The helper must report the ghost and only the ghost; a
+    /// detector that had stopped detecting would return nothing, and the fact it serves would
+    /// stay green over exactly the defect #204 fixed.</summary>
+    [Fact]
+    public void Missing_ReportsAPlantedGhostRoute()
+    {
+        const string ghost = "/ghost-route-no-menu-row";
+        string[] routed = [.. RoutedPages(), ghost];
+
+        Assert.Equal([ghost], Missing(routed, BnDemo.Destinations));
+    }
+
+    /// <summary>Rule 3 control for <see cref="Dangling"/>: the real menu plus one planted row
+    /// that points at no routed page, against the real pages. The helper must report that row
+    /// and only that row.</summary>
+    [Fact]
+    public void Dangling_ReportsAPlantedDanglingRow()
+    {
+        const string nowhere = "/dangling-row-no-page";
+        (string Label, string Route)[] menu = [.. BnDemo.Destinations, ("Dangling", nowhere)];
+
+        Assert.Equal([nowhere], Dangling(RoutedPages(), menu));
     }
 
     [Fact]
@@ -117,6 +179,13 @@ public sealed class RouteMenuDriftTests
         // is two buttons a device suite cannot tell apart (both suites select
         // buttons BY LABEL, so this one is load-bearing for those tests, not
         // cosmetic).
+        //
+        // Rule 2 (15.7): the two counts below are Equal(0, 0) and the Assert.All passes on an empty
+        // menu, so the floor comes first; and Camera is the named anchor row, the one
+        // BnRenderTests.swift pins as the menu's last row.
+        AssertBothSidesNonEmpty(RoutedPages());
+        Assert.Contains(("Camera", "/camera"), BnDemo.Destinations);
+
         Assert.Equal(
             BnDemo.Destinations.Length,
             BnDemo.Destinations.Select(d => d.Route).Distinct(StringComparer.Ordinal).Count());
