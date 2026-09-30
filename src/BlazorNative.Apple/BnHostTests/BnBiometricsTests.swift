@@ -212,10 +212,11 @@ final class BnBiometricsTests: BnHostTestCase {
     // WHAT IT PINS. `awaitArmedReply`, the synchronisation both boot tests use, must not
     // return until the seam holds the reply, even when it is called INSIDE the window
     // where the in-flight flag is already true and no reply is armed yet. That window is
-    // real and required (see `BnBiometrics.inFlightRequestId`). On the lane it lasted a
-    // few instructions, which is why #438's S2 was rare. Here
-    // `beforeEvaluationArmedHookForTest` holds it open, so the interleaving is forced,
-    // not waited for.
+    // real and required (see `BnBiometrics.inFlightRequestId`). Before 16.4 it lasted a
+    // few instructions, which is why #438's S2 was rare. Since 16.4 it spans the
+    // context's creation on the handler's queue, so the old harness would lose it often,
+    // not rarely. Here `beforeEvaluationArmedHookForTest` holds it open, so the
+    // interleaving is forced, not waited for.
     //
     // HOW IT STAYS DETERMINISTIC. The release is queued on MAIN, and main runs queued
     // blocks only when the harness yields to the run loop. The harness checks before it

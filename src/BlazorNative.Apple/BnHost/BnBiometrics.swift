@@ -129,8 +129,9 @@ final class BnBiometrics {
     /// incidental: an evaluation, or the test seam standing in for it, may reply
     /// synchronously, and `complete` clears the slot only when the id matches, so a
     /// record written after the reply would leave a stale in-flight id behind. No
-    /// production code waits on this flag; only `complete` reads it, and
-    /// `hasInFlightRequestForTest` exposes it. A caller that needs the evaluation armed
+    /// production code waits on this flag. `complete` reads it to consume the request,
+    /// `armEvaluation` reads it to retain a context only for the request still in flight,
+    /// and `hasInFlightRequestForTest` exposes it. A caller that needs the evaluation armed
     /// must wait for the arming itself, which is what the boot tests do since 16.4.
     private var inFlightRequestId: Int64?
 

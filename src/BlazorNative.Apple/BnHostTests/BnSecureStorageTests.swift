@@ -195,6 +195,48 @@ final class BnSecureStorageTests: BnHostTestCase {
         XCTAssertNil(captured1()?.payload)
     }
 
+    // ── 16.4 (#438): a completion releases ONLY its own request's context ────────────
+    //
+    // WHAT IT PINS. The retention rule: a getWithAuth's `LAContext` stays retained until
+    // THAT request completes. Until 16.4 the handler held one context slot that every
+    // completion cleared, and the funnel's comment claimed "iff the id matches" with no id
+    // to match. Since 16.4 the actions are queued, so a plain get finishing while a
+    // getWithAuth waits on its prompt is an ordinary interleaving. Here the gate hook
+    // holds the prompt open by not answering, and `drainForTest` orders the rest, so the
+    // interleaving is forced, not waited for. A shared slot reds on the second assertion.
+    //
+    // WHAT IT DOES NOT COVER. That a released context cancels a real Face ID evaluation;
+    // the simulator has no sheet to cancel. It pins the handler's own bookkeeping.
+
+    func testACompletionDoesNotReleaseAnotherRequestsRetainedContext() {
+        let bridge = AppleShellBridge()
+        let held = NSLock()
+        var pendingGate: BnSecureAuthGate?
+        BnSecureStorage.authGateHookForTest = { gate in held.lock(); pendingGate = gate; held.unlock() }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: plainKey, value: "plain", requireAuth: false),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        _ = bridge.hostCallBegin(48, BnHostCallOp.secureStorage,
+                                 "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock\"}")
+        bridge.secureStorage.drainForTest()
+        held.lock(); let gate = pendingGate; held.unlock()
+        XCTAssertNotNil(gate, "the getWithAuth must be waiting on its gate")
+        XCTAssertTrue(bridge.secureStorage.isRetainingContextForTest(48), "the prompt's context is retained while it waits")
+
+        _ = bridge.hostCallBegin(49, BnHostCallOp.secureStorage, "{\"action\":\"get\",\"key\":\"\(plainKey)\"}")
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the plain get completed first")
+        XCTAssertTrue(bridge.secureStorage.isRetainingContextForTest(48),
+                      "another request's completion released the waiting prompt's context")
+
+        gate?.authenticate()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the gated read completes")
+        XCTAssertFalse(bridge.secureStorage.isRetainingContextForTest(48), "the context is released on its own completion")
+    }
+
     // ── getWithAuth of a PLAIN item reads directly (no prompt, no gate) ───────────
 
     func testGetWithAuthOfAPlainItemReadsDirectlyWithoutPrompt() {
@@ -332,8 +374,10 @@ final class BnSecureStorageTests: BnHostTestCase {
         try tapButton("Unlock", in: form) // GetWithAuthAsync → the pairing
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "value:hunter2" },
                       "the pairing never round-tripped the unlocked value to the echo (a hang or the OS-unlock model broke)")
-        XCTAssertEqual(BnSecureStorage.lastHostCallCompleteRcForTest, 0,
-                       "host_call_complete did not route to the in-flight .NET requestId")
+        // Polled, not read once: the rc is stored on the handler's queue after the export
+        // returns, so the echo can render first (16.4).
+        XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
+                      "host_call_complete did not route to the in-flight .NET requestId")
     }
 
     func testUnlockAfterDeleteIsNotFoundWithinABoundedAwaitNoHang() throws {
@@ -346,7 +390,8 @@ final class BnSecureStorageTests: BnHostTestCase {
         // NotFound is reached BEFORE any prompt — DATA within a bounded await, no hang.
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:NotFound" },
                       "Unlock of an absent secret never echoed NotFound (a HANG?)")
-        XCTAssertEqual(BnSecureStorage.lastHostCallCompleteRcForTest, 0)
+        XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
+                      "host_call_complete did not route to the in-flight .NET requestId")
     }
 
     // ── Boot + tree accessors (the BnNotificationsTests house style) ──────────────

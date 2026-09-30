@@ -153,10 +153,15 @@ final class BnSecureStorage {
     /// the thread that called `hostCallBegin` (see THE BEGIN CONTRACT in the header).
     private let workQueue = DispatchQueue(label: "io.blazornative.secure-storage", qos: .userInitiated)
 
-    /// STRONG. The `LAContext` under a getWithAuth evaluation — held for the call's
-    /// duration so a deallocated context cannot cancel the in-flight read (the
-    /// CLLocationManager/LAContext retention lesson). Cleared by `complete`.
-    private var inFlightContext: LAContext?
+    /// STRONG. The `LAContext` under each getWithAuth evaluation, keyed by its request
+    /// id — held for the call's duration so a deallocated context cannot cancel the
+    /// in-flight read (the CLLocationManager/LAContext retention lesson). `complete`
+    /// releases only its own request's entry. Until 16.4 this was one slot that EVERY
+    /// completion cleared, so a plain get or delete finishing while a getWithAuth waited
+    /// on its prompt released that prompt's context; since 16.4 queues the actions, that
+    /// interleaving is ordinary. The pin is
+    /// `testACompletionDoesNotReleaseAnotherRequestsRetainedContext`.
+    private var inFlightContexts: [Int64: LAContext] = [:]
 
     // ── Test seams (static, reset in teardown) ───────────────────────────────────
 
@@ -211,7 +216,16 @@ final class BnSecureStorage {
     /// The rc of the most recent `blazornative_host_call_complete` — 0 = delivered to a
     /// live .NET continuation, 1 = unknown/already-completed id (benign). Int32.min
     /// before any completion.
-    static var lastHostCallCompleteRcForTest: Int32 = Int32.min
+    ///
+    /// Lock-guarded since 16.4: `complete` now runs on `workQueue`, or on the gate's
+    /// reply thread, while tests read this on main. It is stored AFTER the export
+    /// returns, so a test that saw the outcome must still poll for it, not read it once.
+    static var lastHostCallCompleteRcForTest: Int32 {
+        get { rcLock.lock(); defer { rcLock.unlock() }; return lastRc }
+        set { rcLock.lock(); lastRc = newValue; rcLock.unlock() }
+    }
+    private static let rcLock = NSLock()
+    private static var lastRc: Int32 = Int32.min
 
     /// Replaces `LAContext()` so a test can make context creation SLOW on demand, by
     /// blocking inside the factory, and prove `hostCallBegin` does not wait for it (the
@@ -233,6 +247,13 @@ final class BnSecureStorage {
     /// serial, so this is a barrier: a unit test calls it after `hostCallBegin` instead
     /// of sleeping. Never call it from `workQueue` itself.
     func drainForTest() { workQueue.sync {} }
+
+    /// Whether the context of `requestId`'s getWithAuth is still retained (the retention
+    /// pin as a property, the `BnBiometrics.contextIsRetainedForTest` twin).
+    func isRetainingContextForTest(_ requestId: Int64) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightContexts[requestId] != nil
+    }
 
     /// Parses the flat-JSON `action` + key and enqueues it on `workQueue`. Returns FAST
     /// (the begin contract); the terminal status is a deferred `complete(...)`. On the
@@ -367,7 +388,7 @@ final class BnSecureStorage {
             complete(requestId, BnSecureStorageStatus.error, nil)
         case .authBound(let probedValue):
             let context = Self.makeContext()
-            lock.lock(); inFlightContext = context; lock.unlock() // retained for the call
+            lock.lock(); inFlightContexts[requestId] = context; lock.unlock() // retained for the call
             let gate = BnSecureAuthGate(
                 reason: reason,
                 hasAuthBoundItem: true,
@@ -492,11 +513,11 @@ final class BnSecureStorage {
         BnFlatJson.object([("value", value)])
     }
 
-    /// The single completion funnel. Releases the retained context iff the id matches
-    /// (one-shot), then delivers the status + optional payload to .NET. The value crosses
-    /// as a NUL-terminated UTF-8 C string valid only during the call.
+    /// The single completion funnel. Releases the context retained for THIS request, if
+    /// any, and no other request's, then delivers the status + optional payload to .NET.
+    /// The value crosses as a NUL-terminated UTF-8 C string valid only during the call.
     private func complete(_ requestId: Int64, _ status: Int32, _ payload: String?) {
-        lock.lock(); inFlightContext = nil; lock.unlock()
+        lock.lock(); inFlightContexts[requestId] = nil; lock.unlock()
 
         let rc: Int32
         if let hook = Self.completeHookForTest {
