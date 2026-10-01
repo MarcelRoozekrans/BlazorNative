@@ -599,8 +599,13 @@ public sealed class SlowHandlerWarningTests
             Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{i}", null));
 
         string[] lines = s.SlowLines();
-        Assert.Equal(cap, lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText)));
-        Assert.Single(lines, l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        int warned = lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        Assert.True(warned == cap,
+            $"{cap + 1} distinct slow keys gave {warned} warnings before the suppression line, not {cap}. "
+            + "The cap must let exactly the first 32 through and announce the 33rd once.");
+        int suppressions = lines.Count(l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        Assert.True(suppressions == 1,
+            $"the cap logged {suppressions} suppression lines for {cap + 1} distinct keys, not 1.");
 
         // A further distinct slow key, on each path: silence.
         Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{cap + 1}", null));
@@ -608,7 +613,11 @@ public sealed class SlowHandlerWarningTests
 
         Assert.Equal(cap + 2, SlowProbe.RunsOf("lifecycle")); // anchor: every arm ran slow
         Assert.Equal(1, SlowProbe.RunsOf("slow-a"));
-        Assert.Equal(cap + 1, s.SlowLines().Length);
+        int total = s.SlowLines().Length;
+        Assert.True(total == cap + 1,
+            $"after the suppression line two more distinct slow keys left {total} lines in all, "
+            + $"not {cap + 1}. Once the cap is announced the warning is silent on every path: a missing "
+            + "silent-after-suppression check logs a second suppression line or a new warning.");
     }
 
     [Fact]
