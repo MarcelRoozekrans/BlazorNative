@@ -3647,6 +3647,76 @@ FAIL on the tests item was already known.
 **Design:** [`docs/superpowers/specs/2026-09-28-phase-16.4-design.md`](../superpowers/specs/2026-09-28-phase-16.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md`](../superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md)
 
+> **16.4 outcome: the lost first tap had two causes, neither an M16 regression, and both are
+> fixed and pinned.** Evidence, mutations and verification are in
+> [the 16.4 record](../plans/2026-09-28-phase-16.4-record.md). #438 to be closed after the phase PR
+> merges.
+
+**Root cause.** The failure has two signatures.
+- **S2, the echo never arrived: a race in the test harness.** `BnBiometrics` publishes its in-flight
+  flag before it arms the evaluation, and it must, because a reply may arrive synchronously. The
+  boot tests read that flag as "the reply is armed". A poll landing in between called a nil reply,
+  and the host call hung. The diagnostic logs confirm it.
+- **S1, the request never arrived: a cold `LAContext()` inside `hostCallBegin`.** The first
+  context in a process costs 0.5 to 1.7 s on the simulator lane, once 33 s. That cost was 95 to 99%
+  of every cold synchronous part logged. Since 16.1 `hostCallBegin` runs on the .NET render thread,
+  so that wait froze rendering.
+
+**Baseline verdict: older than M16.** On `8fadff1`, before #428, ten runs gave one S1 failure, and
+the history scan has a second pre-#428 S1. M16 made the cost visible by moving it onto the render
+thread, where 16.3's slow-handler warning reported it.
+
+**The fix.**
+- **The harness:** the boot tests wait for the armed reply itself, through a lock-guarded holder.
+- **The begin contract:** `BnBiometrics` and `BnSecureStorage` each own a serial work queue. `begin`
+  parses, records and enqueues. Every LocalAuthentication and Keychain call runs on the queue.
+  Secure storage had the same violation on an auth-bound set and on a gated read.
+- **Observability:** `BnLAContextTiming` warns once per process when creating a context takes more
+  than 5000 ms. That warning replaces the slow-handler line the move blinded.
+
+**Pins: six XCTests, each forced through a seam, none through a sleep.**
+- **The harness:** the window between the record and the arming is held open.
+- **The begin contract, four tests:** authenticate, check, an auth-bound set and a gated read.
+- **The retention rule:** added by the final review.
+
+Each mutation was run alone, one lane run per mutation, and each reds exactly its own pin. The
+vacuity contrast was observed: with the seam bypassed and the contract broken, the contract pins
+go green only when both of their anchors are deleted.
+
+**What the final review found, fixed in the loop.**
+- `BnSecureStorage` held one retained-context slot that every completion cleared, while its comment
+  claimed "iff the id matches". Contexts are now kept per request, with a pin.
+- The rc static was raced by the move onto the queue. It is now lock-guarded, and the tests poll it.
+- Three comments and the record's base-commit wording were corrected.
+
+**Rates.** Before: about 1.6% across the history scan, 3 in 191, and 1 in 10 on the pre-M16
+baseline. After: **0 in 10** sequential runs on `a65097f`, with `headSha` checked for each.
+android-instrumented is green on the same head.
+
+**The accepted residual, re-measured.** A cold LocalAuthentication start still delays the first tap
+on the handler's queue, though never the render thread.
+- **Measured:** 2 of the 10 runs logged it, at 6453 ms and 25681 ms.
+- **What remains:** a cold start past the boot tests' 30 s wait would still fail them. It would now
+  fail with a message naming the cause, with the warning beside it.
+- **Status:** the owner accepted this in Task 3. It is restated with this data in the record,
+  section 10.
+
+**Filed, not fixed here.**
+- **#440:** Android breaks the same begin contract. `check` and every secure-storage arm run inside
+  `hostCallBegin`. It needs an executor and an instrumented pin, in `AndroidShellBridge.kt` and its
+  template mirror.
+- **#444:** a separate, pre-M16 iOS flake in `BnNotificationsTests`' show test, found in the
+  baseline.
+
+**Counts.** No .NET, Kotlin or instrumented file changed on this branch.
+
+| Surface | Before (16.3) | After | Change |
+|---|---|---|---|
+| .NET total | 1295 | **1295**, unchanged | 0 |
+| JVM | 191 | **191**, unchanged | 0 |
+| Android | 233 | **233**, unchanged | 0 |
+| iOS | 282 | **288**, 0 failed | +6: the six 16.4 pins |
+
 #### Phase 16.5: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
 `CONVENTIONS.md`.
