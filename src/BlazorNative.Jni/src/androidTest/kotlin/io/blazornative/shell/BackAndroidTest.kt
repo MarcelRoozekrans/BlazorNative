@@ -62,7 +62,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Every launch uses an explicit Intent with NO action. `ActivityScenario.launch(Class)` builds an
  * ACTION_MAIN + CATEGORY_LAUNCHER intent, and on API 31+ the system's default back may move such
  * a task root to the background rather than finish it. That is a guard, not a measured need: in
- * 16.6, row B3, the root test launched with `launch(Class)` on the API 34 lane still reached
+ * 16.6, row B3r, the root test launched with `launch(Class)` on the API 34 lane still reached
  * DESTROYED. Why the system finished it there is not measured; the guard is not what makes the
  * pin pass on that lane.
  *
