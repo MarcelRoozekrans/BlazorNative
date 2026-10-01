@@ -26,7 +26,7 @@ import java.util.Collections
  * Owner keys give three warnings, one per method. The fallback would give ONE, naming
  * BnButton.
  *
- * DOES NOT COVER: the ChildContent and lambda shapes, the budget, the once-per-handler
+ * DOES NOT COVER: the ChildContent shape, the budget, the once-per-handler
  * rule and the cap, all pinned on .NET by SlowHandlerWarningTests; the Android and iOS
  * builds, whose NativeAOT metadata policy is the same compiler's but not measured here.
  * The session is the process-global one every JVM test shares, so this assumes no other
