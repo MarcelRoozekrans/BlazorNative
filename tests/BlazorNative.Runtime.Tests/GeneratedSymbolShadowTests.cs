@@ -1137,10 +1137,24 @@ public sealed class GeneratedSymbolShadowTests
         Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"));
         Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"));
 
-        Assert.False(IsOffendingCallLine(
-            "    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {"));
-        Assert.False(IsOffendingCallLine(
-            "    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {"));
+        // Rule 4 (16.6, defect 2): the declarations are READ from the tree, not hand-copied,
+        // so a change to either real signature is what this control checks.
+        string root = BnRepo.Root();
+        (string File, string Needle)[] declarations =
+        [
+            (Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative",
+                "jni", "BlazorNativeRuntime.kt"), "fun dispatchHostEventAndWait("),
+            (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnRuntime.swift"),
+                "func dispatchHostEventAndWait("),
+        ];
+        foreach ((string file, string needle) in declarations)
+        {
+            string[] found = [.. CodeLines(file).Where(l => l.Contains(needle, StringComparison.Ordinal))];
+            Assert.True(found.Length == 1,
+                $"expected exactly one declaration line containing '{needle}' in {file}, found {found.Length}: "
+                + "the control would otherwise check nothing, or check a copy.");
+            Assert.False(IsOffendingCallLine(found[0]), $"the real declaration was counted as a call: {found[0]}");
+        }
 
         // Defect 1 (16.6): a declaration line that ALSO calls the method — an expression-
         // bodied forwarder — is a call, not merely a declaration.
