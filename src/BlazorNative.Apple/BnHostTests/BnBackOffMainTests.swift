@@ -152,8 +152,13 @@ final class BnBackOffMainNavigateTests: BnHostTestCase {
         if !didReturn, camera.hasInFlightRequestForTest() { camera.fireDidCancelForTest() }
 
         lock.lock(); let released = releasedAt; let back = returnedAt; lock.unlock()
-        let r = try XCTUnwrap(released, "the release never fired")
         let b = try XCTUnwrap(back, "the blocking navigate never returned")
+        // Read after the navigate returned: no release yet means it returned BEFORE the release,
+        // the same failure as the ordering below, caught before the release has a timestamp.
+        let r = try XCTUnwrap(released,
+                              "the blocking navigate returned and the held camera call had not been " +
+                              "released yet, so BackHoldProbe does not hold the lane and the pin " +
+                              "above cannot tell the old navigator from the new")
         XCTAssertGreaterThanOrEqual(b, r,
                                     "the blocking navigate returned BEFORE the held camera call was " +
                                     "released, so BackHoldProbe does not hold the lane and the pin " +
