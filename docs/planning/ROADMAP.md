@@ -3744,6 +3744,7 @@ on the handler's queue, though never the render thread.
   with no recorded red gets one (owner decision 2026-10-01: Rules 2–5 alone would fail item 10
   again).
 **Design:** [`docs/superpowers/specs/2026-10-01-phase-16.6-design.md`](../superpowers/specs/2026-10-01-phase-16.6-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-01-phase-16.6-prove-pins.md`](../superpowers/plans/2026-10-01-phase-16.6-prove-pins.md)
 **Surface:** Mixed
 **HelpWanted:** no
 
