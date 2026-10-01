@@ -1117,10 +1117,14 @@ public sealed class GeneratedSymbolShadowTests
     private static readonly Regex DispatchHostEventAndWaitDeclaration =
         new(@"\b(?:internal\s+)?(?:fun|func)\s+dispatchHostEventAndWait\s*\(");
 
-    /// <summary>A CALL to `dispatchHostEventAndWait` on this line — a mention immediately
-    /// followed by `(`, and NOT that same line's own `fun`/`func` declaration.</summary>
+    /// <summary>A CALL to `dispatchHostEventAndWait` on this line. The method's own
+    /// `fun`/`func` declaration TOKEN is removed first, and only then is the rest of the line
+    /// searched for a mention followed by `(`. Removing the token, not skipping the line, is
+    /// what keeps an expression-bodied forwarder written on the declaration line
+    /// (`internal fun dispatchHostEventAndWait(e: BnHostEvent) = dispatchHostEventAndWait(e, null)`)
+    /// visible as the call it is. Skipping the whole line hid it (16.6, defect 1).</summary>
     private static bool IsOffendingCallLine(string line) =>
-        DispatchHostEventAndWaitMention.IsMatch(line) && !DispatchHostEventAndWaitDeclaration.IsMatch(line);
+        DispatchHostEventAndWaitMention.IsMatch(DispatchHostEventAndWaitDeclaration.Replace(line, "", 1));
 
     /// <summary>THE POSITIVE CONTROL (pin standard Rule 3), fed synthetic lines rather than a
     /// tree walk: proves the detector recognises a real call in BOTH languages, and does not
@@ -1137,6 +1141,11 @@ public sealed class GeneratedSymbolShadowTests
             "    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {"));
         Assert.False(IsOffendingCallLine(
             "    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {"));
+
+        // Defect 1 (16.6): a declaration line that ALSO calls the method — an expression-
+        // bodied forwarder — is a call, not merely a declaration.
+        Assert.True(IsOffendingCallLine(
+            "    internal fun dispatchHostEventAndWait(event: BnHostEvent) = dispatchHostEventAndWait(event, null)"));
     }
 
     /// <summary>THE PIN (final whole-branch review, Important #1). No shipped shell source may
