@@ -10,8 +10,10 @@ standard. See [the verdict](#verdict).
 
 Every number below was measured for this audit, and the command that reproduces it sits beside it.
 None was copied from a phase record, a ROADMAP outcome block or `STATE.md`, with one stated
-exception: the test counts and lane runs for item 2 come from the controller's hand-off for this
-phase, which ran them today on `0779982`. I re-read those runs' `headSha` myself. Phase records are
+exception: facts from the controller's hand-off for this phase, which were measured today on
+`0779982`. These are the test counts and lane runs for item 2, and the `dumpbin` ten-export check
+for item 9. I re-read the lane runs' `headSha` myself and re-ran the `dumpbin` check; both commands
+are given where the facts are used. Phase records are
 cited only as the place where a mutation is recorded, and I spot-checked what they claim.
 
 Commands assume Git Bash on Windows, so `export MSYS_NO_PATHCONV=1` is needed before any
@@ -34,7 +36,7 @@ branch is a run on `main`'s code.
 | 7 | #8 is fixed: late faults reach `onError`; the rc contract written once and agreed | **MET NARROWLY** — #455; #440 adjacent, not contradicting |
 | 8 | #9 is re-assessed on measurement | **MET** |
 | 9 | No ABI change; the new notice ops generated from `src/wire-vocabulary.json` | **MET** |
-| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **NOT MET** — 14 new pins have no recorded mutation. A further 23 were never assessed on Rules 2–5 by any record or by this audit; they are carried into the gap plan, not counted as failing |
+| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **NOT MET** — 16 new pins have no recorded mutation. A further 23 were never assessed on Rules 2–5 by any record or by this audit; they are carried into the gap plan, not counted as failing |
 
 ---
 
@@ -533,8 +535,14 @@ git show <rev>:src/BlazorNative.Runtime/Exports.cs | grep -A1 -E '^\s*\[Unmanage
 
 The ten: `dispatch_event`, `fetch_complete`, `host_call_complete`, `host_event`, `init`, `mount`,
 `register_bridge`, `register_frame_callback`, `shutdown`, `version`, each prefixed `blazornative_`.
-The hand-off adds the binary-level check: `dumpbin /exports` on today's win-x64 publish lists exactly
-these ten `blazornative_*` exports.
+The binary agrees. The hand-off's `dumpbin` check, re-run for this audit on today's win-x64
+publish, lists exactly these ten `blazornative_*` exports. The DLL is the one Gradle loads,
+`winX64PublishPath` in `src/BlazorNative.Jni/build.gradle.kts:248-250`:
+
+```bash
+# from a VS developer shell; in Git Bash write -exports, because MSYS rewrites /exports as a path
+dumpbin /exports samples/BlazorNative.SampleApp/bin/Release/net10.0/win-x64/publish/BlazorNative.Runtime.dll | grep -c blazornative_   # 10
+```
 
 **The new notice ops live in `src/wire-vocabulary.json` and are generated.** The manifest's host-call
 op table has `FaultNotice` id 5 (`:178`), `BackState` id 6 (`:179`) and `BackUnhandled` id 7 (`:180`).
@@ -577,17 +585,31 @@ range touched:
 names() { git show "$1:$2" 2>/dev/null | awk '/\[(Fact|Theory)|@Test/{t=1} t&&/(public .*|fun |func )[A-Za-z0-9_`]+ *\(/{if(match($0,/(void|Task|fun|func) `?[A-Za-z0-9_]+/)){s=substr($0,RSTART,RLENGTH);sub(/^[a-zA-Z]+ `?/,"",s);print s};t=0} /func test[A-Za-z0-9_]*\(/{match($0,/func test[A-Za-z0-9_]*/);print substr($0,RSTART+5,RLENGTH-5)}' | sort -u; }
 for p in $(git diff --name-only 3757d0e origin/main -- tests src/BlazorNative.Jni/src/test src/BlazorNative.Jni/src/androidTest src/BlazorNative.Apple/BnHostTests); do
   comm -13 <(names 3757d0e "$p") <(names origin/main "$p") | sed "s|^|$p\t|"
-done > pop.tsv
-wc -l < pop.tsv                    # 148 new names
-cut -f1 pop.tsv | sort -u | wc -l  # 29 files
-sort pop.tsv | uniq -d | wc -l     # 0: no file and name pair counted twice
-cut -f2 pop.tsv | sort | uniq -d   # testHostCallBeginReturnsWhileContextCreationIsBlocked, in two different files
+done > "${TMPDIR:-/tmp}/pop.tsv"
+POP="${TMPDIR:-/tmp}/pop.tsv"
+wc -l < "$POP"                     # 148 new names
+cut -f1 "$POP" | sort -u | wc -l   # 29 files
+sort "$POP" | uniq -d | wc -l      # 0: no file and name pair counted twice
+cut -f2 "$POP" | sort | uniq -d    # testHostCallBeginReturnsWhileContextCreationIsBlocked, in two different files
+
+# the phase of each name: the subject of the oldest commit in the range that added it
+while IFS=$'\t' read -r f n; do
+  printf '%s\t%s\t%s\n' "$(git log -S "$n" --format=%s 3757d0e..origin/main -- "$f" | tail -1 | grep -oE '1[0-9]\.[0-9]' | head -1)" "$f" "$n"
+done < "$POP" > "${TMPDIR:-/tmp}/phase.tsv"
+cut -f1 "${TMPDIR:-/tmp}/phase.tsv" | sort | uniq -c        # 70 16.1, 54 16.2, 18 16.3, 6 16.4
+cut -f1,2 "${TMPDIR:-/tmp}/phase.tsv" | sort | uniq -c      # per phase and file: the group counts below
+rm "$POP" "${TMPDIR:-/tmp}/phase.tsv"
 ```
 
 The range touches 50 test files, and 29 of them gain a new name. The one name that occurs twice is
 in two files, `BnBiometricsTests.swift` and `BnSecureStorageTests.swift`, and it is two distinct pins.
 
-**148 new names in 29 files**: 70 from 16.1, 54 from 16.2, 18 from 16.3 and 6 from 16.4. Six of them
+**148 new names in 29 files**: 70 from 16.1, 54 from 16.2, 18 from 16.3 and 6 from 16.4, from the
+`uniq -c` above. Each group count in the table below is a sum of that command's per-file lines. For
+example, the first row is `RenderThreadDispatcherTests` 8, `MountSyncTests` 1,
+`RenderThreadWarningTests` 2, `DispatchLaneBlockingTests` 1, `DispatchWindowScopeTests` 10,
+`HostEventArmThreadTests` 2, `ShutdownQuiescenceTests` 18 and `FaultNoticeTests` 9, which is 51.
+`GeneratedSymbolShadowTests` shows 1 under 16.1 and 4 under 16.2, split as the rows say. Six of them
 are flips that replace an old name: `DispatchLaneBlockingTests`, `MountSyncTests`, two in
 `RenderThreadWarningTests`, JVM `HostEventTest` and JVM `DispatchEventTest`.
 
@@ -610,18 +632,36 @@ register — pins that do not read the tree" (`:396`), its rows after group B, a
 | `GeneratedSymbolShadowTests` `OpArmPattern…`, `UnconsumedByDesign…`; `DispatchSurfaceDriftTests.MethodsWithADeclaredVisibility…` | 16.2, 3 | census 14a, 13a | census 14a, 13a |
 | `GeneratedSymbolShadowTests.NoShippedShellSource_CallsTheBlockingHostEventDispatch` and its control `OffendingCallDetector…` | 16.2, 2 | **nowhere** | only in #346's closing comment ("restoring the blocking call in `onNewIntent` or in an iOS navigator turns it red at the exact line"); in no record or register |
 | JVM `DispatchHostEventAndWaitVisibilityTest` | 16.2, 2 | register | **none: "Rule 7, not met, named. The pin has never been seen red."** |
-| Instrumented `BackAndroidTest` | 16.2, 5 | register | register: "device, not run locally", a list of mutations "for the final review to run". Two were run, D10 and D8, recorded **only in PR #431's body**; the rest are unrecorded |
+| Instrumented `BackAndroidTest` | 16.2, 5 | register | register: "device, not run locally", a list of mutations "for the final review to run". Two were run, D10 and D8, recorded **only in PR #431's body**. Their JUnit results show three tests red. **`back_at_root_finishes_the_activity` and `back_with_a_modal_open_dismisses_the_modal` were never seen red** |
 | XCTest `BnBackOffMainTests` | 16.2, 6 | register | **none**: register "device, not run locally", and no run is recorded in the register, ROADMAP or PR #431 |
 | `SlowHandlerWarningTests`, JVM `SlowHandlerProbeTest` | 16.3, 18 | **nowhere** — no register row, and the 16.3 record gives mutations only | 16.3 record §4: 13 mutations plus 4b, 8b, 10-AOT and 12b, each red on named facts. `TheWarnedSet_ResetsWithTheSession` is named by none |
 | XCTest `BnBiometricsTests`, `BnSecureStorageTests`, the 16.4 pins | 16.4, 6 | register | 16.4 record §8: M1–M4 and R one per run, and the V/VB/VB2 vacuity contrast; conforms |
 
 ```bash
-awk 'NR>=396 && NR<=498' docs/pin-standard.md | grep "^| " | sed -n '22,44p'   # the 23 M16 register rows
+awk 'NR>=396 && NR<=498' docs/pin-standard.md | grep "^| " | sed -n '22,44p'   # the 23 M16 register rows, not point 2's 23 pins
 grep -n "^| 13a\|^| 14a\|^| 27a" docs/plans/2026-09-22-phase-15.0-census.md
 grep -rn "SlowHandlerWarningTests\|TheEmittedHostCallOps\|NoShippedShellSource" docs --include=*.md
 gh pr view 431 --json body --jq .body | sed -n 43,45p
 gh run list --workflow ios.yml --limit 200 --json headBranch,databaseId,conclusion --jq '.[] | select(.headBranch|test("16.2"))'   # no scratch/16.2-mut branch: no iOS mutation run
 ```
+
+**Which `BackAndroidTest` tests the two device mutations redded, read from their JUnit XML:**
+
+```bash
+for r in 36323787569 36323790875; do
+  gh run download $r -n instrumented-test-results -D "${TMPDIR:-/tmp}/art-$r"
+  grep -rB1 "<failure" "${TMPDIR:-/tmp}/art-$r" | grep -oE 'testcase name="[^"]*" classname="[^"]*"'
+done
+```
+
+- D10, run 36323787569: `BackAndroidTest` tests 5, failures 1:
+  `back_while_the_render_thread_is_held_returns_at_once_and_navigates_after_release`.
+- D8, run 36323790875: `BackAndroidTest` tests 5, failures 2:
+  `navigate_then_back_at_once_neither_exits_nor_swallows` and
+  `back_from_a_page_navigates_to_its_parent`.
+
+Every other suite in both runs had 0 failures. So three of `BackAndroidTest`'s five tests have been
+seen red, and two have not.
 
 **Spot-checks of the recorded mutations.**
 
@@ -639,9 +679,11 @@ for r in 36323787569 36323790875 36385912185 36772560765 36773396413 36776492188
 **Why NOT MET.** The item requires every new pin to conform on Rules 2–5 and 7, **with its mutations
 recorded**, and says nothing about a disclosed gap counting as conformance. Measured against that:
 
-1. **No recorded red, 14 pins:** XCTest `BnFaultNoticeTests` (4), XCTest `BnDispatchLaneTests` (1),
-   JVM `DispatchHostEventAndWaitVisibilityTest` (2), and XCTest `BnBackOffMainTests` (6), plus
-   `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` (1). The register itself scores the
+1. **No recorded red, 16 pins:** XCTest `BnFaultNoticeTests` (4), XCTest `BnDispatchLaneTests` (1),
+   JVM `DispatchHostEventAndWaitVisibilityTest` (2), XCTest `BnBackOffMainTests` (6),
+   `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` (1), and the two `BackAndroidTest`
+   tests no device mutation redded, `back_at_root_finishes_the_activity` and
+   `back_with_a_modal_open_dismisses_the_modal` (2). The register itself scores the
    first three "Rule 7, not met". That includes the iOS twin this milestone's DoD asks for in item 4,
    and the XCTest half of item 7's proof. The register's own text for the twin says its red "is
    argued by reading, not measured".
@@ -649,18 +691,19 @@ recorded**, and says nothing about a disclosed gap counting as conformance. Meas
    16.1 tree-reading facts, and the 16.2 caller scan with its control. No record has a per-rule cell
    for them, and this audit did not write one either. That is not evidence that they fail Rules 2–5,
    so they are **not counted against the item**. They are carried into the gap plan, to be assessed
-   there along with the 14 above. `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` is in
+   there along with the 16 above. `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` is in
    both lists; it counts under point 1 for its missing mutation.
-3. **Recorded only outside the repo:** `BackAndroidTest`'s two device mutations live in a PR body,
+3. **Recorded only outside the repo:** `BackAndroidTest`'s two device mutations, which redded its
+   other three tests, live in a PR body,
    and the caller scan's red in an issue comment. Rule 7 asks for mutations recorded where a reader
    can find them, which a PR body arguably meets, but the register row for `BackAndroidTest` still
    says "not run locally" and lists the mutations as to-do.
-4. **Partials, named:** of the 23 register rows, 9 have Rule 3 partial, 2 Rule 5 partial, 1 Rule 4
+4. **Partials, named:** of the 23 M16 rows in the register, a different set from point 2's 23 pins, 9 have Rule 3 partial, 2 Rule 5 partial, 1 Rule 4
    partial and 6 Rule 7 partial. Each is disclosed in its cell. They would make the item MET NARROWLY
    on their own; they are not why it fails.
 
 **The NOT MET rests on point 1 alone.** The DoD asks for every new pin's mutations to be recorded,
-and the spec says *"A pin whose mutations are not recorded counts as a gap"*. Fourteen pins have
+and the spec says *"A pin whose mutations are not recorded counts as a gap"*. Sixteen pins have
 none, which decides the item directly. Point 1 is not a disclosure of a limit: these pins have never
 been seen to fail.
 
@@ -670,7 +713,7 @@ assessed and carry them. I took the second, for two reasons. First, the verdict 
 them: item 10 is NOT MET on point 1 whatever their cells say. Second, a sound Rules 2–5 cell needs
 each pin read against its subject, and often a mutation run. Doing that for 23 pins inside the
 audit, with no fix round of its own, would put unchecked verdicts into the register. The gap plan
-has to run mutations for the 14 anyway, and it can assess the 23 with the same rigour. This defers
+has to run mutations for the 16 anyway, and it can assess the 23 with the same rigour. This defers
 part of the audit's own check, and says so. It is not a finding against those pins.
 
 ---
@@ -695,19 +738,24 @@ milestone work, per the spec's item 8.
 
 ## What this milestone taught
 
-- **One test flag hid the milestone's subject twice.** `FakeShellHost.AutoCompleteHostCall`
-  answers a host call inside `hostCallBegin`. 16.1 found it was the one flag that kept the whole
-  suite from seeing #345, since no handler ever really went async. This audit found the same
-  inline completion is how a real Android shell answers a `check`, and that the contract text was
-  written as if it never happened (#455). An inline answer is not an edge case; it is a production
-  path.
+- **One test flag hid the milestone's subject, and then hid it again.** `FakeShellHost.AutoCompleteHostCall`
+  answers a host call inside `hostCallBegin`. Phase 14.1 found that it was the one flag that kept
+  the whole suite from seeing #339's root cause, later #345, because no handler ever really went
+  async (`docs/superpowers/plans/2026-09-21-phase-14.1-dispatch-twins.md:65-70`,
+  `docs/plans/2026-09-22-milestone-14-audit.md:113-116`). M16 knew this and set the flag false in
+  its pins. This audit found the same assumption again in a different place: an inline completion is
+  how a real Android shell answers a `check`, and the rc contract was written as if it never
+  happened (#455). Knowing the flag's lesson did not stop its recurrence. An inline answer is not an
+  edge case; it is a production path.
 - **Strict mode hid a production fault path** (the 16.1 lesson, `ROADMAP.md` 16.1 block). Every
   harness ran with `StrictErrors = true`, so the first FaultNotice design passed every test and could
   never have fired on a device. Every fault pin since runs in production mode.
 - **A device-only pin defers its own Rule 7.** All but one of the pins with no recorded red is an
-  XCTest, an instrumented test, or a pin the compiler pre-empts. The 16.4 pins show it can be done, one
-  mutation per lane run with `headSha` checked, but 16.1 and 16.2 wrote "for the final review to
-  run" and the runs were not recorded. A mutation list that ends in a to-do is not a record.
+  XCTest, an instrumented test, or a pin the compiler pre-empts. The 16.4 pins show it can be done:
+  one mutation per lane run, with `headSha` checked. 16.1's device pins were scored "Rule 7, not
+  met" and never run red. 16.2 wrote "for the final review to run" (`docs/pin-standard.md:443`),
+  and only two of those runs happened, recorded in a PR body. A mutation list that ends in a to-do
+  is not a record.
 
 ---
 
@@ -724,7 +772,7 @@ judged against the items they touch, are adjacent and do not contradict their wo
 are narrowed: item 2 by #454, because a local suite run hung in two of five tries, and item 7 by
 #455, because the written rc contract claims a post-await fault never becomes an rc, which this
 audit measured to be false for any host call completed inside `hostCallBegin`. But item 10 asks that
-**every** new pin's mutations be recorded, and 14 pins have never been seen red, among them the iOS
+**every** new pin's mutations be recorded, and 16 pins have never been seen red, among them the iOS
 twin item 4 requires and the XCTest half of item 7's proof. That is a gap, not a disclosed limit. A
 further 23 pins were never assessed on Rules 2–5, by any record or by this audit. They are carried
 into the gap plan and do not count toward the FAIL. Per the spec, FAIL sends the milestone to `plan-milestone-gaps`, and M16 stays
