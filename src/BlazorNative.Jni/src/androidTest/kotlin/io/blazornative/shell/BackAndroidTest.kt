@@ -377,8 +377,10 @@ class BackAndroidTest {
             firstMatch(root) { v -> v is Button && v.text.toString() == label }
         } as? Button
 
-    private val destroyedWhilePolled = "the activity was DESTROYED while the test still expected " +
-        "it on screen: a back press finished the activity instead of being handled on the page"
+    /** Neutral on purpose: the poll sees only the state, not what finished the activity. A back
+     * press that was not handled on the page is one cause; a crash or the system is another. */
+    private val destroyedWhilePolled =
+        "the activity was DESTROYED while the test still expected it on screen"
 
     private fun pollUntil(
         scenario: ActivityScenario<MainActivity>,
@@ -389,8 +391,8 @@ class BackAndroidTest {
         val deadline = System.currentTimeMillis() + deadlineMs
         while (System.currentTimeMillis() < deadline) {
             val ok = AtomicReference(false)
-            // A back press that finishes the activity under a poll would otherwise surface as
-            // ActivityScenario's bare NullPointerException, which does not name the cause.
+            // An activity destroyed under a poll, whatever destroyed it, would otherwise surface
+            // as ActivityScenario's bare NullPointerException, which does not name the state.
             // Only an NPE with the activity really destroyed is reworded; any other rethrows.
             if (scenario.state == Lifecycle.State.DESTROYED) throw AssertionError(destroyedWhilePolled)
             try {
