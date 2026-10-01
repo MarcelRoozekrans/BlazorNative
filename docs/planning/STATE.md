@@ -2,8 +2,8 @@
 
 **Last session:** 2026-10-01
 **Milestone:** 16 — Unblock the Dispatch Lane `[status: active]`
-**Phase:** 16.5 — Audit and close `[status: active]`. **The audit verdict is FAIL**, so M16 stays open.
-**Branch:** `chore/16.5-audit-and-close` → the 16.5 audit PR
+**Phase:** 16.5 — Audit and close `[status: complete]`, verdict **FAIL** (#456, `965be6c`). Next is 16.6 — Prove the unreddened pins `[status: pending]`.
+**Branch:** `chore/16.5-complete-phase` → complete 16.5 and add gap phases 16.6–16.8
 
 ## Current Position
 
@@ -39,20 +39,21 @@
 
 ## Open Decisions (owner)
 
-- **The FAIL.** `plan-milestone-gaps` will propose gap phases, presumably 16.6 onwards, for the 16
-  unreddened pins, the 23 unassessed pins and #455. The owner approves those phases before they
-  are added.
+- **Decided 2026-10-01:** the gap phases are 16.6 (prove the 16 unreddened pins and assess the 23),
+  16.7 (#455, change the **code** so the contract holds), and 16.8 (re-audit and close). #454 is
+  fixed in a separate bounded-wait PR outside M16.
 - #406: tier the 9 untiered public types in api-tiers §8.
 - The fenced-code-block advice in the global CLAUDE.md is wrong, because a fenced block does not
   protect a line from release-please's parser.
 
 ## Blockers
 
-- None. The only wait is the owner's merge of the 16.5 audit PR.
+- None. The only wait is the owner's merge of the complete-phase and gap-phases PR.
 
 ## Recommended Next Step
 
-1. Merge the 16.5 audit PR. Read state from `origin/main` afterwards.
-2. Run `complete-phase` for 16.5. The audit phase is complete; the milestone is not, which is the
-   15.6 precedent.
-3. Run `plan-milestone-gaps` from the audit's gap list. **Do not** run `complete-milestone`.
+1. Merge the complete-phase PR. Read state from `origin/main` afterwards.
+2. Run `start-next-phase` for **16.6**. It routes to brainstorming, since there is no spec yet.
+   Device mutations run one at a time per ref, with `headSha` checked; see the sequential-lane
+   memory.
+3. Separately, and in either order: the #454 bounded-wait PR.

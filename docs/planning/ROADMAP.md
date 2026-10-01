@@ -3718,13 +3718,50 @@ on the handler's queue, though never the render thread.
 | Android | 233 | **233**, unchanged | 0 |
 | iOS | 282 | **288**, 0 failed | +6: the six 16.4 pins |
 
-#### Phase 16.5: Audit and close [status: active]
+#### Phase 16.5: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
 `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-01-phase-16.5-design.md`](../superpowers/specs/2026-10-01-phase-16.5-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-01-phase-16.5-audit-and-close.md`](../superpowers/plans/2026-10-01-phase-16.5-audit-and-close.md)
+**Audit:** [`docs/plans/2026-10-01-milestone-16-audit.md`](../plans/2026-10-01-milestone-16-audit.md)
+**Completed:** 2026-10-01 · [PR #456](https://github.com/MarcelRoozekrans/BlazorNative/pull/456), verdict **FAIL**. The audit phase is complete; the milestone is not, and its gap phases follow.
+
+#### Phase 16.6: Prove the unreddened pins [status: pending]
+**Goal:** Close the 16.5 audit's NOT MET item, the pin standard:
+- run and record a mutation that turns each of the **16 pins never seen red** red:
+  - XCTest: `BnFaultNoticeTests` ×4, `BnDispatchLaneTests` ×1, `BnBackOffMainTests` ×6;
+  - JVM: `DispatchHostEventAndWaitVisibilityTest` ×2;
+  - `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages`;
+  - `BackAndroidTest`: `back_at_root_finishes_the_activity` and
+    `back_with_a_modal_open_dismisses_the_modal`.
+
+  Device mutations run one at a time per ref, with each lane's `headSha` checked;
+- move `BackAndroidTest`'s D8/D10 record out of PR #431's body and into the register;
+- assess the **23 carried pins** on Rules 2–5 with per-pin register cells: the 18 16.3 pins, the
+  three 16.1 tree-reading facts, and the 16.2 caller scan with its control.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 16.7: Make the rc contract true (#455) [status: pending]
+**Goal:** A fault after the first await reaches the shell as a FaultNotice and never as an rc,
+including when the awaited host call completed inside `hostCallBegin`. The owner chose on
+2026-10-01 to change the code, not the words. The rc change on that path is called out in the
+changelog. Pin the inline-completion path, mutation-proven, and pin the "verbatim" claim that the
+`Exports.cs` and C-header copies of the contract agree.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 16.8: Re-audit and close [status: pending]
+**Goal:** Re-run `audit-milestone` on live evidence after 16.6 and 16.7, and close M16 if every DoD
+item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+
+> **Gap phases added 2026-10-01, by owner decision**, after the 16.5 audit's FAIL. #454, the local
+> fixture hang, is fixed separately outside M16: its code predates M16, so it gets its own
+> bounded-wait PR.
 
 ---
 
