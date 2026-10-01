@@ -491,9 +491,10 @@ public sealed class WireVocabularyCodegenTests
                     $"{where}: no '{camera} = 4'. The anchor op is missing or renumbered.");
 
                 // Both ways: every manifest op is present with its id, and nothing else is.
-                Assert.Equal(
-                    l.Want.OrderBy(kv => kv.Key, StringComparer.Ordinal),
-                    read.OrderBy(kv => kv.Key, StringComparer.Ordinal));
+                string[] want = [.. l.Want.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} = {kv.Value}")];
+                string[] got = [.. read.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} = {kv.Value}")];
+                Assert.True(want.SequenceEqual(got),
+                    $"{where}: the op block disagrees with the manifest.\n  manifest: {string.Join(", ", want)}\n  block:    {string.Join(", ", got)}");
             }
             languagesChecked++;
         }
