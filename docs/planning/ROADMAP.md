@@ -3634,7 +3634,7 @@ on this branch, so Android and iOS are carried forward unchanged.
 - **#9**, the phase's own tracking issue, to be closed after the phase PR merges, with an evidence
   comment pointing at the record and the counts above.
 
-#### Phase 16.4: The lost first tap (#438) [status: active]
+#### Phase 16.4: The lost first tap (#438) [status: complete]
 **Goal:** Find and fix why the first tap after a cold boot sometimes never reaches its host call on
 iOS — measured at 2 failures in 12 runs of `BnBiometricsTests.testAuthenticateBootDeniedIsDataWithinABoundedAwaitNoHang`,
 where 16.3's own slow-handler warning showed `BnSecureDemo.AuthenticateAsync`'s synchronous part
@@ -3646,6 +3646,7 @@ FAIL on the tests item was already known.
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-09-28-phase-16.4-design.md`](../superpowers/specs/2026-09-28-phase-16.4-design.md)
 **Plan:** [`docs/superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md`](../superpowers/plans/2026-09-28-phase-16.4-lost-first-tap.md)
+**Completed:** 2026-10-01 · [PR #449](https://github.com/MarcelRoozekrans/BlazorNative/pull/449) · #438 closed with evidence
 
 > **16.4 outcome: the lost first tap had two causes, neither an M16 regression, and both are
 > fixed and pinned.** Evidence, mutations and verification are in
