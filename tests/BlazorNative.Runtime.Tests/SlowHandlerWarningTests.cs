@@ -69,6 +69,17 @@ namespace BlazorNative.Runtime.Tests;
 //     forward the app's delegate itself and are keyed by the app's method;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
+//   - a host event's PAYLOAD. The arms are keyed by event name and the payload never
+//     reaches the warning by the shape of NoteHostEventSyncPart, which takes no
+//     payload, but no pin sends one through an arm: the payload pin covers one
+//     "change" payload on one UI handler only;
+//   - what a session reset is. TheWarnedSet_ResetsWithTheSession resets through
+//     HostSession.ResetForTests and starts a new session. A retire driven by a shell,
+//     and the warning count field apart from the warned set, are not exercised;
+//   - the call-site map beyond its bound. TheCallSiteMap_StaysFlat_… pins that the map
+//     holds the live handlers only, measured on capturing lambdas across re-renders. It
+//     does not pin the map's contents, nor the cost of resolving a key, which happens
+//     only once a dispatch is over budget;
 //   - the shells: this is the .NET side only.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -514,8 +525,9 @@ public sealed class SlowHandlerWarningTests
             $"two BnButtons with different slow OnClick handlers gave {lines.Length} warnings, "
             + $"not 2. BnButton forwards every app's OnClick from one line, so a key built from "
             + $"the tree that holds the attribute merges them:\n{string.Join("\n", lines)}");
-        Assert.Single(lines, l => l.Contains("BnSlowOne"));
-        Assert.Single(lines, l => l.Contains("BnSlowTwo"));
+        Assert.True(lines.Count(l => l.Contains("BnSlowOne")) == 1 && lines.Count(l => l.Contains("BnSlowTwo")) == 1,
+            "the two warnings must name the app's methods BnSlowOne and BnSlowTwo, one each. A key that "
+            + $"falls back to the tree owner names the component instead:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnButton).FullName!));
     }
 
@@ -536,8 +548,9 @@ public sealed class SlowHandlerWarningTests
             $"two pages' slow buttons inside BnView ChildContent gave {lines.Length} warnings, not "
             + $"2. The fragments render into BnView's tree with the pages' sequence numbers, so a "
             + $"tree-owner key merges them:\n{string.Join("\n", lines)}");
-        Assert.Single(lines, l => l.Contains(nameof(ChildPageA)));
-        Assert.Single(lines, l => l.Contains(nameof(ChildPageB)));
+        Assert.True(lines.Count(l => l.Contains(nameof(ChildPageA))) == 1 && lines.Count(l => l.Contains(nameof(ChildPageB))) == 1,
+            $"the two warnings must name {nameof(ChildPageA)} and {nameof(ChildPageB)}, one each. A key that "
+            + $"falls back to the tree owner names BnView instead:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnView).FullName!));
     }
 
@@ -602,7 +615,7 @@ public sealed class SlowHandlerWarningTests
         int warned = lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
         Assert.True(warned == cap,
             $"{cap + 1} distinct slow keys gave {warned} warnings before the suppression line, not {cap}. "
-            + "The cap must let exactly the first 32 through and announce the 33rd once.");
+            + $"The cap must let exactly the first {cap} through and announce the next once.");
         int suppressions = lines.Count(l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
         Assert.True(suppressions == 1,
             $"the cap logged {suppressions} suppression lines for {cap + 1} distinct keys, not 1.");
