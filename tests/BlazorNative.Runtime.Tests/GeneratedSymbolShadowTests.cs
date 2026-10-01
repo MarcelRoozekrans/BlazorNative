@@ -1139,9 +1139,12 @@ public sealed class GeneratedSymbolShadowTests
     [Fact]
     public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
     {
-        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"));
-        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"));
-        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"));
+        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"),
+            "case 1, a Kotlin member call on a receiver, was not counted as a call");
+        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"),
+            "case 2, a Swift optional-chained call, was not counted as a call");
+        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"),
+            "case 3, a Kotlin bare call on an assignment line, was not counted as a call");
 
         // Rule 4 (16.6, defect 2): the declarations are READ from the tree, not hand-copied,
         // so a change to either real signature is what this control checks.
@@ -1165,7 +1168,8 @@ public sealed class GeneratedSymbolShadowTests
         // Defect 1 (16.6): a declaration line that ALSO calls the method — an expression-
         // bodied forwarder — is a call, not merely a declaration.
         Assert.True(IsOffendingCallLine(
-            "    internal fun dispatchHostEventAndWait(event: BnHostEvent) = dispatchHostEventAndWait(event, null)"));
+            "    internal fun dispatchHostEventAndWait(event: BnHostEvent) = dispatchHostEventAndWait(event, null)"),
+            "case 4, an expression-bodied forwarder on the declaration line, was not counted as a call");
     }
 
     /// <summary>THE PIN (final whole-branch review, Important #1). No shipped shell source may
