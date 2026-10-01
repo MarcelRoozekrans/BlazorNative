@@ -620,8 +620,13 @@ public sealed class SlowHandlerWarningTests
 
         Assert.Equal(0, Dispatch(s.Handler("slow-a"), Click));
 
-        Assert.Equal(1, SlowProbe.RunsOf("slow-a"));
-        var line = Assert.Single(s.SlowLines());
+        Assert.Equal(1, SlowProbe.RunsOf("slow-a")); // anchor: the real sleep ran
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 1,
+            $"a handler that really slept {SlowMs} ms gave {lines.Length} warnings, not 1. With no fake clock "
+            + "the renderer must read Stopwatch.GetTimestamp at both ends of the synchronous part; a clock "
+            + "that does not advance reads one value at both ends, so the elapsed time is zero and nothing is over budget.");
+        string line = lines[0];
         Match ms = Regex.Match(line, @"for (\d+) ms");
         Assert.True(ms.Success, $"the warning no longer states its milliseconds as 'for N ms': {line}");
         // Over the budget, not ">= SlowMs": a Windows sleep can end a little early and the
