@@ -68,7 +68,7 @@ and the back gesture always answers.**
 3. Phase 16.2 — back and navigation off the main thread [complete] — BackState/BackUnhandled notices; AndroidX OnBackPressedCallback toggled in the page batch; unhandled back handed to the platform; navigators fire-and-forget; blocking dispatch test-only by caller scan; #346 closed; .NET 1255 → 1278, JVM 170 → 190, Android 228 → 233, iOS 276 → 282 (#431)
 4. Phase 16.3 — starvation, measured [complete] — one-for-one cost measured; slow-handler Warn once per call site, capped, never the payload, proven under NativeAOT; app-author threading page; #9 closed; #435 and #438 filed; .NET 1278 → 1295, JVM 190 → 191 (#437)
 5. Phase 16.4 — the lost first tap (#438) [complete] — two causes, neither an M16 regression: a boot-harness race on the in-flight flag, and a cold LAContext created in hostCallBegin on the render thread; biometrics and secure storage now work on their own queues; six pins, mutations one per run, vacuity contrast observed; 10/10 iOS runs green; #438 closed; #440 and #444 filed; iOS 282 → 288 (#449)
-6. Phase 16.5 — audit and close [pending]
+6. Phase 16.5 — audit and close [active]
 
 > **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
 > so no merged state exists in which a fault after the first await is only logged. That window is
@@ -106,4 +106,4 @@ measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 depends on 16.
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| — | *(not yet audited)* | — |
+| 2026-10-01 | **FAIL** — [audit](../plans/2026-10-01-milestone-16-audit.md); 7 MET, 2 MET NARROWLY, 1 NOT MET | Pin standard NOT MET: 16 new pins have no recorded mutation, among them the iOS twin `BnDispatchLaneTests`, `BnFaultNoticeTests`, `BnBackOffMainTests`, two `BackAndroidTest` tests and the JVM visibility pin. A further 23 were never assessed on Rules 2–5, the 16.3 slow-handler pins, three 16.1 tree-reading facts and the 16.2 caller scan; they are carried into the gap plan, not counted as failing. MET NARROWLY: tests, by #454, a local hang; #8, by #455, the rc contract's "never as an rc" is false for an inline-completed host call. Routed to `plan-milestone-gaps` |

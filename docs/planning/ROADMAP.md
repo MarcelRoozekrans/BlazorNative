@@ -3718,11 +3718,13 @@ on the handler's queue, though never the render thread.
 | Android | 233 | **233**, unchanged | 0 |
 | iOS | 282 | **288**, 0 failed | +6: the six 16.4 pins |
 
-#### Phase 16.5: Audit and close [status: pending]
+#### Phase 16.5: Audit and close [status: active]
 **Goal:** Run `audit-milestone` against the DoD on live evidence and close M16. **No tag**, per
 `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-01-phase-16.5-design.md`](../superpowers/specs/2026-10-01-phase-16.5-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-01-phase-16.5-audit-and-close.md`](../superpowers/plans/2026-10-01-phase-16.5-audit-and-close.md)
 
 ---
 
