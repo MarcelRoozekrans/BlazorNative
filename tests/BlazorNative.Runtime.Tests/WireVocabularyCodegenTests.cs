@@ -425,7 +425,13 @@ public sealed class WireVocabularyCodegenTests
 
         // The compiled .NET enum is the generated one, so it must agree too.
         foreach ((string name, int id) in FrozenHostCallOps)
-            Assert.Equal(id, (int)Enum.Parse<HostCallOp>(name));
+        {
+            int compiled = (int)Enum.Parse<HostCallOp>(name);
+            Assert.True(compiled == id,
+                $"the compiled HostCallOp.{name} is {compiled}, but {id} is frozen and the manifest "
+                + "agrees. BnHostCallOps.g.cs was hand-edited or not regenerated: run WireGen, never "
+                + "edit a generated file.");
+        }
     }
 
     /// <summary>The op block of one generated file: from <paramref name="header"/> to
