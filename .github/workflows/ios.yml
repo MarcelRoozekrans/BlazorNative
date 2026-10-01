@@ -574,7 +574,7 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (282 passed / 0 failed)
+      - name: Assert XCTest baseline (288 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1422,9 +1422,18 @@ jobs:
           # BackState true and false each complete status 0 with no payload and reach
           # no onError; BackUnhandled likewise; the next op still completes Error, the
           # control). Expected, not yet measured on the ios lane.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 282 ]; then
+          # 282 -> 287 (16.4, +5): #438, the lost first tap. BnBiometricsTests (3: the boot
+          # harness waits for the ARMED reply, not the in-flight flag, with the window
+          # between the two held open by a seam; hostCallBegin returns while a blocked
+          # LAContext factory holds authenticate, and again for check) and
+          # BnSecureStorageTests (2: the same begin contract for an auth-bound set and
+          # for getWithAuth of an auth-bound item).
+          # 287 -> 288 (16.4 final review, +1): BnSecureStorageTests, a plain get that
+          # completes while a getWithAuth waits on its gate must not release that
+          # request's retained LAContext.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 288 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 282 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 288 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

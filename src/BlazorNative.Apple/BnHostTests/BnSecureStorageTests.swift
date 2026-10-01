@@ -25,6 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
+import LocalAuthentication
 import UIKit
 @testable import BnHost
 
@@ -150,6 +151,7 @@ final class BnSecureStorageTests: BnHostTestCase {
         let bridge = AppleShellBridge()
         _ = bridge.hostCallBegin(40, BnHostCallOp.secureStorage,
                                  "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.notFound)
     }
 
@@ -170,6 +172,7 @@ final class BnSecureStorageTests: BnHostTestCase {
         installCapture()
         _ = bridge.hostCallBegin(41, BnHostCallOp.secureStorage,
                                  "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock your secret\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
 
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "a seam-authorized getWithAuth unlocks")
         XCTAssertEqual(captured1()?.payload, "{\"value\":\"hunter2\"}", "the plaintext returns in the {\"value\":…} payload")
@@ -186,9 +189,52 @@ final class BnSecureStorageTests: BnHostTestCase {
         installCapture()
         _ = bridge.hostCallBegin(42, BnHostCallOp.secureStorage,
                                  "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
         // A denied gate resolves to AuthFailed — a value, never a Swift throw, never a hang.
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.authFailed)
         XCTAssertNil(captured1()?.payload)
+    }
+
+    // ── 16.4 (#438): a completion releases ONLY its own request's context ────────────
+    //
+    // WHAT IT PINS. The retention rule: a getWithAuth's `LAContext` stays retained until
+    // THAT request completes. Until 16.4 the handler held one context slot that every
+    // completion cleared, and the funnel's comment claimed "iff the id matches" with no id
+    // to match. Since 16.4 the actions are queued, so a plain get finishing while a
+    // getWithAuth waits on its prompt is an ordinary interleaving. Here the gate hook
+    // holds the prompt open by not answering, and `drainForTest` orders the rest, so the
+    // interleaving is forced, not waited for. A shared slot reds on the second assertion.
+    //
+    // WHAT IT DOES NOT COVER. That a released context cancels a real Face ID evaluation;
+    // the simulator has no sheet to cancel. It pins the handler's own bookkeeping.
+
+    func testACompletionDoesNotReleaseAnotherRequestsRetainedContext() {
+        let bridge = AppleShellBridge()
+        let held = NSLock()
+        var pendingGate: BnSecureAuthGate?
+        BnSecureStorage.authGateHookForTest = { gate in held.lock(); pendingGate = gate; held.unlock() }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: plainKey, value: "plain", requireAuth: false),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        _ = bridge.hostCallBegin(48, BnHostCallOp.secureStorage,
+                                 "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock\"}")
+        bridge.secureStorage.drainForTest()
+        held.lock(); let gate = pendingGate; held.unlock()
+        XCTAssertNotNil(gate, "the getWithAuth must be waiting on its gate")
+        XCTAssertTrue(bridge.secureStorage.isRetainingContextForTest(48), "the prompt's context is retained while it waits")
+
+        _ = bridge.hostCallBegin(49, BnHostCallOp.secureStorage, "{\"action\":\"get\",\"key\":\"\(plainKey)\"}")
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the plain get completed first")
+        XCTAssertTrue(bridge.secureStorage.isRetainingContextForTest(48),
+                      "another request's completion released the waiting prompt's context")
+
+        gate?.authenticate()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the gated read completes")
+        XCTAssertFalse(bridge.secureStorage.isRetainingContextForTest(48), "the context is released on its own completion")
     }
 
     // ── getWithAuth of a PLAIN item reads directly (no prompt, no gate) ───────────
@@ -202,6 +248,7 @@ final class BnSecureStorageTests: BnHostTestCase {
         installCapture()
         _ = bridge.hostCallBegin(43, BnHostCallOp.secureStorage,
                                  "{\"action\":\"getWithAuth\",\"key\":\"\(plainKey)\",\"reason\":\"Unlock\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
 
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "a plain item needs no gate — read directly")
         XCTAssertEqual(captured1()?.payload, "{\"value\":\"hunter2\"}")
@@ -228,6 +275,7 @@ final class BnSecureStorageTests: BnHostTestCase {
         installCapture()
         let bridge = AppleShellBridge()
         let rc = bridge.hostCallBegin(44, BnHostCallOp.secureStorage, "{\"action\":\"frobnicate\",\"key\":\"x\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
         XCTAssertEqual(rc, 0, "begin returns synchronously even for an unknown action")
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.error)
     }
@@ -240,7 +288,76 @@ final class BnSecureStorageTests: BnHostTestCase {
         // op=3 must reach BnSecureStorage (a get of an absent key → NotFound), NOT
         // geolocation(0)/notifications(1)/biometrics(2).
         _ = bridge.hostCallBegin(45, BnHostCallOp.secureStorage, "{\"action\":\"get\",\"key\":\"\(plainKey)\"}")
+        bridge.secureStorage.drainForTest() // the action runs on the handler's queue (16.4)
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.notFound)
+    }
+
+    // ── 16.4 (#438): hostCallBegin returns while LAContext creation is slow ─────────
+    //
+    // WHAT IT PINS. The begin contract, the BnBiometricsTests twin: `hostCallBegin`
+    // returns at once and the outcome arrives later through the completion. Both auth
+    // paths create an `LAContext`, whose first creation in a process is a cold cost of
+    // seconds. `contextFactoryForTest` blocks on a semaphore in its place, and
+    // `hostCallBegin`, called off main as the .NET render thread calls it, must return
+    // while the factory is still blocked. If the action ran on the calling thread again,
+    // it could not return until the release, and this reds on the 5 s wait instead of
+    // hanging.
+    //
+    // WHAT IT DOES NOT COVER. It blocks only the context factory. The Keychain calls
+    // moved to the same queue in the same change, but no seam makes them slow, so they
+    // are covered by construction, not by this pin. And it proves the CALLING thread is
+    // not held, not that the queue itself is fast.
+
+    func testHostCallBeginReturnsWhileContextCreationIsBlocked() {
+        installCapture()
+        let bridge = AppleShellBridge()
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        BnSecureStorage.contextFactoryForTest = { entered.signal(); release.wait(); return LAContext() }
+        defer { release.signal(); bridge.secureStorage.drainForTest() }
+
+        // An auth-bound SET builds its non-interactive context through the factory.
+        assertBeginReturnsWhileTheFactoryIsBlocked(bridge, requestId: 46,
+            "{\"action\":\"set\",\"key\":\"\(authKey)\",\"value\":\"hunter2\",\"auth\":\"1\"}", entered: entered)
+        release.signal()
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the set completes once the context exists")
+    }
+
+    func testHostCallBeginReturnsWhileContextCreationIsBlockedForGetWithAuth() {
+        let bridge = AppleShellBridge()
+        BnSecureStorage.authGateHookForTest = { gate in gate.authenticate() }
+        // Stored with the real factory, so only the gated READ meets the blocked one.
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        BnSecureStorage.contextFactoryForTest = { entered.signal(); release.wait(); return LAContext() }
+        defer { release.signal(); bridge.secureStorage.drainForTest() }
+
+        assertBeginReturnsWhileTheFactoryIsBlocked(bridge, requestId: 47,
+            "{\"action\":\"getWithAuth\",\"key\":\"\(authKey)\",\"reason\":\"Unlock\"}", entered: entered)
+        release.signal()
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the gated read completes once the context exists")
+        XCTAssertEqual(captured1()?.payload, "{\"value\":\"hunter2\"}")
+    }
+
+    private func assertBeginReturnsWhileTheFactoryIsBlocked(_ bridge: AppleShellBridge, requestId: Int64, _ args: String,
+                                                            entered: DispatchSemaphore,
+                                                            file: StaticString = #filePath, line: UInt = #line) {
+        let returned = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = bridge.hostCallBegin(requestId, BnHostCallOp.secureStorage, args)
+            returned.signal()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 10), .success,
+                       "the LAContext factory was never called", file: file, line: line)
+        XCTAssertEqual(returned.wait(timeout: .now() + 5), .success,
+                       "hostCallBegin did not return while LAContext creation was blocked: the begin contract is broken",
+                       file: file, line: line)
+        XCTAssertNil(captured1(), "no outcome before the context exists", file: file, line: line)
     }
 
     // ── BOOT: the pairing round-trips through the REAL host_call_complete (/secure) ─
@@ -257,8 +374,10 @@ final class BnSecureStorageTests: BnHostTestCase {
         try tapButton("Unlock", in: form) // GetWithAuthAsync → the pairing
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "value:hunter2" },
                       "the pairing never round-tripped the unlocked value to the echo (a hang or the OS-unlock model broke)")
-        XCTAssertEqual(BnSecureStorage.lastHostCallCompleteRcForTest, 0,
-                       "host_call_complete did not route to the in-flight .NET requestId")
+        // Polled, not read once: the rc is stored on the handler's queue after the export
+        // returns, so the echo can render first (16.4).
+        XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
+                      "host_call_complete did not route to the in-flight .NET requestId")
     }
 
     func testUnlockAfterDeleteIsNotFoundWithinABoundedAwaitNoHang() throws {
@@ -271,7 +390,8 @@ final class BnSecureStorageTests: BnHostTestCase {
         // NotFound is reached BEFORE any prompt — DATA within a bounded await, no hang.
         XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:NotFound" },
                       "Unlock of an absent secret never echoed NotFound (a HANG?)")
-        XCTAssertEqual(BnSecureStorage.lastHostCallCompleteRcForTest, 0)
+        XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
+                      "host_call_complete did not route to the in-flight .NET requestId")
     }
 
     // ── Boot + tree accessors (the BnNotificationsTests house style) ──────────────
