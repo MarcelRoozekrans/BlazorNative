@@ -34,7 +34,7 @@ branch is a run on `main`'s code.
 | 7 | #8 is fixed: late faults reach `onError`; the rc contract written once and agreed | **MET NARROWLY** — #455; #440 adjacent, not contradicting |
 | 8 | #9 is re-assessed on measurement | **MET** |
 | 9 | No ABI change; the new notice ops generated from `src/wire-vocabulary.json` | **MET** |
-| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **NOT MET** — 14 pins have no recorded red, and 23 have no per-rule assessment, one pin in both counts |
+| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **NOT MET** — 14 new pins have no recorded mutation. A further 23 were never assessed on Rules 2–5 by any record or by this audit; they are carried into the gap plan, not counted as failing |
 
 ---
 
@@ -177,9 +177,12 @@ git show --stat f13bcd8     # src/BlazorNative.Runtime/Exports.cs | 7 ++++---, a
 PR #428 has 22 commits. The first three, `0e7c558`, `17c4869` and `86faee4`, touch only
 `docs/planning/` and `docs/superpowers/`: the renumbering, the 16.1 design and the 16.1 plan. The
 fourth, `f13bcd8`, is the comment correction and touches only `Exports.cs`. It is the **first commit
-that touches `src` or `tests`**, ahead of `55290d2`, which introduces the render thread. I read "the
-first commit of the fix" as the first commit that changes code, since a design and a plan are not
-the fix. `38a8a5a` is the PR head, still fetchable at `refs/pull/428/head`.
+that touches `src` or `tests`**, ahead of `55290d2`, which introduces the render thread. That is the
+reading the phase recorded as its intent before the work began. The 16.1 plan's global constraint
+says *"The first commit of the fix corrects the false comment at `Exports.cs:504-506` and changes
+nothing else"*, and its file list says *"This is the comment only, and it is the first commit"*,
+after the plan's own bookkeeping
+(`git show origin/main:docs/superpowers/plans/2026-09-26-phase-16.1-render-thread.md | sed -n '20p;54p'`). `38a8a5a` is the PR head, still fetchable at `refs/pull/428/head`.
 
 **GitHub.** #345 is closed, `COMPLETED`, at 2026-09-27T04:29:45Z, by hand with a comment citing
 #428 / `5634ed1`, the flipped pin, the iOS twin and `f13bcd8`
@@ -393,6 +396,11 @@ at `origin/main`):
 | `register_bridge`, `register_frame_callback` | `:633`, `:348`: 0 / 2 | `:190`, `:111` | yes; no handler code runs |
 | `init`, `shutdown`, `version` | no rc table: a struct, `void`, a string | same | n/a |
 
+**The basis of the narrowing.** The DoD's phrase, "rc reports the synchronous part", holds, and
+every rc table agrees with the contract as written. The item is narrowed because the contract's
+wording is false in substance for one path, under the spec's risk row *"A DoD item is met in letter
+but not in substance"*.
+
 **Why MET NARROWLY: #455, filed for this audit.** The contract's third sentence, "a fault after the
 first await is delivered later through the FaultNotice host-call op, **never as an rc**", is false
 whenever the awaited host call completes **inside** `hostCallBegin`. The `await` then finds a
@@ -413,7 +421,7 @@ that is the text a third-party shell author reads. The header's own Return line 
 right word, "faulted before **yielding**". #455 asks for the contract to say "yield" throughout, and
 for a pin. Two smaller items found in the same place are grouped into #455:
 
-- `website/docs/guides/threading.md:33-36` says the two copies are verbatim "so the two can't drift
+- `website/docs/guides/threading.md:32-36` says the two copies are verbatim "so the two can't drift
   apart". Nothing enforces that; they agree today because they were written that way.
 - The milestone's risk table promised the rc change would be "called out in the changelog as a
   behaviour change". The 0.17.0 entry in `CHANGELOG.md` lists the three features and says nothing
@@ -430,6 +438,30 @@ narrows this item; #440 on its own does not.
 
 **GitHub.** #8 is closed, `COMPLETED`, at 2026-09-27T04:29:48Z, by hand with a comment citing #428 /
 `5634ed1` and the pins above (`gh issue view 8 --json state,stateReason,closedAt,comments`).
+
+**#438, also required by the spec to be closed and backed.** Spec item 3 lists #438 with #8, #9,
+#345 and #346. It is the 16.4 issue, not a DoD item of its own, so it has no verdict line. It is
+checked here because it was found inside M16's work.
+
+```bash
+gh issue view 438 --json state,stateReason,closedAt     # CLOSED, COMPLETED, 2026-10-01T04:19:22Z
+git show --stat --format='%h %s' 3f432a3                  # fix(16.4): the lost first tap, ... (#449)
+git diff 3f432a3^ 3f432a3 -- src/BlazorNative.Apple/BnHostTests | grep -E "^[+-]\s*func test"
+```
+
+It was closed by hand with a comment citing #449, merged as `3f432a3`. That commit adds **six**
+XCTests. They are the `+` lines of the diff, except `testTheLAContextIsRetainedDuringEvaluationThenReleased`,
+which is in both the `-` and the `+` lines because its signature only gained `throws`:
+
+- `BnBiometricsTests.testTheBootHarnessWaitsForTheArmedReplyNotTheInFlightFlag`
+- `BnBiometricsTests.testHostCallBeginReturnsWhileContextCreationIsBlocked`
+- `BnBiometricsTests.testHostCallBeginReturnsWhileContextCreationIsBlockedForCheck`
+- `BnSecureStorageTests.testHostCallBeginReturnsWhileContextCreationIsBlocked`
+- `BnSecureStorageTests.testHostCallBeginReturnsWhileContextCreationIsBlockedForGetWithAuth`
+- `BnSecureStorageTests.testACompletionDoesNotReleaseAnotherRequestsRetainedContext`
+
+They are the 16.4 group in item 10. Their mutations are recorded one per lane run in the 16.4
+record §8, and item 10 spot-checks those runs. #438 is closed and backed.
 
 ## 8. #9 is re-assessed on measurement — **MET**
 
@@ -448,12 +480,14 @@ gh issue view 9 --json state,stateReason,closedAt,comments
 **The measurement, re-run for this audit.** The command is cheap, about 14 s, so I re-ran it rather
 than citing the record's numbers. I saved the record's appendix as
 `tests/BlazorNative.Runtime.Tests/StarvationMeasureHarness.cs`, ran it, then deleted the file and
-rebuilt:
+rebuilt. **The harness is throwaway: do not commit it. Delete it right after the run and rebuild,
+or the next suite run counts one extra test.**
 
 ```bash
 awk 'NR>243 && /^```csharp/{f=1;next} f&&/^```/{f=0} f' docs/plans/2026-09-27-phase-16.3-record.md > tests/BlazorNative.Runtime.Tests/StarvationMeasureHarness.cs
 dotnet test tests/BlazorNative.Runtime.Tests --filter "Category=Measure16.3" --logger "console;verbosity=detailed"
-rm tests/BlazorNative.Runtime.Tests/StarvationMeasureHarness.cs
+rm tests/BlazorNative.Runtime.Tests/StarvationMeasureHarness.cs   # always; never commit it
+dotnet build tests/BlazorNative.Runtime.Tests -v q
 ```
 
 | sync part (ms) | dispatch sync time, median / max (ms) | second event behind it | `back` behind it |
@@ -540,12 +574,20 @@ comment.
 range touched:
 
 ```bash
-git diff --name-only 3757d0e origin/main -- tests src/BlazorNative.Jni/src/test src/BlazorNative.Jni/src/androidTest src/BlazorNative.Apple/BnHostTests
-# then, per file, the [Fact]/[Theory] method names (C#), @Test fun names (Kotlin) and func test… names (Swift)
-# at 3757d0e and at origin/main, and comm -13 of the two sorted lists
+names() { git show "$1:$2" 2>/dev/null | awk '/\[(Fact|Theory)|@Test/{t=1} t&&/(public .*|fun |func )[A-Za-z0-9_`]+ *\(/{if(match($0,/(void|Task|fun|func) `?[A-Za-z0-9_]+/)){s=substr($0,RSTART,RLENGTH);sub(/^[a-zA-Z]+ `?/,"",s);print s};t=0} /func test[A-Za-z0-9_]*\(/{match($0,/func test[A-Za-z0-9_]*/);print substr($0,RSTART+5,RLENGTH-5)}' | sort -u; }
+for p in $(git diff --name-only 3757d0e origin/main -- tests src/BlazorNative.Jni/src/test src/BlazorNative.Jni/src/androidTest src/BlazorNative.Apple/BnHostTests); do
+  comm -13 <(names 3757d0e "$p") <(names origin/main "$p") | sed "s|^|$p\t|"
+done > pop.tsv
+wc -l < pop.tsv                    # 148 new names
+cut -f1 pop.tsv | sort -u | wc -l  # 29 files
+sort pop.tsv | uniq -d | wc -l     # 0: no file and name pair counted twice
+cut -f2 pop.tsv | sort | uniq -d   # testHostCallBeginReturnsWhileContextCreationIsBlocked, in two different files
 ```
 
-**148 new names in 31 files**: 70 from 16.1, 54 from 16.2, 18 from 16.3 and 6 from 16.4. Six of them
+The range touches 50 test files, and 29 of them gain a new name. The one name that occurs twice is
+in two files, `BnBiometricsTests.swift` and `BnSecureStorageTests.swift`, and it is two distinct pins.
+
+**148 new names in 29 files**: 70 from 16.1, 54 from 16.2, 18 from 16.3 and 6 from 16.4. Six of them
 are flips that replace an old name: `DispatchLaneBlockingTests`, `MountSyncTests`, two in
 `RenderThreadWarningTests`, JVM `HostEventTest` and JVM `DispatchEventTest`.
 
@@ -603,10 +645,12 @@ recorded**, and says nothing about a disclosed gap counting as conformance. Meas
    first three "Rule 7, not met". That includes the iOS twin this milestone's DoD asks for in item 4,
    and the XCTest half of item 7's proof. The register's own text for the twin says its red "is
    argued by reading, not measured".
-2. **No per-rule assessment anywhere, 23 pins:** the 18 16.3 pins, the three 16.1 tree-reading facts,
-   and the 16.2 caller scan with its control. Their mutations exist, for most of them, but Rules 2–5
-   were never written down. `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` is in both
-   counts.
+2. **Not assessed on Rules 2–5, 23 pins, carried into the gap plan:** the 18 16.3 pins, the three
+   16.1 tree-reading facts, and the 16.2 caller scan with its control. No record has a per-rule cell
+   for them, and this audit did not write one either. That is not evidence that they fail Rules 2–5,
+   so they are **not counted against the item**. They are carried into the gap plan, to be assessed
+   there along with the 14 above. `TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages` is in
+   both lists; it counts under point 1 for its missing mutation.
 3. **Recorded only outside the repo:** `BackAndroidTest`'s two device mutations live in a PR body,
    and the caller scan's red in an issue comment. Rule 7 asks for mutations recorded where a reader
    can find them, which a PR body arguably meets, but the register row for `BackAndroidTest` still
@@ -615,9 +659,19 @@ recorded**, and says nothing about a disclosed gap counting as conformance. Meas
    partial and 6 Rule 7 partial. Each is disclosed in its cell. They would make the item MET NARROWLY
    on their own; they are not why it fails.
 
-Items 1 and 2 are not disclosures of a limit. They are pins that have never been seen to fail, and
-pins whose conformance was never assessed. The spec says a pin whose mutations are not recorded
-counts as a gap, so this item is NOT MET.
+**The NOT MET rests on point 1 alone.** The DoD asks for every new pin's mutations to be recorded,
+and the spec says *"A pin whose mutations are not recorded counts as a gap"*. Fourteen pins have
+none, which decides the item directly. Point 1 is not a disclosure of a limit: these pins have never
+been seen to fail.
+
+**Why I did not assess the 23 here.** Spec item 4 makes checking every pin this audit's job, so the
+choice needs recording. The review offered two options: assess the 23 now, or restate them as not
+assessed and carry them. I took the second, for two reasons. First, the verdict does not depend on
+them: item 10 is NOT MET on point 1 whatever their cells say. Second, a sound Rules 2–5 cell needs
+each pin read against its subject, and often a mutation run. Doing that for 23 pins inside the
+audit, with no fix round of its own, would put unchecked verdicts into the register. The gap plan
+has to run mutations for the 14 anyway, and it can assess the 23 with the same rigour. This defers
+part of the audit's own check, and says so. It is not a finding against those pins.
 
 ---
 
@@ -670,8 +724,8 @@ judged against the items they touch, are adjacent and do not contradict their wo
 are narrowed: item 2 by #454, because a local suite run hung in two of five tries, and item 7 by
 #455, because the written rc contract claims a post-await fault never becomes an rc, which this
 audit measured to be false for any host call completed inside `hostCallBegin`. But item 10 asks that
-**every** new pin be assessed against Rules 2–5 and 7 with its mutations recorded, and 14 pins have
-never been seen red, among them the iOS twin item 4 requires and the XCTest half of item 7's proof,
-while 23 have no per-rule assessment at all, one of them also among the 14. That is a gap, not a
-disclosed limit. Per the spec, FAIL sends the milestone to `plan-milestone-gaps`, and M16 stays
+**every** new pin's mutations be recorded, and 14 pins have never been seen red, among them the iOS
+twin item 4 requires and the XCTest half of item 7's proof. That is a gap, not a disclosed limit. A
+further 23 pins were never assessed on Rules 2–5, by any record or by this audit. They are carried
+into the gap plan and do not count toward the FAIL. Per the spec, FAIL sends the milestone to `plan-milestone-gaps`, and M16 stays
 open.
