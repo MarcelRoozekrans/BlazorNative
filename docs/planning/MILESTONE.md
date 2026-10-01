@@ -68,7 +68,7 @@ and the back gesture always answers.**
 3. Phase 16.2 — back and navigation off the main thread [complete] — BackState/BackUnhandled notices; AndroidX OnBackPressedCallback toggled in the page batch; unhandled back handed to the platform; navigators fire-and-forget; blocking dispatch test-only by caller scan; #346 closed; .NET 1255 → 1278, JVM 170 → 190, Android 228 → 233, iOS 276 → 282 (#431)
 4. Phase 16.3 — starvation, measured [complete] — one-for-one cost measured; slow-handler Warn once per call site, capped, never the payload, proven under NativeAOT; app-author threading page; #9 closed; #435 and #438 filed; .NET 1278 → 1295, JVM 190 → 191 (#437)
 5. Phase 16.4 — the lost first tap (#438) [complete] — two causes, neither an M16 regression: a boot-harness race on the in-flight flag, and a cold LAContext created in hostCallBegin on the render thread; biometrics and secure storage now work on their own queues; six pins, mutations one per run, vacuity contrast observed; 10/10 iOS runs green; #438 closed; #440 and #444 filed; iOS 282 → 288 (#449)
-6. Phase 16.5 — audit and close [active]
+6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
 
 > **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
 > so no merged state exists in which a fault after the first await is only logged. That window is
