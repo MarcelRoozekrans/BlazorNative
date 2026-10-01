@@ -69,6 +69,9 @@ and the back gesture always answers.**
 4. Phase 16.3 — starvation, measured [complete] — one-for-one cost measured; slow-handler Warn once per call site, capped, never the payload, proven under NativeAOT; app-author threading page; #9 closed; #435 and #438 filed; .NET 1278 → 1295, JVM 190 → 191 (#437)
 5. Phase 16.4 — the lost first tap (#438) [complete] — two causes, neither an M16 regression: a boot-harness race on the in-flight flag, and a cold LAContext created in hostCallBegin on the render thread; biometrics and secure storage now work on their own queues; six pins, mutations one per run, vacuity contrast observed; 10/10 iOS runs green; #438 closed; #440 and #444 filed; iOS 282 → 288 (#449)
 6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
+7. Phase 16.6 — prove the unreddened pins [pending]
+8. Phase 16.7 — make the rc contract true (#455) [pending]
+9. Phase 16.8 — re-audit and close [pending]
 
 > **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
 > so no merged state exists in which a fault after the first await is only logged. That window is
@@ -77,7 +80,10 @@ and the back gesture always answers.**
 
 **Ordering rationale.** 16.0 first because it is the only phase that can end the milestone: **a
 measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 depends on 16.1. 16.3 needs
-16.1's offload in place, or there is nothing new to measure. 16.4 fixes #438, inserted 2026-09-28 before the audit. 16.5 audits.
+16.1's offload in place, or there is nothing new to measure. 16.4 fixes #438, inserted 2026-09-28 before the audit. 16.5 audits. 16.6–16.8 were added
+2026-10-01 after 16.5's FAIL. 16.6 closes the NOT MET. 16.7 lifts #8's narrowing; it is independent
+of 16.6, but it adds a pin that 16.6's standard then applies to, so it goes second. 16.8 re-audits
+after both.
 
 ## Risk areas
 
