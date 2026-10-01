@@ -1,7 +1,7 @@
 package io.blazornative.jni
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.declaredMemberFunctions
@@ -44,15 +44,18 @@ class DispatchHostEventAndWaitVisibilityTest {
      */
     @Test
     fun theVisibilityCheck_reallyDistinguishesPublicFromInternal() {
-        val publicMember = BlazorNativeRuntime::class.declaredMemberFunctions
-            .firstOrNull { it.name == "dispatchEvent" }
-        assertNotNull(publicMember,
-            "BlazorNativeRuntime declares no dispatchEvent member -- the control's own subject " +
-                "moved, so this test cannot prove the check distinguishes anything.")
-        assertEquals(KVisibility.PUBLIC, publicMember!!.visibility,
-            "dispatchEvent carries no visibility modifier, which is Kotlin's default (public). " +
-                "If this reads anything else, KVisibility itself is not reporting real " +
-                "declared visibility on this Kotlin/JVM setup, and the fact below proves nothing.")
+        val members = BlazorNativeRuntime::class.declaredMemberFunctions
+            .filter { it.name == "dispatchEvent" }
+        assertTrue(members.isNotEmpty(),
+            "BlazorNativeRuntime declares no dispatchEvent member, found ${members.size} -- the " +
+                "control's own subject moved, so this test cannot prove the check distinguishes " +
+                "anything.")
+        assertTrue(members.all { it.visibility == KVisibility.PUBLIC },
+            "Every dispatchEvent overload carries no visibility modifier, which is Kotlin's " +
+                "default (public), but they read ${members.map { it.visibility }}. If this reads " +
+                "anything else, KVisibility itself is not reporting real declared visibility on " +
+                "this Kotlin/JVM setup, or an overload was made internal, and the fact below " +
+                "proves nothing.")
     }
 
     /** THE PIN. See the class doc for what this does and does not cover. */
