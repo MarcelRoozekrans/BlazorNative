@@ -97,7 +97,9 @@ final class BnFaultNoticeTests: BnHostTestCase {
         // Completed OK (0) with no payload, for THIS request, so .NET drops its entry.
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.first?.id, 40)
-        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted)
+        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted,
+            "a FaultNotice must complete OK, status 0, not Error, status 5: the arm must call " +
+            "completeNotice, not completeUnknownOp")
         XCTAssertNil(captured.first?.payload)
         XCTAssertTrue(logged.filter({ $0.category == "AppleShellBridge" }).isEmpty,
             "a routed notice must not also be logged by the bridge")
@@ -112,7 +114,9 @@ final class BnFaultNoticeTests: BnHostTestCase {
         let rc = bridge.hostCallBegin(41, 99, "{}")
 
         XCTAssertEqual(rc, 0)
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
+            "an unknown op must complete Error, status 5, not OK, status 0: the default arm must " +
+            "call completeUnknownOp, or a notice arm and the unknown-op branch read the same")
         XCTAssertTrue(errors.isEmpty, "an unknown op must not be reported as a handler fault")
     }
 
@@ -125,7 +129,9 @@ final class BnFaultNoticeTests: BnHostTestCase {
         let rc = bridge.hostCallBegin(42, BnHostCallOp.faultNotice, Self.noticeArgs)
 
         XCTAssertEqual(rc, 0)
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted])
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted],
+            "a FaultNotice with no runtime must still complete OK, status 0, not Error, status 5: " +
+            "the arm must call completeNotice, not completeUnknownOp")
 
         // Defect 3 (16.6): the header's "logged through BnLog" is now asserted, not argued.
         let lines = logged.filter { $0.category == "AppleShellBridge" && $0.level == BnLogLevel.error }
