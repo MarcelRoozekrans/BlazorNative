@@ -1094,6 +1094,11 @@ public sealed class GeneratedSymbolShadowTests
             Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "androidMain", "kotlin"),
         ];
 
+        // Every scan root must exist: Where(Directory.Exists) alone drops a missing root silently,
+        // and its files, BlazorNativeRuntime.kt among them, would leave the scan (16.6 fix round 1).
+        foreach (string dir in roots)
+            Assert.True(Directory.Exists(dir), $"the Kotlin scan root {Path.GetRelativePath(root, dir)} does not exist, so its files would silently leave the scan.");
+
         return [.. roots
             .Where(Directory.Exists)
             .SelectMany(dir => Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories))
@@ -1106,8 +1111,8 @@ public sealed class GeneratedSymbolShadowTests
     private static string[] BnHostProductionSwiftSources()
     {
         string dir = Path.Combine(BnRepo.Root(), "src", "BlazorNative.Apple", "BnHost");
-        if (!Directory.Exists(dir))
-            return [];
+        Assert.True(Directory.Exists(dir),
+            $"the Swift scan root {Path.GetRelativePath(BnRepo.Root(), dir)} does not exist, so the scan would see nothing.");
 
         return [.. Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories)];
     }
