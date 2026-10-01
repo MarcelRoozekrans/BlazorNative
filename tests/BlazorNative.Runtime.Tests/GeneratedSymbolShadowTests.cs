@@ -212,7 +212,8 @@ public sealed class GeneratedSymbolShadowTests
     /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
     /// line plus the two that follow for a qualified reference to the generated symbol.
     /// C definitions never forward — `BnWireVocabulary.kNodeTypes` cannot occur in an
-    /// `#include`d header — so the window is never offered to them.</summary>
+    /// `#include`d header — so the window is never offered to them. Nor is it offered to op
+    /// constants, which match only an integer literal and so cannot forward.</summary>
     private static bool Forwards(string[] lines, int index, string symbol)
     {
         for (int j = index; j < Math.Min(index + 3, lines.Length); j++)
@@ -229,13 +230,18 @@ public sealed class GeneratedSymbolShadowTests
     /// and by the positive control's C fixture alike (pin standard Rule 8). Taking
     /// LINES rather than a path is what lets the control splice a real declaration into
     /// real source and run the production detector over the result, instead of
-    /// controlling a copy of it.</para></summary>
+    /// controlling a copy of it.</para>
+    ///
+    /// <para>The forwarding window is offered ONLY to a non-op Swift or Kotlin declaration. An op
+    /// constant matches only when bound to an integer LITERAL, so it can never be a forwarder: a
+    /// real forward, `const val CAMERA = HostCallOp.CAMERA`, does not match the pattern and is
+    /// never a site at all (16.6 fix round 1: the window was dead for ops).</para></summary>
     private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c, bool opConstant = false)
     {
         var sites = new List<(int, bool)>();
         for (int i = 0; i < lines.Length; i++)
             if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c, opConstant)))
-                sites.Add((i + 1, !c && Forwards(lines, i, symbol)));
+                sites.Add((i + 1, !c && !opConstant && Forwards(lines, i, symbol)));
         return sites;
     }
 
