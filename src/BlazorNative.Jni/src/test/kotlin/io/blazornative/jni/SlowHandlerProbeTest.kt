@@ -66,11 +66,15 @@ class SlowHandlerProbeTest {
                 "three BnButtons with different slow handlers gave ${warnings.size} warnings, not 3. One " +
                     "warning naming BnButton means Delegate.Method did not resolve in the NativeAOT " +
                     "dll and the key fell back to the tree owner. Got: $warnings")
-            assertTrue(warnings.single { it.contains("SlowHandlerProbe.SlowOne") }.isNotEmpty())
-            assertTrue(warnings.single { it.contains("SlowHandlerProbe.SlowTwo") }.isNotEmpty())
+            assertEquals(1, warnings.count { it.contains("SlowHandlerProbe.SlowOne") },
+                "no single warning named SlowHandlerProbe.SlowOne. Got: $warnings")
+            assertEquals(1, warnings.count { it.contains("SlowHandlerProbe.SlowTwo") },
+                "no single warning named SlowHandlerProbe.SlowTwo. Got: $warnings")
             // The lambda: a compiler-generated method on a closure nested in the probe.
-            assertTrue(warnings.single { it.contains("SlowHandlerProbe+") && it.contains("<BuildRenderTree>") }
-                .isNotEmpty(), "no warning named the capturing lambda's generated method: $warnings")
+            assertEquals(1, warnings.count { it.contains("SlowHandlerProbe+") && it.contains("<BuildRenderTree>") },
+                "no single warning named the capturing lambda's generated method. The method did not " +
+                    "resolve in the NativeAOT dll or the EventCallback accessor missed it, and the key fell " +
+                    "back to the tree owner. Got: $warnings")
             assertTrue(warnings.none { it.contains("BnButton") }, "a warning named BnButton: $warnings")
         } finally {
             runtime.retire()
