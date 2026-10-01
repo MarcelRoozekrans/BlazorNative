@@ -30,6 +30,8 @@ final class BnFaultNoticeTests: BnHostTestCase {
     private var captured: [(id: Int64, status: Int32, payload: String?)] = []
     /// What reached the runtime's onError this test, in order.
     private var errors: [(message: String, error: Error)] = []
+    /// Every line BnLog let through this test, in order.
+    private var logged: [(level: Int32, category: String, message: String)] = []
     private var runtime: BnRuntime?
     private var savedShared: BnRuntime?
 
@@ -38,6 +40,10 @@ final class BnFaultNoticeTests: BnHostTestCase {
         BnGeolocation.resetForTest()
         captured = []
         errors = []
+        logged = []
+        BnLog.emitHookForTest = { [weak self] level, category, message in
+            self?.logged.append((level, category, message))
+        }
         savedShared = BnRuntime.shared
         BnGeolocation.completeHookForTest = { [weak self] id, status, payload in
             self?.captured.append((id, status, payload))
@@ -49,6 +55,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
         BnRuntime.shared = savedShared
         runtime = nil
         BnGeolocation.resetForTest()
+        BnLog.emitHookForTest = nil
         super.tearDown()
     }
 
@@ -89,6 +96,8 @@ final class BnFaultNoticeTests: BnHostTestCase {
         XCTAssertEqual(captured.first?.id, 40)
         XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted)
         XCTAssertNil(captured.first?.payload)
+        XCTAssertTrue(logged.filter({ $0.category == "AppleShellBridge" }).isEmpty,
+            "a routed notice must not also be logged by the bridge")
     }
 
     func testAnUnknownOpStillTakesTheErrorBranch_Control() {
@@ -114,5 +123,12 @@ final class BnFaultNoticeTests: BnHostTestCase {
 
         XCTAssertEqual(rc, 0)
         XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted])
+
+        // Defect 3 (16.6): the header's "logged through BnLog" is now asserted, not argued.
+        let lines = logged.filter { $0.category == "AppleShellBridge" && $0.level == BnLogLevel.error }
+        XCTAssertEqual(lines.count, 1, "the no-runtime FaultNotice must be logged exactly once")
+        XCTAssertTrue(lines.first?.message.hasPrefix(
+            "handler fault after await: System.InvalidOperationException: late") == true,
+            "logged: \(lines.first?.message ?? "<none>")")
     }
 }

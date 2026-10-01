@@ -303,6 +303,11 @@ enum BnLog {
         return created
     }
 
+    /// Test-only: sees every line that passed the gate, before it is written to the
+    /// unified log, which a test cannot read back. Never set in production. Same house
+    /// style as `BnAppLifecycle.sinkForTest`.
+    static var emitHookForTest: ((Int32, String, String) -> Void)?
+
     /// The write itself. FOUR literal call sites, and they have to be literal:
     /// `os_log`'s privacy specifier is part of the format string / interpolation
     /// and must be a compile-time constant, so "private or public" cannot be a
@@ -311,6 +316,7 @@ enum BnLog {
                              _ category: String,
                              _ message: String,
                              _ privacy: BnLogPrivacy) {
+        emitHookForTest?(level, category, message)
         let osLog = log(for: category)
         let type = osLogType(for: level)
 
