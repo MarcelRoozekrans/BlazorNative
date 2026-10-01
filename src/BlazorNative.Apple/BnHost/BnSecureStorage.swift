@@ -72,6 +72,23 @@
 // REAL Keychain end-to-end. The OS-key binding is proven at the CONTRACT level (the
 // shell attaches the ACL + refuses a plain get); the OS-ENFORCED Secure-Enclave refusal
 // is the UNPROVEN-until-real-device half (see the OS-KEY BINDING note above).
+//
+// THE BEGIN CONTRACT, KEPT OFF THE CALLING THREAD (16.4, #438, the BnBiometrics twin).
+// `hostCallBegin` must return at once. Until 16.4 every action ran inside it: the
+// Keychain calls, which are synchronous IPC to securityd, and on the auth paths an
+// `LAContext()`, whose first creation in a process is a cold cost of up to seconds.
+// Since 16.1 the caller is the .NET RENDER thread. Now `begin` parses and enqueues, and
+// the action STARTS on `workQueue`, a serial queue this handler owns, so a set and the
+// get that follows it keep their order. Every action runs to its end there except one:
+// a getWithAuth of an auth-bound item arms the gate on the queue, and its completion,
+// `finishAuthorizedRead` with its `SecItemCopyMatching` on a device, runs wherever the
+// gate answers. In production that is LocalAuthentication's reply queue, which is
+// also off the calling thread; under the test seam it is the thread that calls the
+// gate. So the contract holds on every path, but "all Keychain work on workQueue" does
+// not. The cores `secureSet`, `secureGet` and
+// `secureDelete` stay synchronous, because the keystore-half tests call them directly;
+// only the op entry moved. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
+// and its getWithAuth twin in BnSecureStorageTests.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -132,10 +149,19 @@ final class BnSecureStorage {
 
     private let lock = NSLock()
 
-    /// STRONG. The `LAContext` under a getWithAuth evaluation — held for the call's
-    /// duration so a deallocated context cannot cancel the in-flight read (the
-    /// CLLocationManager/LAContext retention lesson). Cleared by `complete`.
-    private var inFlightContext: LAContext?
+    /// Serial, owned by this handler: every action `begin` accepts runs here, never on
+    /// the thread that called `hostCallBegin` (see THE BEGIN CONTRACT in the header).
+    private let workQueue = DispatchQueue(label: "io.blazornative.secure-storage", qos: .userInitiated)
+
+    /// STRONG. The `LAContext` under each getWithAuth evaluation, keyed by its request
+    /// id — held for the call's duration so a deallocated context cannot cancel the
+    /// in-flight read (the CLLocationManager/LAContext retention lesson). `complete`
+    /// releases only its own request's entry. Until 16.4 this was one slot that EVERY
+    /// completion cleared, so a plain get or delete finishing while a getWithAuth waited
+    /// on its prompt released that prompt's context; since 16.4 queues the actions, that
+    /// interleaving is ordinary. The pin is
+    /// `testACompletionDoesNotReleaseAnotherRequestsRetainedContext`.
+    private var inFlightContexts: [Int64: LAContext] = [:]
 
     // ── Test seams (static, reset in teardown) ───────────────────────────────────
 
@@ -163,7 +189,25 @@ final class BnSecureStorage {
     /// `authLabel` marker; on a REAL device the OS refusal (errSecInteractionNotAllowed) is
     /// authoritative and this is only a fast-path. Populated on an auth-bound set, cleared
     /// on delete / a plain overwrite. Static because the Keychain is process-global.
+    ///
+    /// Guarded by `authBoundAccountsLock`. Since 16.4 the op entry mutates it on
+    /// `workQueue` while tests call the cores directly on main, so every read and write
+    /// goes through the three accessors below.
     private static var authBoundAccounts: Set<String> = []
+    private static let authBoundAccountsLock = NSLock()
+
+    private static func markAuthBound(_ key: String) {
+        authBoundAccountsLock.lock(); authBoundAccounts.insert(key); authBoundAccountsLock.unlock()
+    }
+
+    private static func unmarkAuthBound(_ key: String) {
+        authBoundAccountsLock.lock(); authBoundAccounts.remove(key); authBoundAccountsLock.unlock()
+    }
+
+    private static func isMarkedAuthBound(_ key: String) -> Bool {
+        authBoundAccountsLock.lock(); defer { authBoundAccountsLock.unlock() }
+        return authBoundAccounts.contains(key)
+    }
 
     /// Intercepts the completion so a PURE unit test (no NativeAOT boot) observes the
     /// routed (requestId, status, payload) without a live .NET continuation.
@@ -172,24 +216,59 @@ final class BnSecureStorage {
     /// The rc of the most recent `blazornative_host_call_complete` — 0 = delivered to a
     /// live .NET continuation, 1 = unknown/already-completed id (benign). Int32.min
     /// before any completion.
-    static var lastHostCallCompleteRcForTest: Int32 = Int32.min
+    ///
+    /// Lock-guarded since 16.4: `complete` now runs on `workQueue`, or on the gate's
+    /// reply thread, while tests read this on main. It is stored AFTER the export
+    /// returns, so a test that saw the outcome must still poll for it, not read it once.
+    static var lastHostCallCompleteRcForTest: Int32 {
+        get { rcLock.lock(); defer { rcLock.unlock() }; return lastRc }
+        set { rcLock.lock(); lastRc = newValue; rcLock.unlock() }
+    }
+    private static let rcLock = NSLock()
+    private static var lastRc: Int32 = Int32.min
+
+    /// Replaces `LAContext()` so a test can make context creation SLOW on demand, by
+    /// blocking inside the factory, and prove `hostCallBegin` does not wait for it (the
+    /// begin-contract pin). Null in production → a real `LAContext()`.
+    static var contextFactoryForTest: (() -> LAContext)?
 
     static func resetForTest() {
+        contextFactoryForTest = nil
         authGateHookForTest = nil
         lastSetAccessControlForTest = nil
-        authBoundAccounts = []
+        authBoundAccountsLock.lock(); authBoundAccounts = []; authBoundAccountsLock.unlock()
         completeHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
     }
 
     // ── The op entry (AppleShellBridge.hostCallBegin forwards here for op=SecureStorage) ──
 
-    /// Parses the flat-JSON `action` + key and dispatches. Returns FAST (the begin
-    /// contract); the terminal status is a deferred `complete(...)`. set/get/delete are
-    /// synchronous (no prompt — the iOS asymmetry: even an auth-bound set does not
-    /// prompt); getWithAuth of an auth item suspends behind the gate.
+    /// Returns once everything already enqueued on `workQueue` has run. The queue is
+    /// serial, so this is a barrier: a unit test calls it after `hostCallBegin` instead
+    /// of sleeping. Never call it from `workQueue` itself.
+    func drainForTest() { workQueue.sync {} }
+
+    /// Whether the context of `requestId`'s getWithAuth is still retained (the retention
+    /// pin as a property, the `BnBiometrics.contextIsRetainedForTest` twin).
+    func isRetainingContextForTest(_ requestId: Int64) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightContexts[requestId] != nil
+    }
+
+    /// Parses the flat-JSON `action` + key and enqueues it on `workQueue`. Returns FAST
+    /// (the begin contract); the terminal status is a deferred `complete(...)`. On the
+    /// queue, set/get/delete run to completion (no prompt — the iOS asymmetry: even an
+    /// auth-bound set does not prompt); getWithAuth of an auth item suspends behind the
+    /// gate.
     func begin(requestId: Int64, argsJson: String) {
         let args = BnFlatJson.parseObject(argsJson) ?? [:]
+        workQueue.async { [weak self] in
+            self?.run(requestId: requestId, args: args)
+        }
+    }
+
+    /// On `workQueue`: the action itself.
+    private func run(requestId: Int64, args: [String: String]) {
         let key = args["key"] ?? ""
         switch args["action"] ?? "get" {
         case "set":
@@ -250,10 +329,10 @@ final class BnSecureStorage {
             // the account so it can still learn the item is auth-bound. On a real device
             // the OS refuses first, so these are sim affordances, not the security.
             query[kSecAttrLabel as String] = Self.authLabel
-            Self.authBoundAccounts.insert(key)
+            Self.markAuthBound(key)
             // The add must not itself prompt on the sim (there is no gesture to satisfy).
             // A context with interaction disabled keeps SecItemAdd non-interactive.
-            let context = LAContext()
+            let context = Self.makeContext()
             context.interactionNotAllowed = true
             query[kSecUseAuthenticationContext as String] = context
         } else {
@@ -285,7 +364,7 @@ final class BnSecureStorage {
     /// delete: drop the item. Idempotent — a missing item is still Ok (the Android twin).
     @discardableResult
     func secureDelete(key: String) -> Int32 {
-        Self.authBoundAccounts.remove(key)
+        Self.unmarkAuthBound(key)
         let status = SecItemDelete(baseQuery(key) as CFDictionary)
         if status == errSecSuccess || status == errSecItemNotFound { return BnSecureStorageStatus.ok }
         BnLog.error("BnSecureStorage", "delete('\(key)') SecItemDelete → OSStatus \(status)")
@@ -308,8 +387,8 @@ final class BnSecureStorage {
         case .failed:
             complete(requestId, BnSecureStorageStatus.error, nil)
         case .authBound(let probedValue):
-            let context = LAContext()
-            lock.lock(); inFlightContext = context; lock.unlock() // retained for the call
+            let context = Self.makeContext()
+            lock.lock(); inFlightContexts[requestId] = context; lock.unlock() // retained for the call
             let gate = BnSecureAuthGate(
                 reason: reason,
                 hasAuthBoundItem: true,
@@ -387,7 +466,7 @@ final class BnSecureStorage {
             let value = (dict[kSecValueData as String] as? Data).flatMap { String(data: $0, encoding: .utf8) }
             // Classify off the SHELL's own signals (cache/marker), never the sim's
             // unreliable kSecAttrAccessControl attribute (returned for plain items too).
-            let isAuthBound = Self.authBoundAccounts.contains(key)
+            let isAuthBound = Self.isMarkedAuthBound(key)
                 || (dict[kSecAttrLabel as String] as? String) == Self.authLabel
             if isAuthBound { return .authBound(value) }
             if let value = value { return .plain(value) }
@@ -421,6 +500,12 @@ final class BnSecureStorage {
         }
     }
 
+    /// Every context this handler creates comes from here, timed by `BnLAContextTiming`
+    /// (in BnBiometrics.swift) so a pathological cold start is logged.
+    private static func makeContext() -> LAContext {
+        BnLAContextTiming.timed("BnSecureStorage") { contextFactoryForTest?() ?? LAContext() }
+    }
+
     /// The flat string→string {"value":…} payload the wire carries — the SECOND user of
     /// the host_call_complete payload channel (geolocation's fix is the first). The .NET
     /// ParseSecretResult reads exactly this key.
@@ -428,11 +513,11 @@ final class BnSecureStorage {
         BnFlatJson.object([("value", value)])
     }
 
-    /// The single completion funnel. Releases the retained context iff the id matches
-    /// (one-shot), then delivers the status + optional payload to .NET. The value crosses
-    /// as a NUL-terminated UTF-8 C string valid only during the call.
+    /// The single completion funnel. Releases the context retained for THIS request, if
+    /// any, and no other request's, then delivers the status + optional payload to .NET.
+    /// The value crosses as a NUL-terminated UTF-8 C string valid only during the call.
     private func complete(_ requestId: Int64, _ status: Int32, _ payload: String?) {
-        lock.lock(); inFlightContext = nil; lock.unlock()
+        lock.lock(); inFlightContexts[requestId] = nil; lock.unlock()
 
         let rc: Int32
         if let hook = Self.completeHookForTest {
