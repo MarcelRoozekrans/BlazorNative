@@ -42,6 +42,9 @@ final class BnFaultNoticeTests: BnHostTestCase {
         errors = []
         logged = []
         BnLog.emitHookForTest = { [weak self] level, category, message in
+            // Only the bridge's own main-thread lines: the hook is process-wide, and an
+            // unsynchronized append from another class's off-main log would be a data race.
+            guard category == "AppleShellBridge" else { return }
             self?.logged.append((level, category, message))
         }
         savedShared = BnRuntime.shared
@@ -127,8 +130,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
         // Defect 3 (16.6): the header's "logged through BnLog" is now asserted, not argued.
         let lines = logged.filter { $0.category == "AppleShellBridge" && $0.level == BnLogLevel.error }
         XCTAssertEqual(lines.count, 1, "the no-runtime FaultNotice must be logged exactly once")
-        XCTAssertTrue(lines.first?.message.hasPrefix(
-            "handler fault after await: System.InvalidOperationException: late") == true,
-            "logged: \(lines.first?.message ?? "<none>")")
+        XCTAssertEqual(lines.first?.message,
+            "handler fault after await: System.InvalidOperationException: late (handler 7, event 'click')")
     }
 }
