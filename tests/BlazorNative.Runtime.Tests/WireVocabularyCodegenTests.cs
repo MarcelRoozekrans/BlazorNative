@@ -433,7 +433,10 @@ public sealed class WireVocabularyCodegenTests
     private static string OpBlock(string text, string header, string where)
     {
         string normalized = Normalize(text);
-        int start = normalized.IndexOf(header, StringComparison.Ordinal);
+        // The header must not be a PREFIX of a longer identifier: `enum BnHostCallOpX` is a rename,
+        // not the block (16.6 fix round 1, D4).
+        Match located = Regex.Match(normalized, Regex.Escape(header) + @"(?!\w)");
+        int start = located.Success ? located.Index : -1;
         Assert.True(start >= 0, $"{where}: no '{header}' block. The emitter stopped writing it, or renamed it.");
         int end = normalized.IndexOf("\n}", start, StringComparison.Ordinal);
         Assert.True(end > start, $"{where}: the '{header}' block is never closed");
