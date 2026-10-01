@@ -452,9 +452,14 @@ public sealed class GeneratedSymbolShadowTests
     /// <item>an op twin written as an enum CASE, <c>case camera = 4</c> inside an
     /// <c>enum …: Int32</c>. The pattern matches only <c>let</c>/<c>val</c>/<c>var</c>
     /// bindings, and a case is not one.</item>
+    /// <item>any op line but <c>camera</c> and <c>CAMERA</c>. The control reads only those
+    /// two generated lines, and reads them RAW, without stripping comments, so a trailing
+    /// comment on either one reds it loudly: <c>no longer matches the generated
+    /// declaration</c>. The generator emits no comments today. A comment on any other op
+    /// line leaves this control green, since it never reads that line.</item>
     /// </list>
-    /// Both are left to review; the consumption pin still reds if the generated constant
-    /// goes dead.</para></summary>
+    /// The first two are left to review; the consumption pin still reds if the generated
+    /// constant goes dead.</para></summary>
     [Fact]
     public void TheOpConstantShadowDetector_MatchesAnIntegerTwin_AndNotACapabilityProperty()
     {
@@ -1140,7 +1145,16 @@ public sealed class GeneratedSymbolShadowTests
     /// <summary>THE POSITIVE CONTROL (pin standard Rule 3), fed synthetic lines rather than a
     /// tree walk: proves the detector recognises a real call in BOTH languages, and does not
     /// mistake either language's declaration for one — the exact confusion that would leave
-    /// the pin below blind to a call sitting right next to the method it must not reach.</summary>
+    /// the pin below blind to a call sitting right next to the method it must not reach.
+    ///
+    /// <para>DOES NOT COVER (Rule 5): the detector reads ONE line at a time, so a call split
+    /// across lines, with the name on one line and its <c>(</c> on the next, is not matched,
+    /// and no case here feeds one. Nor a reference with no call parentheses, such as
+    /// <c>::dispatchHostEventAndWait</c> or a Swift method reference, which the pin below
+    /// also leaves out. Only the two real declarations are fed as negatives, so a declaration
+    /// with another modifier, such as <c>private fun</c>, is not stripped as one and counts
+    /// as a call: a loud red, not a silent pass. The four call cases are synthetic lines,
+    /// not lines read from a shell.</para></summary>
     [Fact]
     public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
     {
