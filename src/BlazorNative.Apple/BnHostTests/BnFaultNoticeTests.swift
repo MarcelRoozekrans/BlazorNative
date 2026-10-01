@@ -113,7 +113,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(41, 99, "{}")
 
-        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for an unknown op too: the op is data, completed Error, not a refused call")
         XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
             "an unknown op must complete Error, status 5, not OK, status 0: the default arm must " +
             "call completeUnknownOp, or a notice arm and the unknown-op branch read the same")
@@ -128,7 +128,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(42, BnHostCallOp.faultNotice, Self.noticeArgs)
 
-        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for a FaultNotice with no runtime")
         XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted],
             "a FaultNotice with no runtime must still complete OK, status 0, not Error, status 5: " +
             "the arm must call completeNotice, not completeUnknownOp")

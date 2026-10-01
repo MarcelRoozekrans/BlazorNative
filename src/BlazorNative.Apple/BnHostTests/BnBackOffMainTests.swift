@@ -310,7 +310,7 @@ final class BnBackOpArmTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(63, BnHostCallOp.backUnhandled + 1, "{}")
 
-        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for the op after BackUnhandled too: the op is data, completed Error, not a refused call")
         XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
             "the op after BackUnhandled must complete Error, status 5, not OK, status 0: the default " +
             "arm must call completeUnknownOp, or an arm and the unknown-op branch read the same")
