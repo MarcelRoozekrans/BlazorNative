@@ -1151,10 +1151,11 @@ public sealed class GeneratedSymbolShadowTests
     /// across lines, with the name on one line and its <c>(</c> on the next, is not matched,
     /// and no case here feeds one. Nor a reference with no call parentheses, such as
     /// <c>::dispatchHostEventAndWait</c> or a Swift method reference, which the pin below
-    /// also leaves out. Only the two real declarations are fed as negatives, so a declaration
-    /// with another modifier, such as <c>private fun</c>, is not stripped as one and counts
-    /// as a call: a loud red, not a silent pass. The four call cases are synthetic lines,
-    /// not lines read from a shell.</para></summary>
+    /// also leaves out. The declaration token is stripped whatever modifier precedes it, since
+    /// the strip pattern needs only <c>fun</c> or <c>func</c> before the name, so any
+    /// declaration of the name counts as a declaration, not a call. Only the two real
+    /// declarations are fed as negatives. The four call cases are synthetic lines, not lines
+    /// read from a shell.</para></summary>
     [Fact]
     public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
     {

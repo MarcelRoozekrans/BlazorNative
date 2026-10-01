@@ -455,10 +455,11 @@ public sealed class WireVocabularyCodegenTests
     /// ops with their ids.
     ///
     /// <para>DOES NOT COVER (Rule 5), beyond the section header above: the op lines are read
-    /// by a LINE-ANCHORED pattern per language, ending in <c>$</c> for Kotlin and Swift. An op
-    /// line in any other shape, for example with a trailing comment, is not read, so that op
-    /// is missing from the block and the fact reds loudly; it does not pass silently. The
-    /// generator emits no comments today. Only the first block under each header is read, up
+    /// by a pattern per language. The Kotlin and Swift patterns end in <c>$</c>, so a Kotlin or
+    /// Swift op line in any other shape, for example with a trailing comment, is not read;
+    /// that op is missing from the block and the fact reds loudly, it does not pass silently.
+    /// The C# pattern ends at the comma, so a C# op line with a trailing comment,
+    /// <c>Camera = 4, // x</c>, is still read. The generator emits no comments today. Only the first block under each header is read, up
     /// to the next lone closing brace. The C# header rename, <c>internal enum HostCallOpX</c>,
     /// was not mutation-run in 16.6; the Swift and Kotlin renames were.</para></summary>
     [Fact]
