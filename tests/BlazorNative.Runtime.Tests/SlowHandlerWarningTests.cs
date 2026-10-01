@@ -415,8 +415,12 @@ public sealed class SlowHandlerWarningTests
         s.Start();
         Assert.Equal(0, Dispatch(s.Handler("slow-a"), Click));
 
-        Assert.Equal(2, SlowProbe.RunsOf("slow-a"));
-        Assert.Equal(2, s.SlowLines().Length);
+        Assert.Equal(2, SlowProbe.RunsOf("slow-a")); // anchor: the handler ran in both sessions
+        string[] after = s.SlowLines();
+        Assert.True(after.Length == 2,
+            $"the same slow handler warned {after.Length} times across a session reset, not 2. "
+            + "The warned set and the warning count belong to the session's renderer: a set that "
+            + "survives the reset (a static field) silences the second session's first warning.");
     }
 
     [Fact]
