@@ -60,8 +60,11 @@ import java.util.concurrent.atomic.AtomicReference
  * through `hasEnabledCallbacks()`, the dispatcher's own public answer.
  *
  * Every launch uses an explicit Intent with NO action. `ActivityScenario.launch(Class)` builds an
- * ACTION_MAIN + CATEGORY_LAUNCHER intent, and on API 31+ the system's default back moves such a
- * task root to the background rather than finishing it, so DESTROYED would never come.
+ * ACTION_MAIN + CATEGORY_LAUNCHER intent, and on API 31+ the system's default back may move such
+ * a task root to the background rather than finish it. That is a guard, not a measured need: in
+ * 16.6, row B3, the root test launched with `launch(Class)` on the API 34 lane still reached
+ * DESTROYED. Why the system finished it there is not measured; the guard is not what makes the
+ * pin pass on that lane.
  *
  * THE SESSION IS PROCESS-GLOBAL. The .NET navigation history survives from test to test, and
  * since 16.2 every mount resends the current back state, so a fresh launch can start with back
