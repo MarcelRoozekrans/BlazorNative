@@ -30,8 +30,17 @@ final class BnFaultNoticeTests: BnHostTestCase {
     private var captured: [(id: Int64, status: Int32, payload: String?)] = []
     /// What reached the runtime's onError this test, in order.
     private var errors: [(message: String, error: Error)] = []
-    /// Every line BnLog let through this test, in order.
-    private var logged: [(level: Int32, category: String, message: String)] = []
+    /// Every AppleShellBridge line BnLog let through this test, in order. BnLog calls its
+    /// hook on whatever thread logs, and the bridge logs off the main thread too, for
+    /// example from navigate and from the unknown-op warning, so the buffer is guarded by
+    /// loggedLock and read through `logged`, which copies it under the lock.
+    private let loggedLock = NSLock()
+    private var loggedStorage: [(level: Int32, category: String, message: String)] = []
+    private var logged: [(level: Int32, category: String, message: String)] {
+        loggedLock.lock()
+        defer { loggedLock.unlock() }
+        return loggedStorage
+    }
     private var runtime: BnRuntime?
     private var savedShared: BnRuntime?
 
@@ -40,12 +49,18 @@ final class BnFaultNoticeTests: BnHostTestCase {
         BnGeolocation.resetForTest()
         captured = []
         errors = []
-        logged = []
+        loggedLock.lock()
+        loggedStorage = []
+        loggedLock.unlock()
         BnLog.emitHookForTest = { [weak self] level, category, message in
-            // Only the bridge's own main-thread lines: the hook is process-wide, and an
-            // unsynchronized append from another class's off-main log would be a data race.
-            guard category == "AppleShellBridge" else { return }
-            self?.logged.append((level, category, message))
+            // The hook is process-wide and runs on the logging thread, which need not be
+            // main. BnLog reads and writes the hook itself under its own lock; this
+            // buffer is guarded by loggedLock. Only the bridge's lines are kept, since
+            // these tests read no other category.
+            guard category == "AppleShellBridge", let self = self else { return }
+            self.loggedLock.lock()
+            self.loggedStorage.append((level, category, message))
+            self.loggedLock.unlock()
         }
         savedShared = BnRuntime.shared
         BnGeolocation.completeHookForTest = { [weak self] id, status, payload in
