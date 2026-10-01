@@ -304,7 +304,7 @@ public sealed class GeneratedSymbolShadowTests
     {
         var offenders = DeclarationSites()
             .Where(s => !s.Forwards)
-            .Select(s => $"{Path.GetFileName(s.Source)}:{s.Line} declares '{s.Symbol}', which WireGen generates")
+            .Select(s => $"{Path.GetRelativePath(BnRepo.Root(), s.Source)}:{s.Line} declares '{s.Symbol}', which WireGen generates")
             .ToList();
 
         Assert.True(offenders.Count == 0,
@@ -1219,7 +1219,7 @@ public sealed class GeneratedSymbolShadowTests
             for (int i = 0; i < lines.Length; i++)
             {
                 if (IsOffendingCallLine(lines[i]))
-                    offenders.Add($"{Path.GetFileName(file)}:{i + 1}: {lines[i].Trim()}");
+                    offenders.Add($"{Path.GetRelativePath(root, file)}:{i + 1}: {lines[i].Trim()}");
             }
         }
 
