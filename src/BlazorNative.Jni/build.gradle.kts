@@ -110,7 +110,7 @@ dependencies {
     // OnBackInvokedCallback at all. 1.9.3 is the newest release compatible with this
     // project's compileSdk 34; 1.10.0 and later require compileSdk 35. Its own
     // androidx.core requirement, 1.13.0, is met by the 1.13.1 pin above.
-    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.activity:activity:1.13.0")
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))

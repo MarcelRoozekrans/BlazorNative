@@ -89,7 +89,7 @@ dependencies {
     // 1.1.0, predates predictive back on API 33+ (added 1.6.0). 1.9.3 is the newest
     // release compatible with this project's compileSdk 34; 1.10.0 and later require
     // compileSdk 35. It must stay pinned to the same version the reference shell uses.
-    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.activity:activity:1.13.0")
 
     // Kotlin stdlib
     implementation(kotlin("stdlib-jdk8", kotlinVersion))
