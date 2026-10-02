@@ -2322,7 +2322,7 @@ jobs:
       # call-site map holds live handlers only.
       # 1295 -> 1313 (16.7, +18): a fault after a handler began a shell call is a
       # FaultNotice with rc 0, #455. Runtime 1121 -> 1139, Renderer 147 and Analyzers 27
-      # unchanged. FaultNoticeTests gains 16 facts and one theory with 2 rows: the
+      # unchanged. FaultNoticeTests gains 15 facts and one theory with 2 rows: the
       # inline-answered host call, which also dispatches again to show the session
       # survives; the inline-answered fetch; a begun call never awaited; the notice
       # begun off the dispatching thread; the refused host-call and fetch begins; the
