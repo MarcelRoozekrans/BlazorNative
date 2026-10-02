@@ -57,6 +57,65 @@ class FaultNoticeTest {
         }
     }
 
+    /** Answers the camera call INSIDE hostCallBegin, as Android's inline arms answer theirs,
+     *  with a payload that is not flat JSON, so BnCameraDemo's continuation throws. The
+     *  completer takes a map, so the malformed text goes through NativeBindings. */
+    private class InlineCameraHost : ShellBridgeHandlers {
+        @Volatile private var route: String = "/"
+        @Volatile var answeredInsideBegin = 0
+        override fun navigate(route: String) { this.route = route }
+        override fun currentRoute(): String = route
+        override fun storageRead(key: String): String? = null
+        override fun storageWrite(key: String, value: String) {}
+        override fun storageDelete(key: String) {}
+        override fun fetchBegin(requestId: Long, request: BridgeFetchRequest) {
+            BridgeFetchCompleter.completeFailure(requestId, "FaultNoticeTest performs no fetch")
+        }
+        override fun clipboardRead(): String = ""
+        override fun clipboardWrite(text: String) {}
+        override fun share(text: String) {}
+        override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
+            if (op == HostCallOp.CAMERA) {
+                val bad = Memory(6).apply { setString(0, "{bad", "UTF-8") }
+                NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad)
+                java.lang.ref.Reference.reachabilityFence(bad)
+                answeredInsideBegin++
+            } else {
+                BridgeHostCallCompleter.complete(requestId, HostCallStatus.ERROR, null)
+            }
+        }
+    }
+
+    @Test
+    fun a_fault_after_an_inline_answered_host_call_is_a_fault_notice_not_rc_2() {
+        val host = InlineCameraHost()
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val errors = Collections.synchronizedList(mutableListOf<Pair<String, Throwable>>())
+        val faultSeen = CountDownLatch(1)
+        val runtime = BlazorNativeRuntime(
+            onFrame = { frames.add(it) },
+            onError = { msg, t ->
+                errors.add(msg to t)
+                if (msg.startsWith("handler fault after await:")) faultSeen.countDown()
+            },
+        )
+        runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
+        try {
+            val mount = frames.first()
+            val takePhoto = clickHandlerOn(mount, containerOfText(mount, "Take Photo"))
+            val rc = runtime.dispatchEventBlocking(takePhoto, "click")
+            // Anchor: the call really was answered inside begin.
+            assertEquals(1, host.answeredInsideBegin, "the camera call was not answered inside hostCallBegin")
+            assertEquals(0, rc,
+                "a fault after an await on a call answered inside hostCallBegin came back as rc $rc. " +
+                    "The await did not yield, which is #455, through the NativeAOT dll.")
+            assertTrue(faultSeen.await(10, TimeUnit.SECONDS),
+                "no FaultNotice reached onError for the fault after the inline-answered call. onError saw: $errors")
+        } finally {
+            runtime.retire()
+        }
+    }
+
     @Test
     fun fault_notice_is_op_five() {
         assertEquals(5, HostCallOp.FAULT_NOTICE)
