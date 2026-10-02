@@ -533,8 +533,12 @@ public sealed class FaultNoticeTests
         // releases when the shell answers. Any captured-context yield after begin posts the
         // call's continuation to the render thread, which is blocked waiting for it, and
         // deadlocks. The first 16.7 design did exactly that. The JVM BackNoticeTest and both
-        // device back tests drive this probe; this fact is the bounded .NET pin, so a
-        // regression reds here instead of hanging there.
+        // device back tests drive this probe; this fact is the bounded .NET pin. Under such a
+        // regression it reds within its budget, and its finally abandons the deadlocked session
+        // through HostSession.AbandonForTests instead of disposing it, so the next fact gets a
+        // fresh session and the rest of the run completes. The deadlocked render thread and
+        // the dispatch worker are background threads, left blocked until the test process
+        // exits. The 16.7 record's M7 row measured this with the CI test command.
         var frames = new List<RenderFrame>();
         int rc = -1;
         bool started = false;
@@ -598,13 +602,15 @@ public sealed class FaultNoticeTests
                 }
                 while (!returned.Wait(TimeSpan.FromMilliseconds(50)) && sw.Elapsed < Budget);
             }
-            // Only a released handler, or one never dispatched, lets the session go; a
-            // deadlocked one is left to the background thread, and the fact has already failed.
+            // A released handler, or one never dispatched, lets the session go normally. A
+            // deadlocked one would hang ResetForTests, whose dispose waits on the blocked render
+            // thread with no bound, and with it every later fact. So it is abandoned instead:
+            // detached without a dispose, its threads left blocked. The fact has already failed.
             if (!started || returned.IsSet)
-            {
                 HostSession.ResetForTests();
-                NativeShellBridge.ResetForTests();
-            }
+            else
+                HostSession.AbandonForTests();
+            NativeShellBridge.ResetForTests();
         }
     }
 

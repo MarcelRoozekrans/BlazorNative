@@ -379,6 +379,24 @@ internal static unsafe class HostSession
         JoinRenderThread(renderer);
     }
 
+    /// <summary>Test-only: drops the live session WITHOUT disposing its renderer, for a
+    /// test that has measured a deadlocked render thread (16.7). <see cref="ResetForTests"/>
+    /// disposes the renderer on its render thread and waits for it with no bound, so after
+    /// a real deadlock the next test's reset would hang the whole run. This detaches the
+    /// session under s_lock, so the next EnsureSession builds a fresh one; closes the frame
+    /// gate, bounded as in <see cref="Shutdown"/>; and closes the render thread's queue
+    /// without waiting, cancelling what is queued. The blocked render thread is a background
+    /// thread and is left blocked until the test process exits. The production ABI never
+    /// calls this.</summary>
+    internal static void AbandonForTests()
+    {
+        (NativeRenderer? renderer, FrameGate? gate) = Detach();
+        Volatile.Write(ref s_configureServices, null);
+        CloseGateAndClearCallback(gate);
+        if (renderer?.Dispatcher is RenderThreadDispatcher dispatcher)
+            dispatcher.Shutdown(TimeSpan.Zero);
+    }
+
     /// <summary>Test-only: the mount registry's KEYS — every name
     /// <see cref="TryMount"/> and <see cref="SwapRoot"/> accept. Born in Phase
     /// 6.3 so the then-hand-maintained route table could be checked against
