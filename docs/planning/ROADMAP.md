@@ -3739,8 +3739,12 @@ on the handler's queue, though never the render thread.
 
   Device mutations run one at a time per ref, with each lane's `headSha` checked;
 - move `BackAndroidTest`'s D8/D10 record out of PR #431's body and into the register;
-- assess the **23 carried pins** on Rules 2–5 with per-pin register cells: the 18 16.3 pins, the
-  three 16.1 tree-reading facts, and the 16.2 caller scan with its control.
+- assess the **23 carried pins** on Rules 2–5 **and 7** with per-pin register cells: the 18 16.3
+  pins, the three 16.1 tree-reading facts, and the 16.2 caller scan with its control. Any of them
+  with no recorded red gets one (owner decision 2026-10-01: Rules 2–5 alone would fail item 10
+  again).
+**Design:** [`docs/superpowers/specs/2026-10-01-phase-16.6-design.md`](../superpowers/specs/2026-10-01-phase-16.6-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-01-phase-16.6-prove-pins.md`](../superpowers/plans/2026-10-01-phase-16.6-prove-pins.md)
 **Surface:** Mixed
 **HelpWanted:** no
 

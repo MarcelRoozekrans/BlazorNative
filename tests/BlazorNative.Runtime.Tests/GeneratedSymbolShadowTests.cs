@@ -212,7 +212,8 @@ public sealed class GeneratedSymbolShadowTests
     /// branch that can go quiet by accident (pin standard Rule 7). Scans the declaration
     /// line plus the two that follow for a qualified reference to the generated symbol.
     /// C definitions never forward — `BnWireVocabulary.kNodeTypes` cannot occur in an
-    /// `#include`d header — so the window is never offered to them.</summary>
+    /// `#include`d header — so the window is never offered to them. Nor is it offered to op
+    /// constants, which match only an integer literal and so cannot forward.</summary>
     private static bool Forwards(string[] lines, int index, string symbol)
     {
         for (int j = index; j < Math.Min(index + 3, lines.Length); j++)
@@ -229,13 +230,18 @@ public sealed class GeneratedSymbolShadowTests
     /// and by the positive control's C fixture alike (pin standard Rule 8). Taking
     /// LINES rather than a path is what lets the control splice a real declaration into
     /// real source and run the production detector over the result, instead of
-    /// controlling a copy of it.</para></summary>
+    /// controlling a copy of it.</para>
+    ///
+    /// <para>The forwarding window is offered ONLY to a non-op Swift or Kotlin declaration. An op
+    /// constant matches only when bound to an integer LITERAL, so it can never be a forwarder: a
+    /// real forward, `const val CAMERA = HostCallOp.CAMERA`, does not match the pattern and is
+    /// never a site at all (16.6 fix round 1: the window was dead for ops).</para></summary>
     private static List<(int Line, bool Forwards)> DeclarationSitesIn(string[] lines, string symbol, bool c, bool opConstant = false)
     {
         var sites = new List<(int, bool)>();
         for (int i = 0; i < lines.Length; i++)
             if (Regex.IsMatch(lines[i], DeclarationPattern(symbol, c, opConstant)))
-                sites.Add((i + 1, !c && Forwards(lines, i, symbol)));
+                sites.Add((i + 1, !c && !opConstant && Forwards(lines, i, symbol)));
         return sites;
     }
 
@@ -298,7 +304,7 @@ public sealed class GeneratedSymbolShadowTests
     {
         var offenders = DeclarationSites()
             .Where(s => !s.Forwards)
-            .Select(s => $"{Path.GetFileName(s.Source)}:{s.Line} declares '{s.Symbol}', which WireGen generates")
+            .Select(s => $"{Path.GetRelativePath(BnRepo.Root(), s.Source)}:{s.Line} declares '{s.Symbol}', which WireGen generates")
             .ToList();
 
         Assert.True(offenders.Count == 0,
@@ -446,9 +452,14 @@ public sealed class GeneratedSymbolShadowTests
     /// <item>an op twin written as an enum CASE, <c>case camera = 4</c> inside an
     /// <c>enum …: Int32</c>. The pattern matches only <c>let</c>/<c>val</c>/<c>var</c>
     /// bindings, and a case is not one.</item>
+    /// <item>any op line but <c>camera</c> and <c>CAMERA</c>. The control reads only those
+    /// two generated lines, and reads them RAW, without stripping comments, so a trailing
+    /// comment on either one reds it loudly: <c>no longer matches the generated
+    /// declaration</c>. The generator emits no comments today. A comment on any other op
+    /// line leaves this control green, since it never reads that line.</item>
     /// </list>
-    /// Both are left to review; the consumption pin still reds if the generated constant
-    /// goes dead.</para></summary>
+    /// The first two are left to review; the consumption pin still reds if the generated
+    /// constant goes dead.</para></summary>
     [Fact]
     public void TheOpConstantShadowDetector_MatchesAnIntegerTwin_AndNotACapabilityProperty()
     {
@@ -1088,6 +1099,11 @@ public sealed class GeneratedSymbolShadowTests
             Path.Combine(root, "templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "src", "androidMain", "kotlin"),
         ];
 
+        // Every scan root must exist: Where(Directory.Exists) alone drops a missing root silently,
+        // and its files, BlazorNativeRuntime.kt among them, would leave the scan (16.6 fix round 1).
+        foreach (string dir in roots)
+            Assert.True(Directory.Exists(dir), $"the Kotlin scan root {Path.GetRelativePath(root, dir)} does not exist, so its files would silently leave the scan.");
+
         return [.. roots
             .Where(Directory.Exists)
             .SelectMany(dir => Directory.EnumerateFiles(dir, "*.kt", SearchOption.AllDirectories))
@@ -1100,8 +1116,8 @@ public sealed class GeneratedSymbolShadowTests
     private static string[] BnHostProductionSwiftSources()
     {
         string dir = Path.Combine(BnRepo.Root(), "src", "BlazorNative.Apple", "BnHost");
-        if (!Directory.Exists(dir))
-            return [];
+        Assert.True(Directory.Exists(dir),
+            $"the Swift scan root {Path.GetRelativePath(BnRepo.Root(), dir)} does not exist, so the scan would see nothing.");
 
         return [.. Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories)];
     }
@@ -1117,26 +1133,63 @@ public sealed class GeneratedSymbolShadowTests
     private static readonly Regex DispatchHostEventAndWaitDeclaration =
         new(@"\b(?:internal\s+)?(?:fun|func)\s+dispatchHostEventAndWait\s*\(");
 
-    /// <summary>A CALL to `dispatchHostEventAndWait` on this line — a mention immediately
-    /// followed by `(`, and NOT that same line's own `fun`/`func` declaration.</summary>
+    /// <summary>A CALL to `dispatchHostEventAndWait` on this line. The method's own
+    /// `fun`/`func` declaration TOKEN is removed first, and only then is the rest of the line
+    /// searched for a mention followed by `(`. Removing the token, not skipping the line, is
+    /// what keeps an expression-bodied forwarder written on the declaration line
+    /// (`internal fun dispatchHostEventAndWait(e: BnHostEvent) = dispatchHostEventAndWait(e, null)`)
+    /// visible as the call it is. Skipping the whole line hid it (16.6, defect 1).</summary>
     private static bool IsOffendingCallLine(string line) =>
-        DispatchHostEventAndWaitMention.IsMatch(line) && !DispatchHostEventAndWaitDeclaration.IsMatch(line);
+        DispatchHostEventAndWaitMention.IsMatch(DispatchHostEventAndWaitDeclaration.Replace(line, "", 1));
 
     /// <summary>THE POSITIVE CONTROL (pin standard Rule 3), fed synthetic lines rather than a
     /// tree walk: proves the detector recognises a real call in BOTH languages, and does not
     /// mistake either language's declaration for one — the exact confusion that would leave
-    /// the pin below blind to a call sitting right next to the method it must not reach.</summary>
+    /// the pin below blind to a call sitting right next to the method it must not reach.
+    ///
+    /// <para>DOES NOT COVER (Rule 5): the detector reads ONE line at a time, so a call split
+    /// across lines, with the name on one line and its <c>(</c> on the next, is not matched,
+    /// and no case here feeds one. Nor a reference with no call parentheses, such as
+    /// <c>::dispatchHostEventAndWait</c> or a Swift method reference, which the pin below
+    /// also leaves out. The declaration token is stripped whatever modifier precedes it, since
+    /// the strip pattern needs only <c>fun</c> or <c>func</c> before the name, so any
+    /// declaration of the name counts as a declaration, not a call. Only the two real
+    /// declarations are fed as negatives. The four call cases are synthetic lines, not lines
+    /// read from a shell.</para></summary>
     [Fact]
     public void OffendingCallDetector_MatchesACall_AndNotTheDeclaration()
     {
-        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"));
-        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"));
-        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"));
+        Assert.True(IsOffendingCallLine("        runtime.dispatchHostEventAndWait(BnHostEvent.Back)"),
+            "case 1, a Kotlin member call on a receiver, was not counted as a call");
+        Assert.True(IsOffendingCallLine("            self?.dispatchHostEventAndWait(.navigate, payload: route)"),
+            "case 2, a Swift optional-chained call, was not counted as a call");
+        Assert.True(IsOffendingCallLine("val rc = dispatchHostEventAndWait(event, payload)"),
+            "case 3, a Kotlin bare call on an assignment line, was not counted as a call");
 
-        Assert.False(IsOffendingCallLine(
-            "    internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {"));
-        Assert.False(IsOffendingCallLine(
-            "    internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {"));
+        // Rule 4 (16.6, defect 2): the declarations are READ from the tree, not hand-copied,
+        // so a change to either real signature is what this control checks.
+        string root = BnRepo.Root();
+        (string File, string Needle)[] declarations =
+        [
+            (Path.Combine(root, "src", "BlazorNative.Jni", "src", "main", "kotlin", "io", "blazornative",
+                "jni", "BlazorNativeRuntime.kt"), "fun dispatchHostEventAndWait("),
+            (Path.Combine(root, "src", "BlazorNative.Apple", "BnHost", "BnRuntime.swift"),
+                "func dispatchHostEventAndWait("),
+        ];
+        foreach ((string file, string needle) in declarations)
+        {
+            string[] found = [.. CodeLines(file).Where(l => l.Contains(needle, StringComparison.Ordinal))];
+            Assert.True(found.Length == 1,
+                $"expected exactly one declaration line containing '{needle}' in {file}, found {found.Length}: "
+                + "the control would otherwise check nothing, or check a copy.");
+            Assert.False(IsOffendingCallLine(found[0]), $"the real declaration was counted as a call: {found[0]}");
+        }
+
+        // Defect 1 (16.6): a declaration line that ALSO calls the method — an expression-
+        // bodied forwarder — is a call, not merely a declaration.
+        Assert.True(IsOffendingCallLine(
+            "    internal fun dispatchHostEventAndWait(event: BnHostEvent) = dispatchHostEventAndWait(event, null)"),
+            "case 4, an expression-bodied forwarder on the declaration line, was not counted as a call");
     }
 
     /// <summary>THE PIN (final whole-branch review, Important #1). No shipped shell source may
@@ -1190,7 +1243,7 @@ public sealed class GeneratedSymbolShadowTests
             for (int i = 0; i < lines.Length; i++)
             {
                 if (IsOffendingCallLine(lines[i]))
-                    offenders.Add($"{Path.GetFileName(file)}:{i + 1}: {lines[i].Trim()}");
+                    offenders.Add($"{Path.GetRelativePath(root, file)}:{i + 1}: {lines[i].Trim()}");
             }
         }
 

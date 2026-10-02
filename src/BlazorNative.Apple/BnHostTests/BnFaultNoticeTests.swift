@@ -30,6 +30,17 @@ final class BnFaultNoticeTests: BnHostTestCase {
     private var captured: [(id: Int64, status: Int32, payload: String?)] = []
     /// What reached the runtime's onError this test, in order.
     private var errors: [(message: String, error: Error)] = []
+    /// Every AppleShellBridge line BnLog let through this test, in order. BnLog calls its
+    /// hook on whatever thread logs, and the bridge logs off the main thread too, for
+    /// example from navigate and from the unknown-op warning, so the buffer is guarded by
+    /// loggedLock and read through `logged`, which copies it under the lock.
+    private let loggedLock = NSLock()
+    private var loggedStorage: [(level: Int32, category: String, message: String)] = []
+    private var logged: [(level: Int32, category: String, message: String)] {
+        loggedLock.lock()
+        defer { loggedLock.unlock() }
+        return loggedStorage
+    }
     private var runtime: BnRuntime?
     private var savedShared: BnRuntime?
 
@@ -38,6 +49,19 @@ final class BnFaultNoticeTests: BnHostTestCase {
         BnGeolocation.resetForTest()
         captured = []
         errors = []
+        loggedLock.lock()
+        loggedStorage = []
+        loggedLock.unlock()
+        BnLog.emitHookForTest = { [weak self] level, category, message in
+            // The hook is process-wide and runs on the logging thread, which need not be
+            // main. BnLog reads and writes the hook itself under its own lock; this
+            // buffer is guarded by loggedLock. Only the bridge's lines are kept, since
+            // these tests read no other category.
+            guard category == "AppleShellBridge", let self = self else { return }
+            self.loggedLock.lock()
+            self.loggedStorage.append((level, category, message))
+            self.loggedLock.unlock()
+        }
         savedShared = BnRuntime.shared
         BnGeolocation.completeHookForTest = { [weak self] id, status, payload in
             self?.captured.append((id, status, payload))
@@ -49,6 +73,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
         BnRuntime.shared = savedShared
         runtime = nil
         BnGeolocation.resetForTest()
+        BnLog.emitHookForTest = nil
         super.tearDown()
     }
 
@@ -87,8 +112,12 @@ final class BnFaultNoticeTests: BnHostTestCase {
         // Completed OK (0) with no payload, for THIS request, so .NET drops its entry.
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.first?.id, 40)
-        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted)
+        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted,
+            "a FaultNotice must complete OK, status 0, not Error, status 5: the arm must call " +
+            "completeNotice, not completeUnknownOp")
         XCTAssertNil(captured.first?.payload)
+        XCTAssertTrue(logged.filter({ $0.category == "AppleShellBridge" }).isEmpty,
+            "a routed notice must not also be logged by the bridge")
     }
 
     func testAnUnknownOpStillTakesTheErrorBranch_Control() {
@@ -99,8 +128,10 @@ final class BnFaultNoticeTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(41, 99, "{}")
 
-        XCTAssertEqual(rc, 0)
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for an unknown op too: the op is data, completed Error, not a refused call")
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
+            "an unknown op must complete Error, status 5, not OK, status 0: the default arm must " +
+            "call completeUnknownOp, or a notice arm and the unknown-op branch read the same")
         XCTAssertTrue(errors.isEmpty, "an unknown op must not be reported as a handler fault")
     }
 
@@ -112,7 +143,15 @@ final class BnFaultNoticeTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(42, BnHostCallOp.faultNotice, Self.noticeArgs)
 
-        XCTAssertEqual(rc, 0)
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted])
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for a FaultNotice with no runtime")
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted],
+            "a FaultNotice with no runtime must still complete OK, status 0, not Error, status 5: " +
+            "the arm must call completeNotice, not completeUnknownOp")
+
+        // Defect 3 (16.6): the header's "logged through BnLog" is now asserted, not argued.
+        let lines = logged.filter { $0.category == "AppleShellBridge" && $0.level == BnLogLevel.error }
+        XCTAssertEqual(lines.count, 1, "the no-runtime FaultNotice must be logged exactly once")
+        XCTAssertEqual(lines.first?.message,
+            "handler fault after await: System.InvalidOperationException: late (handler 7, event 'click')")
     }
 }

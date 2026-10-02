@@ -152,8 +152,13 @@ final class BnBackOffMainNavigateTests: BnHostTestCase {
         if !didReturn, camera.hasInFlightRequestForTest() { camera.fireDidCancelForTest() }
 
         lock.lock(); let released = releasedAt; let back = returnedAt; lock.unlock()
-        let r = try XCTUnwrap(released, "the release never fired")
         let b = try XCTUnwrap(back, "the blocking navigate never returned")
+        // Read after the navigate returned: no release yet means it returned BEFORE the release,
+        // the same failure as the ordering below, caught before the release has a timestamp.
+        let r = try XCTUnwrap(released,
+                              "the blocking navigate returned and the held camera call had not been " +
+                              "released yet, so BackHoldProbe does not hold the lane and the pin " +
+                              "above cannot tell the old navigator from the new")
         XCTAssertGreaterThanOrEqual(b, r,
                                     "the blocking navigate returned BEFORE the held camera call was " +
                                     "released, so BackHoldProbe does not hold the lane and the pin " +
@@ -276,7 +281,9 @@ final class BnBackOpArmTests: BnHostTestCase {
         XCTAssertEqual(rcFalse, 0, "hostCallBegin must return 0 for a BackState")
         // Completed OK (0) with no payload, each for ITS request, so .NET drops its entry.
         XCTAssertEqual(captured.map({ $0.id }), [60, 61])
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted, BnHostCallStatus.granted])
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.granted, BnHostCallStatus.granted],
+            "each BackState must complete OK, status 0, not Error, status 5: the backState arm must " +
+            "call completeNotice, not completeUnknownOp")
         XCTAssertTrue(captured.allSatisfy({ $0.payload == nil }), "a BackState completes with no payload")
         XCTAssertTrue(errors.isEmpty, "iOS has no system back: a BackState must not reach onError")
     }
@@ -289,7 +296,9 @@ final class BnBackOpArmTests: BnHostTestCase {
         XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for a BackUnhandled")
         XCTAssertEqual(captured.count, 1)
         XCTAssertEqual(captured.first?.id, 62)
-        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted)
+        XCTAssertEqual(captured.first?.status, BnHostCallStatus.granted,
+            "a BackUnhandled must complete OK, status 0, not Error, status 5: the backUnhandled arm " +
+            "must call completeNotice, not completeUnknownOp")
         XCTAssertNil(captured.first?.payload)
         XCTAssertTrue(errors.isEmpty, "iOS has no system back: a BackUnhandled must not reach onError")
     }
@@ -301,8 +310,10 @@ final class BnBackOpArmTests: BnHostTestCase {
 
         let rc = bridge.hostCallBegin(63, BnHostCallOp.backUnhandled + 1, "{}")
 
-        XCTAssertEqual(rc, 0)
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for the op after BackUnhandled too: the op is data, completed Error, not a refused call")
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
+            "the op after BackUnhandled must complete Error, status 5, not OK, status 0: the default " +
+            "arm must call completeUnknownOp, or an arm and the unknown-op branch read the same")
         XCTAssertTrue(errors.isEmpty, "an unknown op must not reach onError, as in BnFaultNoticeTests")
     }
 }

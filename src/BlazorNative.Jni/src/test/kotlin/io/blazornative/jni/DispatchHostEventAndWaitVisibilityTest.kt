@@ -1,7 +1,7 @@
 package io.blazornative.jni
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.declaredMemberFunctions
@@ -44,28 +44,33 @@ class DispatchHostEventAndWaitVisibilityTest {
      */
     @Test
     fun theVisibilityCheck_reallyDistinguishesPublicFromInternal() {
-        val publicMember = BlazorNativeRuntime::class.declaredMemberFunctions
-            .firstOrNull { it.name == "dispatchEvent" }
-        assertNotNull(publicMember,
-            "BlazorNativeRuntime declares no dispatchEvent member -- the control's own subject " +
-                "moved, so this test cannot prove the check distinguishes anything.")
-        assertEquals(KVisibility.PUBLIC, publicMember!!.visibility,
-            "dispatchEvent carries no visibility modifier, which is Kotlin's default (public). " +
-                "If this reads anything else, KVisibility itself is not reporting real " +
-                "declared visibility on this Kotlin/JVM setup, and the fact below proves nothing.")
+        val members = BlazorNativeRuntime::class.declaredMemberFunctions
+            .filter { it.name == "dispatchEvent" }
+        assertTrue(members.isNotEmpty(),
+            "BlazorNativeRuntime declares no dispatchEvent member, found ${members.size} -- the " +
+                "control's own subject moved, so this test cannot prove the check distinguishes " +
+                "anything.")
+        assertTrue(members.all { it.visibility == KVisibility.PUBLIC },
+            "Every dispatchEvent overload carries no visibility modifier, which is Kotlin's " +
+                "default (public), but they read ${members.map { it.visibility }}. If this reads " +
+                "anything else, KVisibility itself is not reporting real declared visibility on " +
+                "this Kotlin/JVM setup, or an overload was made internal, and the fact below " +
+                "proves nothing.")
     }
 
     /** THE PIN. See the class doc for what this does and does not cover. */
     @Test
     fun dispatchHostEventAndWait_isInternal() {
-        val member = BlazorNativeRuntime::class.declaredMemberFunctions
-            .singleOrNull { it.name == "dispatchHostEventAndWait" }
-        assertNotNull(member,
-            "BlazorNativeRuntime declares no dispatchHostEventAndWait member -- either it was " +
-                "renamed/removed (update src/dispatch-surface.json and this test together) or " +
-                "declaredMemberFunctions stopped seeing it, which would leave this pin checking " +
-                "nothing.")
-        assertEquals(KVisibility.INTERNAL, member!!.visibility,
+        val members = BlazorNativeRuntime::class.declaredMemberFunctions
+            .filter { it.name == "dispatchHostEventAndWait" }
+        assertEquals(1, members.size,
+            "BlazorNativeRuntime must declare exactly one dispatchHostEventAndWait member, found " +
+                "${members.size}: ${members.map { it.visibility }}. 0 means it was renamed/removed " +
+                "(update src/dispatch-surface.json and this test together) or declaredMemberFunctions " +
+                "stopped seeing it. 2 or more means an overload was added: a public overload would " +
+                "reopen the door #346 closed, and this pin cannot say which one it is looking at.")
+        val member = members.single()
+        assertEquals(KVisibility.INTERNAL, member.visibility,
             "dispatchHostEventAndWait must stay internal and test-only (16.2 Task 5, #346): no " +
                 "production caller needs its rc any more -- both deep-link/notification navigate " +
                 "and back moved to the fire-and-forget dispatchHostEvent. Making it public again " +

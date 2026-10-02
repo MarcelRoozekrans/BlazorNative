@@ -69,6 +69,17 @@ namespace BlazorNative.Runtime.Tests;
 //     forward the app's delegate itself and are keyed by the app's method;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
+//   - a host event's PAYLOAD. The arms are keyed by event name and the payload never
+//     reaches the warning by the shape of NoteHostEventSyncPart, which takes no
+//     payload, but no pin sends one through an arm: the payload pin covers one
+//     "change" payload on one UI handler only;
+//   - what a session reset is. TheWarnedSet_ResetsWithTheSession resets through
+//     HostSession.ResetForTests and starts a new session. A retire driven by a shell,
+//     and the warning count field apart from the warned set, are not exercised;
+//   - the call-site map beyond its bound. TheCallSiteMap_StaysFlat_… pins that the map
+//     holds the live handlers only, measured on capturing lambdas across re-renders. It
+//     does not pin the map's contents, nor the cost of resolving a key, which happens
+//     only once a dispatch is over budget;
 //   - the shells: this is the .NET side only.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -415,8 +426,12 @@ public sealed class SlowHandlerWarningTests
         s.Start();
         Assert.Equal(0, Dispatch(s.Handler("slow-a"), Click));
 
-        Assert.Equal(2, SlowProbe.RunsOf("slow-a"));
-        Assert.Equal(2, s.SlowLines().Length);
+        Assert.Equal(2, SlowProbe.RunsOf("slow-a")); // anchor: the handler ran in both sessions
+        string[] after = s.SlowLines();
+        Assert.True(after.Length == 2,
+            $"the same slow handler warned {after.Length} times across a session reset, not 2. "
+            + "The warned set and the warning count belong to the session's renderer: a set that "
+            + "survives the reset (a static field) silences the second session's first warning.");
     }
 
     [Fact]
@@ -510,8 +525,9 @@ public sealed class SlowHandlerWarningTests
             $"two BnButtons with different slow OnClick handlers gave {lines.Length} warnings, "
             + $"not 2. BnButton forwards every app's OnClick from one line, so a key built from "
             + $"the tree that holds the attribute merges them:\n{string.Join("\n", lines)}");
-        Assert.Single(lines, l => l.Contains("BnSlowOne"));
-        Assert.Single(lines, l => l.Contains("BnSlowTwo"));
+        Assert.True(lines.Count(l => l.Contains("BnSlowOne")) == 1 && lines.Count(l => l.Contains("BnSlowTwo")) == 1,
+            "the two warnings must name the app's methods BnSlowOne and BnSlowTwo, one each. A key that "
+            + $"falls back to the tree owner names the component instead:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnButton).FullName!));
     }
 
@@ -532,8 +548,9 @@ public sealed class SlowHandlerWarningTests
             $"two pages' slow buttons inside BnView ChildContent gave {lines.Length} warnings, not "
             + $"2. The fragments render into BnView's tree with the pages' sequence numbers, so a "
             + $"tree-owner key merges them:\n{string.Join("\n", lines)}");
-        Assert.Single(lines, l => l.Contains(nameof(ChildPageA)));
-        Assert.Single(lines, l => l.Contains(nameof(ChildPageB)));
+        Assert.True(lines.Count(l => l.Contains(nameof(ChildPageA))) == 1 && lines.Count(l => l.Contains(nameof(ChildPageB))) == 1,
+            $"the two warnings must name {nameof(ChildPageA)} and {nameof(ChildPageB)}, one each. A key that "
+            + $"falls back to the tree owner names BnView instead:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnView).FullName!));
     }
 
@@ -595,8 +612,13 @@ public sealed class SlowHandlerWarningTests
             Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{i}", null));
 
         string[] lines = s.SlowLines();
-        Assert.Equal(cap, lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText)));
-        Assert.Single(lines, l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        int warned = lines.Count(l => !l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        Assert.True(warned == cap,
+            $"{cap + 1} distinct slow keys gave {warned} warnings before the suppression line, not {cap}. "
+            + $"The cap must let exactly the first {cap} through and announce the next once.");
+        int suppressions = lines.Count(l => l.Contains(NativeRenderer.SlowHandlerSuppressedLogText));
+        Assert.True(suppressions == 1,
+            $"the cap logged {suppressions} suppression lines for {cap + 1} distinct keys, not 1.");
 
         // A further distinct slow key, on each path: silence.
         Assert.Equal(0, Exports.DispatchHostEventCore($"capProbe{cap + 1}", null));
@@ -604,7 +626,11 @@ public sealed class SlowHandlerWarningTests
 
         Assert.Equal(cap + 2, SlowProbe.RunsOf("lifecycle")); // anchor: every arm ran slow
         Assert.Equal(1, SlowProbe.RunsOf("slow-a"));
-        Assert.Equal(cap + 1, s.SlowLines().Length);
+        int total = s.SlowLines().Length;
+        Assert.True(total == cap + 1,
+            $"after the suppression line two more distinct slow keys left {total} lines in all, "
+            + $"not {cap + 1}. Once the cap is announced the warning is silent on every path: a missing "
+            + "silent-after-suppression check logs a second suppression line or a new warning.");
     }
 
     [Fact]
@@ -616,8 +642,13 @@ public sealed class SlowHandlerWarningTests
 
         Assert.Equal(0, Dispatch(s.Handler("slow-a"), Click));
 
-        Assert.Equal(1, SlowProbe.RunsOf("slow-a"));
-        var line = Assert.Single(s.SlowLines());
+        Assert.Equal(1, SlowProbe.RunsOf("slow-a")); // anchor: the real sleep ran
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 1,
+            $"a handler that really slept {SlowMs} ms gave {lines.Length} warnings, not 1. With no fake clock "
+            + "the renderer must read Stopwatch.GetTimestamp at both ends of the synchronous part; a clock "
+            + "that does not advance reads one value at both ends, so the elapsed time is zero and nothing is over budget.");
+        string line = lines[0];
         Match ms = Regex.Match(line, @"for (\d+) ms");
         Assert.True(ms.Success, $"the warning no longer states its milliseconds as 'for N ms': {line}");
         // Over the budget, not ">= SlowMs": a Windows sleep can end a little early and the
