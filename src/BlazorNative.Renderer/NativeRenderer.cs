@@ -1571,11 +1571,16 @@ public sealed class NativeRenderer : BlazorRenderer
 
     /// <summary>Marks the dispatch whose synchronous part is running on the calling thread
     /// as having begun a shell call (16.7, #455). No-op anywhere else. Called by
-    /// NativeShellBridge before it begins a host call that is not a notice, or a fetch.
-    /// Pinned by FaultNoticeTests' 16.7 facts.</summary>
+    /// NativeShellBridge after the shell accepts the begin of a host call the handler began,
+    /// or of a fetch; a notice .NET sends itself does not call it.
+    /// The mark is ORDERED: a scope that has already captured a fault is not marked, so a
+    /// fault raised before the first begun call stays rc 2 even when a later part of the
+    /// same synchronous part, a sibling's OnInitialized for example, begins a call.
+    /// Pinned by FaultNoticeTests' 16.7 facts, the ordering by
+    /// AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice.</summary>
     internal static void NoteShellCallBegun()
     {
-        if (t_syncScope is { } scope)
+        if (t_syncScope is { Fault: null } scope)
             scope.ShellCallBegun = true;
     }
 

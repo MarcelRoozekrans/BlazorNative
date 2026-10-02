@@ -685,6 +685,34 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice()
+    {
+        // The classification is ordered, not window-wide: a fault captured BEFORE any shell
+        // call was begun stays rc 2, even when a later part of the same synchronous part
+        // begins one. Here the handler's re-render mounts two siblings: the first throws in
+        // OnInitialized, then the second begins a host call in OnInitialized.
+        var (rc, _, pending, previous) = DispatchProbe("child-throw-then-sibling-begin");
+        try
+        {
+            // Anchors: the first child really threw, the sibling really began its call, and
+            // in that order. Without them rc 2 would only show that nothing was begun.
+            Assert.True(ShellCallProbe.ChildThrowSeq > 0,
+                "anchor: the first child never reached its throw, so this fact tests nothing.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the sibling's begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(ShellCallProbe.SiblingBeginSeq > ShellCallProbe.ChildThrowSeq,
+                $"anchor: the fault must come before the begin, but the child threw at {ShellCallProbe.ChildThrowSeq} "
+                + $"and the sibling began at {ShellCallProbe.SiblingBeginSeq}.");
+            Assert.True(rc == 2, $"rc was {rc}: the fault was captured before any shell call was begun, so it is the "
+                + "dispatch's rc 2. A begin later in the same synchronous part must not reclassify an earlier fault.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every FaultNotice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void ANoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
         var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
@@ -869,7 +897,31 @@ public sealed class FaultNoticeTests
                 await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
                 throw new InvalidOperationException("after-fetch");
             });
+            Button(b, 120, "child-throw-then-sibling-begin", () => { _showChildren = true; });
+            Button(b, 130, "next-ok", () => { _okCount++; });
+            if (_okCount > 0)
+            {
+                b.OpenElement(140, "text");
+                b.AddContent(141, "ok:" + _okCount.ToString(CultureInfo.InvariantCulture));
+                b.CloseElement();
+            }
+            if (_showChildren)
+            {
+                // Siblings, rendered in this order by the handler's own re-render: the first
+                // faults, then the second begins a host call. Both run in the synchronous part.
+                b.OpenComponent<ThrowOnInitChild>(150);
+                b.CloseComponent();
+                b.OpenComponent<BeginOnInitChild>(151);
+                b.CloseComponent();
+            }
         }
+
+        private bool _showChildren;
+        private int _okCount;
+
+        /// <summary>Order stamps for child-throw-then-sibling-begin: each child takes the next
+        /// value of <see cref="Sequence"/>. DispatchProbe resets all three.</summary>
+        public static int Sequence, ChildThrowSeq, SiblingBeginSeq;
 
         private void Button(RenderTreeBuilder b, int seq, string label, Func<Task> onClick)
         {
@@ -888,6 +940,28 @@ public sealed class FaultNoticeTests
         }
     }
 
+    /// <summary>Faults in its synchronous OnInitialized, before its sibling begins a call.</summary>
+    private sealed class ThrowOnInitChild : ComponentBase
+    {
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            throw new InvalidOperationException("child-before-begin");
+        }
+    }
+
+    /// <summary>Begins a host call in its synchronous OnInitialized, after its sibling faulted.</summary>
+    private sealed class BeginOnInitChild : ComponentBase
+    {
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.SiblingBeginSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            _ = Bridge.CheckGeolocationPermissionAsync();
+        }
+    }
+
     private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
             int fetchBeginReturnCode = 0)
@@ -901,6 +975,7 @@ public sealed class FaultNoticeTests
         int handlerId = HandlerFor(frames, "click", label);
         ShellCallProbe.ReachedThrow = false;
         ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
+        ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
         FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
