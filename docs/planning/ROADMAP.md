@@ -3761,6 +3761,7 @@ call or a fetch is a FaultNotice with rc 0. A first design that forced a yield d
 blocked render thread, raced, and broke a mount, and it was abandoned on branch
 `feat/16.7-rc-contract`.
 **Design:** [`docs/superpowers/specs/2026-10-02-phase-16.7-design.md`](../superpowers/specs/2026-10-02-phase-16.7-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-02-phase-16.7-classify-fault.md`](../superpowers/plans/2026-10-02-phase-16.7-classify-fault.md)
 **Surface:** Backend
 **HelpWanted:** no
 
