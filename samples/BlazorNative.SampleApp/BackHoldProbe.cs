@@ -22,13 +22,18 @@ namespace BlazorNative.SampleApp;
 // WHY SYNCHRONOUS. An async handler yields at its first await, and since 16.1 the
 // dispatch export returns then, so nothing stays held and a blocking back press would
 // return quickly too: a test built on it cannot tell the old code from the new. This
-// handler instead calls CapturePhotoAsync().AsTask().GetAwaiter().GetResult() ON THE
-// RENDER THREAD. It does not deadlock: the camera call is a host call whose completion
-// source runs its continuations asynchronously and whose await uses
-// ConfigureAwait(false), and the shell completes it from its own thread. Until the test
-// releases the capture, the render thread and the dispatch lane are both held, which is
-// exactly when Android's old back — a blocking wait on that lane from the main thread —
-// hung.
+// handler instead BLOCKS THE RENDER THREAD on the capture with GetAwaiter().GetResult().
+// Until the test releases the capture, the render thread and the dispatch lane are both
+// held, which is exactly when Android's old back — a blocking wait on that lane from the
+// main thread — hung.
+//
+// WHY THE CALL IS STARTED ON THE THREAD POOL. Since 16.7 every host call does
+// `await Task.Yield()` after its begin, and on the render thread that yield posts the
+// rest of the call to the render thread's own queue. Blocking the render thread on a call
+// started there would then wait for a continuation that can only run on the thread it is
+// blocking: a deadlock, measured on the JVM suite, where BackNoticeTest hung for 30 min.
+// Started with Task.Run, the call has no render-thread context, so its yield and its
+// completion run on the pool, and the shell's answer unblocks the render thread.
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal sealed class BackHoldProbe : ComponentBase
@@ -61,10 +66,10 @@ internal sealed class BackHoldProbe : ComponentBase
     }
 
     // Deliberately synchronous: see the file header. Blocks the render thread until the
-    // shell answers the camera call.
+    // shell answers the camera call, which is started on the pool so it cannot deadlock.
     private void Hold()
     {
-        PhotoResult result = Camera.CapturePhotoAsync().AsTask().GetAwaiter().GetResult();
+        PhotoResult result = Task.Run(() => Camera.CapturePhotoAsync().AsTask()).GetAwaiter().GetResult();
         _echo = $"{ReleasedPrefix}{result.Status}";
     }
 }

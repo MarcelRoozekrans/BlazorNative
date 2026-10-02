@@ -121,6 +121,10 @@ see the measurement in
 [`docs/plans/2026-09-27-phase-16.3-record.md`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/docs/plans/2026-09-27-phase-16.3-record.md).
 There is no back-pressure and no timeout; the next event simply waits as long as you do.
 
+Blocking on a host call or a fetch on the render thread is worse than slow: it never returns.
+A call started on the render thread continues on the render thread after its yield, so a
+render thread blocked on it waits for work only it can run, even after the shell has answered.
+
 ```csharp bn-sample=statements
 // Anti-pattern — never do this inside a handler. It blocks the render thread until the
 // work finishes, and the dispatch lane — and every event queued behind it — wait with it.
