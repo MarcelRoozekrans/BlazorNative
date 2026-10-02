@@ -404,7 +404,7 @@ public sealed class FaultNoticeTests
         lock (pending)
             Assert.True(pending.Count == 1,
                 $"{pending.Count} dispatch(es) were still running at the export's return, not 1: the await on "
-                + "the host call the shell completed inside begin did not yield, so the handler finished "
+                + "the host call or fetch the shell completed inside begin did not yield, so the handler finished "
                 + "inside the export (#455).");
     }
 
