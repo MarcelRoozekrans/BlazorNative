@@ -113,9 +113,10 @@ class FaultNoticeTest {
                     "The await did not yield, which is #455, through the NativeAOT dll.")
             assertTrue(faultSeen.await(10, TimeUnit.SECONDS),
                 "no FaultNotice reached onError for the fault after the inline-answered call. onError saw: $errors")
-            val (msg, _) = errors.first { it.first.startsWith("handler fault after await:") }
-            assertTrue(msg.contains("System.FormatException:"), "message was: $msg")
+            val (msg, t) = errors.first { it.first.startsWith("handler fault after await:") }
+            assertTrue(msg.startsWith("handler fault after await: System.FormatException:"), "message was: $msg")
             assertTrue(msg.contains("event 'click'"), "message was: $msg")
+            assertTrue(t is RuntimeException, "throwable was $t")
         } finally {
             runtime.retire()
         }
