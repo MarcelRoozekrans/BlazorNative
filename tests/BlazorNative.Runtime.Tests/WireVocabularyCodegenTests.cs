@@ -425,7 +425,13 @@ public sealed class WireVocabularyCodegenTests
 
         // The compiled .NET enum is the generated one, so it must agree too.
         foreach ((string name, int id) in FrozenHostCallOps)
-            Assert.Equal(id, (int)Enum.Parse<HostCallOp>(name));
+        {
+            int compiled = (int)Enum.Parse<HostCallOp>(name);
+            Assert.True(compiled == id,
+                $"the compiled HostCallOp.{name} is {compiled}, but {id} is frozen and the manifest "
+                + "agrees. BnHostCallOps.g.cs was hand-edited or not regenerated: run WireGen, never "
+                + "edit a generated file.");
+        }
     }
 
     /// <summary>The op block of one generated file: from <paramref name="header"/> to
@@ -433,7 +439,10 @@ public sealed class WireVocabularyCodegenTests
     private static string OpBlock(string text, string header, string where)
     {
         string normalized = Normalize(text);
-        int start = normalized.IndexOf(header, StringComparison.Ordinal);
+        // The header must not be a PREFIX of a longer identifier: `enum BnHostCallOpX` is a rename,
+        // not the block (16.6 fix round 1, D4).
+        Match located = Regex.Match(normalized, Regex.Escape(header) + @"(?!\w)");
+        int start = located.Success ? located.Index : -1;
         Assert.True(start >= 0, $"{where}: no '{header}' block. The emitter stopped writing it, or renamed it.");
         int end = normalized.IndexOf("\n}", start, StringComparison.Ordinal);
         Assert.True(end > start, $"{where}: the '{header}' block is never closed");
@@ -448,6 +457,17 @@ public sealed class WireVocabularyCodegenTests
                           m => int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture),
                           StringComparer.Ordinal);
 
+    /// <summary>Every language's op block, emitted and committed, holds exactly the manifest's
+    /// ops with their ids.
+    ///
+    /// <para>DOES NOT COVER (Rule 5), beyond the section header above: the op lines are read
+    /// by a pattern per language. The Kotlin and Swift patterns end in <c>$</c>, so a Kotlin or
+    /// Swift op line in any other shape, for example with a trailing comment, is not read;
+    /// that op is missing from the block and the fact reds loudly, it does not pass silently.
+    /// The C# pattern ends at the comma, so a C# op line with a trailing comment,
+    /// <c>Camera = 4, // x</c>, is still read. The generator emits no comments today. Only the first block under each header is read, up
+    /// to the next lone closing brace. The C# header rename, <c>internal enum HostCallOpX</c>,
+    /// was not mutation-run in 16.6; the Swift and Kotlin renames were.</para></summary>
     [Fact]
     public void TheEmittedHostCallOps_MatchTheManifest_InAllThreeLanguages()
     {
@@ -488,9 +508,10 @@ public sealed class WireVocabularyCodegenTests
                     $"{where}: no '{camera} = 4'. The anchor op is missing or renumbered.");
 
                 // Both ways: every manifest op is present with its id, and nothing else is.
-                Assert.Equal(
-                    l.Want.OrderBy(kv => kv.Key, StringComparer.Ordinal),
-                    read.OrderBy(kv => kv.Key, StringComparer.Ordinal));
+                string[] want = [.. l.Want.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} = {kv.Value}")];
+                string[] got = [.. read.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} = {kv.Value}")];
+                Assert.True(want.SequenceEqual(got),
+                    $"{where}: the op block disagrees with the manifest.\n  manifest: {string.Join(", ", want)}\n  block:    {string.Join(", ", got)}");
             }
             languagesChecked++;
         }

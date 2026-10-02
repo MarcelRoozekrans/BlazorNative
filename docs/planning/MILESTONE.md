@@ -69,7 +69,7 @@ and the back gesture always answers.**
 4. Phase 16.3 — starvation, measured [complete] — one-for-one cost measured; slow-handler Warn once per call site, capped, never the payload, proven under NativeAOT; app-author threading page; #9 closed; #435 and #438 filed; .NET 1278 → 1295, JVM 190 → 191 (#437)
 5. Phase 16.4 — the lost first tap (#438) [complete] — two causes, neither an M16 regression: a boot-harness race on the in-flight flag, and a cold LAContext created in hostCallBegin on the render thread; biometrics and secure storage now work on their own queues; six pins, mutations one per run, vacuity contrast observed; 10/10 iOS runs green; #438 closed; #440 and #444 filed; iOS 282 → 288 (#449)
 6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
-7. Phase 16.6 — prove the unreddened pins [pending]
+7. Phase 16.6 — prove the unreddened pins [complete] — 38 distinct pins, each with a recorded red on current code and partials named; about 25 pin defects found by mutation fixed in test code; production only a BnLog test hook; #458 filed (#459)
 8. Phase 16.7 — make the rc contract true (#455) [pending]
 9. Phase 16.8 — re-audit and close [pending]
 

@@ -303,6 +303,31 @@ enum BnLog {
         return created
     }
 
+    private static let emitHookLock = NSLock()
+    private static var emitHookStorage: ((Int32, String, String) -> Void)?
+
+    /// Test-only: sees every line that passed the gate, before it is written to the
+    /// unified log, which a test cannot read back. Never set in production.
+    ///
+    /// `emit` runs on whatever thread logs, and a test sets and clears the hook on
+    /// the main thread, so the stored closure is read and written under
+    /// `emitHookLock`, the same pattern as `cacheLock`. The lock covers the
+    /// closure reference only: `emit` takes a copy under the lock and calls it
+    /// outside, so the hook itself may run on any logging thread, concurrently
+    /// with another call. A hook that keeps state must lock that state itself.
+    static var emitHookForTest: ((Int32, String, String) -> Void)? {
+        get {
+            emitHookLock.lock()
+            defer { emitHookLock.unlock() }
+            return emitHookStorage
+        }
+        set {
+            emitHookLock.lock()
+            defer { emitHookLock.unlock() }
+            emitHookStorage = newValue
+        }
+    }
+
     /// The write itself. FOUR literal call sites, and they have to be literal:
     /// `os_log`'s privacy specifier is part of the format string / interpolation
     /// and must be a compile-time constant, so "private or public" cannot be a
@@ -311,6 +336,11 @@ enum BnLog {
                              _ category: String,
                              _ message: String,
                              _ privacy: BnLogPrivacy) {
+        // Read under the lock by the getter, called outside it: a hook that logs
+        // cannot deadlock on emitHookLock.
+        if let hook = emitHookForTest {
+            hook(level, category, message)
+        }
         let osLog = log(for: category)
         let type = osLogType(for: level)
 
