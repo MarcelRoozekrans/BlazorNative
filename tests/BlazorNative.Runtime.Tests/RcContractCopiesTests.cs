@@ -64,14 +64,14 @@ public sealed class RcContractCopiesTests
     {
         var (refPath, refPrefix, refFenced) = Copies[0];
         string reference = ContractIn(refPath, refPrefix, refFenced);
-        // Rule 2 floor. The normalised contract measured 700 characters on 2026-10-02, so a
-        // floor of 200 leaves 500 of headroom, on purpose: the floor only has to tell an empty
-        // or collapsed block from the contract, and the 16.7 record's M8 and M14 show it does.
+        // Rule 2 floor. The normalised contract measured 509 characters on 2026-10-02, so a
+        // floor of 200 leaves 309 of headroom, on purpose: the floor only has to tell an empty
+        // or collapsed block from the contract.
         // Shortening the contract identically in all three copies stays green; that is a spec
         // question, not drift.
         Assert.True(reference.Length > 200,
             $"{refPath}: the contract between the markers is {reference.Length} characters, too short to be it. "
-            + "It measured 700 when this floor of 200 was set, a margin of 500.");
+            + "It measured 509 when this floor of 200 was set, a margin of 309.");
         foreach (var (copy, prefix, fenced) in Copies.Skip(1))
         {
             string text = ContractIn(copy, prefix, fenced);

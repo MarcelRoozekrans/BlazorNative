@@ -1891,8 +1891,8 @@ public sealed class NativeRenderer : BlazorRenderer
         {
             scope.Done = true;
             // Faulted or cancelled before yielding: this dispatch's fault. A fault after a
-            // begun shell call is classified apart (16.7); a cancellation is not a fault, so
-            // it stays Faulted even after one.
+            // begun shell call is classified apart (16.7). Blazor completes a cancelled handler
+            // Task before it reaches here, so the cancelled arm is defensive, not measured.
             Exception fault = task.IsFaulted
                 ? task.Exception!.InnerException ?? task.Exception
                 : new TaskCanceledException(task);

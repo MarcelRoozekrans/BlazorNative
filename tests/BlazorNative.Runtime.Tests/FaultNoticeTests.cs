@@ -378,8 +378,11 @@ public sealed class FaultNoticeTests
     //   - a shell call the handler starts on another thread, such as inside Task.Run. The
     //     mark is thread-bound to the synchronous part, so that call is not marked, and a
     //     synchronous fault after it stays rc 2;
-    //   - a handler cancelled in its synchronous part. It stays rc 2, even after a begun
-    //     call, because a cancellation is not a fault;
+    //   - a handler cancelled in its synchronous part is rc 0 with nothing sent, after a begun
+    //     call or before one: Blazor's own error handling completes a cancelled handler Task
+    //     before DispatchSyncPart sees it, so a cancellation is never a fault here. Measured on
+    //     2026-10-02: with the cancelled-Task branch in DispatchSyncPart made to throw, the
+    //     cancel-only fact still returned rc 0, so that branch is not reached through Blazor;
     //   - a host call or fetch begun by a CHILD component during the handler's re-render.
     //     The re-render is part of the handler's synchronous part, so that call marks the
     //     dispatch too, and a later render fault in the same synchronous part is a
@@ -581,6 +584,33 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void ACancellationAfterABegunHostCall_IsRc0_AndSendsNothing()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("begin-then-cancel");
+        try
+        {
+            Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
+                + "call must match a late cancellation: rc 0 and nothing sent.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
+            // rc 0 and an empty pending list exclude every notice source, so no wait is needed.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void ACancellationWithNoShellCallBegun_IsAlsoRc0_AndSendsNothing()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("cancel-only");
+        try
+        {
+            Assert.True(rc == 0, $"rc was {rc}: a cancelled handler is not a fault, so it is rc 0 and sends nothing.");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void AFaultWithNoShellCallBegun_IsStillRc2_Control()
     {
         var (rc, _, pending, previous) = DispatchProbe("completed-throw");
@@ -673,6 +703,17 @@ public sealed class FaultNoticeTests
                 // A notice .NET sends is not a shell call the handler began: it must not mark.
                 NativeShellBridge.SendFaultNotice(0, "probe", new InvalidOperationException("notice"));
                 throw new InvalidOperationException("after-notice");
+            });
+            Button(b, 60, "begin-then-cancel", async () =>
+            {
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                await Task.CompletedTask;
+                throw new OperationCanceledException();
+            });
+            Button(b, 70, "cancel-only", async () =>
+            {
+                await Task.CompletedTask;
+                throw new OperationCanceledException();
             });
             Button(b, 50, "refused-begin", async () =>
             {

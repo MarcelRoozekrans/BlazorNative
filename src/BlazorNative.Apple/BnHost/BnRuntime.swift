@@ -370,7 +370,7 @@ final class BnRuntime {
     /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
     /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. Since Phase
     /// 16.1 an async handler suspended on a host call no longer holds the lane (the
-    /// export returns at its first await), so this no longer blocks behind one;
+    /// export returns at its first await that suspends), so this no longer blocks behind one;
     /// BnDispatchLaneTests pins the lane half of that on the simulator.
     @discardableResult
     internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {

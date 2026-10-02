@@ -72,7 +72,7 @@ class FaultNoticeTest {
             onFrame = { frames.add(it) },
             onError = { msg, t ->
                 errors.add(msg to t)
-                if (msg.startsWith("handler fault after await:")) faultSeen.countDown()
+                if (msg.startsWith("handler faulted after it began a shell call or yielded:")) faultSeen.countDown()
             },
         )
         runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
@@ -85,7 +85,7 @@ class FaultNoticeTest {
             assertEquals(0, runtime.dispatchEventBlocking(takePhoto, "click"))
             assertTrue(host.cameraCall.await(10, TimeUnit.SECONDS), "Take Photo never began the camera call")
             // Anchor: nothing has faulted yet, so nothing may have been reported.
-            assertFalse(errors.any { it.first.startsWith("handler fault after await:") },
+            assertFalse(errors.any { it.first.startsWith("handler faulted after it began a shell call or yielded:") },
                 "a fault was reported before the held call was answered: $errors")
 
             // Answer Captured with a payload that is not flat JSON: the demo's continuation
@@ -99,8 +99,8 @@ class FaultNoticeTest {
             assertTrue(faultSeen.await(10, TimeUnit.SECONDS),
                 "the handler faulted after its first await and nothing reached onError within 10s. " +
                     "The fault was only logged, which is #8. onError saw: $errors")
-            val (msg, t) = errors.first { it.first.startsWith("handler fault after await:") }
-            assertTrue(msg.startsWith("handler fault after await: System.FormatException:"), "message was: $msg")
+            val (msg, t) = errors.first { it.first.startsWith("handler faulted after it began a shell call or yielded:") }
+            assertTrue(msg.startsWith("handler faulted after it began a shell call or yielded: System.FormatException:"), "message was: $msg")
             assertTrue(msg.contains("event 'click'"), "message was: $msg")
             assertTrue(t is RuntimeException, "throwable was $t")
 

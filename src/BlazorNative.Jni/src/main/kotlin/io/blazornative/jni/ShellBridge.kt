@@ -378,7 +378,7 @@ class BridgeRegistrar(
             val type = args["type"] ?: "?"
             val message = args["message"] ?: ""
             onError(
-                "handler fault after await: $type: $message " +
+                "handler faulted after it began a shell call or yielded: $type: $message " +
                     "(handler ${args["handlerId"] ?: "?"}, event '${args["event"] ?: "?"}')",
                 RuntimeException(message),
             )

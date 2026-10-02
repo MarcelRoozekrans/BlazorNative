@@ -139,10 +139,10 @@ void blazornative_shutdown(void);
 // continuation are delivered later, from the render thread.
 // END rc-contract
 //
-// Return: 0 dispatched, and the handler did not fault or faulted only after it began a host
-// call or a fetch (incl. a still-running handler and a stale handler) / 1 no session / 2 the
-// synchronous part faulted before the handler began a host call or a fetch / 3 malformed args
-// or handlerId out of int range.
+// Return: 0 dispatched, and the synchronous part did not fault, or faulted only after a host
+// call or a fetch was begun in it (incl. a still-running handler and a stale handler) / 1 no
+// session / 2 the synchronous part faulted before a host call or a fetch was begun in it /
+// 3 malformed args or handlerId out of int range.
 int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
 
 // The host-implemented shell callbacks (BridgeProtocolNative.cs

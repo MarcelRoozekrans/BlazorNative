@@ -478,15 +478,15 @@ public static class Exports
     /// END rc-contract
     ///
     /// Return codes:
-    ///   0 = dispatched, and the handler did not fault, or faulted only after it
-    ///       began a host call or a fetch — INCLUDING a handler still suspended on
-    ///       an await, and a stale handlerId:
+    ///   0 = dispatched, and the synchronous part did not fault, or faulted only
+    ///       after a host call or a fetch was begun in it — INCLUDING a handler
+    ///       still suspended on an await, and a stale handlerId:
     ///       delivery is at-most-once, the renderer catches Blazor's
     ///       ArgumentException for a handler that died in a re-render and logs
     ///       it (a stale tap is not an error);
     ///   1 = no session / nothing mounted;
-    ///   2 = the synchronous part faulted before the handler began a host call or
-    ///       a fetch — the handler, the resulting re-render, frame delivery, or a navigation swap it
+    ///   2 = the synchronous part faulted before a host call or a fetch was begun
+    ///       in it — the handler, the resulting re-render, frame delivery, or a navigation swap it
     ///       queued (anything routed to HandleException inside this dispatch's
     ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
     ///   3 = malformed or NULL args, including a handlerId outside the int

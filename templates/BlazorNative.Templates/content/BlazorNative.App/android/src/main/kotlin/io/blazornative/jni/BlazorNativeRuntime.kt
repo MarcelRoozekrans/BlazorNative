@@ -164,7 +164,7 @@ class BlazorNativeRuntime(
      * key maps to null EventArgs payload). Since Phase 16.1 the export returns
      * once the handler's SYNCHRONOUS part has run: a re-render from that part
      * has been delivered by then, on .NET's render thread, but a handler that
-     * awaits frees the lane at its first await, and its later re-renders
+     * awaits frees the lane at its first await that suspends, and its later re-renders
      * arrive afterwards, from a continuation, with no call in progress.
      *
      * Non-zero return codes are routed to [onError] (the tap is dropped):

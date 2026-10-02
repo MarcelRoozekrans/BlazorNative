@@ -43,7 +43,7 @@ struct BnFaultNotice: Error, CustomStringConvertible {
     let type: String
     let message: String
     var description: String {
-        "handler \(handlerId) '\(eventName)' faulted after its first await: \(type): \(message)"
+        "handler \(handlerId) '\(eventName)' faulted after it began a shell call or yielded: \(type): \(message)"
     }
 }
 
@@ -264,7 +264,7 @@ final class AppleShellBridge {
             eventName: args["event"] ?? "?",
             type: args["type"] ?? "?",
             message: args["message"] ?? "")
-        let msg = "handler fault after await: \(fault.type): \(fault.message) (handler \(fault.handlerId), event '\(fault.eventName)')"
+        let msg = "handler faulted after it began a shell call or yielded: \(fault.type): \(fault.message) (handler \(fault.handlerId), event '\(fault.eventName)')"
         if let runtime = BnRuntime.shared {
             runtime.onError(msg, fault)
         } else {
