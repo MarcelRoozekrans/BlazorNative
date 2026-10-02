@@ -119,6 +119,10 @@ public sealed class FaultNoticeTests
         throw new Xunit.Sdk.XunitException($"no '{eventName}' handler{(label is null ? "" : $" labelled '{label}'")} was attached");
     }
 
+    /// <summary>The managed thread the last <see cref="DispatchBounded"/> called
+    /// DispatchEventCore on, the shell's dispatch lane in these facts.</summary>
+    private static volatile int s_lastDispatchThread;
+
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
     private static int DispatchBounded(int handlerId, string argsJson)
     {
@@ -126,6 +130,7 @@ public sealed class FaultNoticeTests
         using var returned = new ManualResetEventSlim(false);
         var worker = new Thread(() =>
         {
+            s_lastDispatchThread = Environment.CurrentManagedThreadId;
             rc = Exports.DispatchEventCore((ulong)handlerId, argsJson);
             returned.Set();
         })
@@ -415,6 +420,29 @@ public sealed class FaultNoticeTests
             Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
             Assert.Equal("after-host", args["message"]);
             Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultNoticeAfterABegunCall_IsNotBegunOnTheDispatchingThread()
+    {
+        // Exports sends the FaultedAfterShellCall notice from the pool, so the shell is never
+        // re-entered from its own dispatch lane: a shell that serialises hostCallBegin behind
+        // the dispatch it is inside would otherwise wait on itself.
+        var (rc, _, pending, previous) = DispatchProbe("host-throw");
+        try
+        {
+            Assert.True(rc == 0, $"anchor: rc was {rc}, so the fault was not classified as after a begun call "
+                + "and no notice of this kind was sent.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice reached the shell.");
+            int dispatchThread = s_lastDispatchThread;
+            int noticeThread = FakeShellHost.HostCallBeginThread(Assert.Single(Notices()).RequestId);
+            Assert.True(dispatchThread > 0 && noticeThread > 0,
+                $"anchor: a thread was not recorded: dispatch {dispatchThread}, notice {noticeThread}.");
+            Assert.True(noticeThread != dispatchThread,
+                $"the FaultNotice was begun on thread {noticeThread}, the thread that called DispatchEventCore: "
+                + "the shell was re-entered from its own dispatch lane.");
         }
         finally { TearDown(pending, previous); }
     }

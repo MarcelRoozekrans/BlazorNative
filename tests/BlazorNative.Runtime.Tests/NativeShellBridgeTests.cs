@@ -93,6 +93,17 @@ internal static unsafe class FakeShellHost
     /// the lock: the notice is begun from a thread-pool thread.</summary>
     public static readonly List<(long RequestId, int Op, string? Args)> HostCallLog = new();
 
+    /// <summary>16.7: the managed thread each host call was begun on, by request id. Written
+    /// under <see cref="HostCallLog"/>'s lock, next to the log entry. The FaultNotice
+    /// thread fact reads it: a notice must never be begun on the thread that dispatched.</summary>
+    public static readonly Dictionary<long, int> HostCallBeginThreads = new();
+
+    /// <summary>The thread <paramref name="requestId"/> was begun on, or -1.</summary>
+    public static int HostCallBeginThread(long requestId)
+    {
+        lock (HostCallLog) return HostCallBeginThreads.TryGetValue(requestId, out int t) ? t : -1;
+    }
+
     /// <summary>A snapshot of <see cref="HostCallLog"/>, taken under its lock.</summary>
     public static List<(long RequestId, int Op, string? Args)> HostCalls()
     {
@@ -132,7 +143,11 @@ internal static unsafe class FakeShellHost
         FetchesCompletedInsideBegin = 0;
         HostCallStatus = 0;
         HostCallPayloadJson = null;
-        lock (HostCallLog) HostCallLog.Clear();
+        lock (HostCallLog)
+        {
+            HostCallLog.Clear();
+            HostCallBeginThreads.Clear();
+        }
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -275,7 +290,11 @@ internal static unsafe class FakeShellHost
         LastHostCallRequestId = requestId;
         LastHostCallOp = op;
         LastHostCallArgs = argsUtf8 == null ? null : Marshal.PtrToStringUTF8((IntPtr)argsUtf8);
-        lock (HostCallLog) HostCallLog.Add((requestId, op, LastHostCallArgs));
+        lock (HostCallLog)
+        {
+            HostCallLog.Add((requestId, op, LastHostCallArgs));
+            HostCallBeginThreads[requestId] = Environment.CurrentManagedThreadId;
+        }
         if (HostCallBeginReturnCode != 0)
             return HostCallBeginReturnCode;
 
