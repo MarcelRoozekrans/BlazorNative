@@ -1553,6 +1553,8 @@ public sealed class NativeRenderer : BlazorRenderer
         /// <summary>Set once the handler has finished: at DispatchSyncPart's return when
         /// it never yielded, otherwise when its pending Task completes.</summary>
         public volatile bool Done;
+        /// <summary>Set when the handler began a host call or a fetch during the synchronous part (16.7).</summary>
+        public bool ShellCallBegun;
     }
 
     /// <summary>The scope of the dispatch whose synchronous part is running now, or
@@ -1560,6 +1562,22 @@ public sealed class NativeRenderer : BlazorRenderer
     /// capture use THIS, never <see cref="s_flowingScope"/>: a continuation must not
     /// queue into a scope that has already closed, or the cascade returns.</summary>
     private DispatchScope? _currentScope;
+
+    /// <summary>The scope of the synchronous part running on THIS thread, or null (16.7).
+    /// Thread-bound on purpose: only the synchronous part may be marked, never a continuation,
+    /// so this is never the flowing AsyncLocal scope. Set and restored with
+    /// <see cref="_currentScope"/>.</summary>
+    [ThreadStatic] private static DispatchScope? t_syncScope;
+
+    /// <summary>Marks the dispatch whose synchronous part is running on the calling thread
+    /// as having begun a shell call (16.7, #455). No-op anywhere else. Called by
+    /// NativeShellBridge before it begins a host call that is not a notice, or a fetch.
+    /// Pinned by FaultNoticeTests' 16.7 facts.</summary>
+    internal static void NoteShellCallBegun()
+    {
+        if (t_syncScope is { } scope)
+            scope.ShellCallBegun = true;
+    }
 
     /// <summary>The same scope, flowed with the execution context into the handler's
     /// continuations. Used ONLY to attribute a late fault in
@@ -1786,7 +1804,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// The scope closes when Blazor returns the handler's Task, and its post-dispatch
     /// actions (the navigation swap) run at that close, before this returns.
     /// Returns <see cref="DispatchOutcomeKind.Faulted"/> when the scope captured a
-    /// fault or the returned Task is faulted, <see cref="DispatchOutcomeKind.Completed"/>
+    /// fault or the returned Task is faulted or cancelled, but
+    /// <see cref="DispatchOutcomeKind.FaultedAfterShellCall"/> for a fault, not a
+    /// cancellation, raised after the handler began a host call or a fetch in its
+    /// synchronous part (16.7, #455), <see cref="DispatchOutcomeKind.Completed"/>
     /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/> when the
     /// handler is still running. The pending Task is <see cref="AwaitWholeHandler"/>'s,
     /// not Blazor's: it also faults with a fault raised after the first await.</summary>
@@ -1801,6 +1822,7 @@ public sealed class NativeRenderer : BlazorRenderer
 
         var scope = new DispatchScope(this);
         DispatchScope? outer = _currentScope;
+        DispatchScope? outerSync = t_syncScope;
         DispatchScope? outerFlowing = s_flowingScope.Value;
         // Phase 16.3: the slow-handler clock starts as the scope OPENS. The call site
         // is resolved NOW: the handler's own re-render can dispose its id, when its
@@ -1810,6 +1832,7 @@ public sealed class NativeRenderer : BlazorRenderer
             : null;
         long started = SyncPartTimestamp();
         _currentScope = scope;
+        t_syncScope = scope;
         s_flowingScope.Value = scope;
         Task? task = null;
         try
@@ -1833,6 +1856,7 @@ public sealed class NativeRenderer : BlazorRenderer
             // finally so a faulted dispatch still drains — the queue must never leak
             // into another dispatch; action faults join this scope, never escape.
             _currentScope = outer;
+            t_syncScope = outerSync;
             s_flowingScope.Value = outerFlowing;
             if (outer is null)
                 DrainPostDispatchActions(scope);
@@ -1854,7 +1878,9 @@ public sealed class NativeRenderer : BlazorRenderer
         if (scope.Fault is { } captured)
         {
             scope.Done = true;
-            return new DispatchOutcome(DispatchOutcomeKind.Faulted, captured, null);
+            return new DispatchOutcome(
+                scope.ShellCallBegun ? DispatchOutcomeKind.FaultedAfterShellCall : DispatchOutcomeKind.Faulted,
+                captured, null);
         }
         if (task is null || task.IsCompletedSuccessfully)
         {
@@ -1864,11 +1890,16 @@ public sealed class NativeRenderer : BlazorRenderer
         if (task.IsCompleted)
         {
             scope.Done = true;
-            // Faulted or cancelled before yielding: this dispatch's fault.
+            // Faulted or cancelled before yielding: this dispatch's fault. A fault after a
+            // begun shell call is classified apart (16.7); a cancellation is not a fault, so
+            // it stays Faulted even after one.
             Exception fault = task.IsFaulted
                 ? task.Exception!.InnerException ?? task.Exception
                 : new TaskCanceledException(task);
-            return new DispatchOutcome(DispatchOutcomeKind.Faulted, fault, null);
+            DispatchOutcomeKind kind = task.IsFaulted && scope.ShellCallBegun
+                ? DispatchOutcomeKind.FaultedAfterShellCall
+                : DispatchOutcomeKind.Faulted;
+            return new DispatchOutcome(kind, fault, null);
         }
         return new DispatchOutcome(DispatchOutcomeKind.Pending, null, AwaitWholeHandler(task, scope));
     }

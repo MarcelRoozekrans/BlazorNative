@@ -560,6 +560,18 @@ public static class Exports
                 BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", outcome.Fault!);
                 return 2;
 
+            case DispatchOutcomeKind.FaultedAfterShellCall:
+                // 16.7 (#455): the handler faulted after it began a host call or a fetch. That is a
+                // FaultNotice, never an rc, whether or not the shell answered inside begin. Sent from
+                // the pool, as every late fault is, so the shell is never re-entered from its own
+                // dispatch lane.
+                {
+                    Exception fault = outcome.Fault!;
+                    BnLog.Error("Exports", $"dispatch_event handler {handlerId} '{name}' faulted after beginning a shell call", fault);
+                    _ = Task.Run(() => NativeShellBridge.SendFaultNotice(handlerId, name, fault));
+                }
+                break;
+
             case DispatchOutcomeKind.Pending:
                 // Decision 5: hand on a mirror the render thread cancels at shutdown. The
                 // handler's own Task never completes once its continuation is dropped with

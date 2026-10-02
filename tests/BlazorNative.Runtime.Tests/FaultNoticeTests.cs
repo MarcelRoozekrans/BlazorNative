@@ -367,6 +367,152 @@ public sealed class FaultNoticeTests
         }
     }
 
+    // ── 16.7 (#455): a fault after the handler began a shell call ──
+    //
+    // The rc contract's boundary is the BEGIN of a host call or a fetch, not the yield. A
+    // handler that began one and then faulted in its synchronous part is a FaultNotice with
+    // rc 0, whether the shell answered inside hostCallBegin or later. The fake shell answers
+    // inside begin here, and the HostCallsCompletedInsideBegin anchor proves it did.
+    //
+    // DOES NOT COVER:
+    //   - a shell call the handler starts on another thread, such as inside Task.Run. The
+    //     mark is thread-bound to the synchronous part, so that call is not marked, and a
+    //     synchronous fault after it stays rc 2;
+    //   - a handler cancelled in its synchronous part. It stays rc 2, even after a begun
+    //     call, because a cancellation is not a fault.
+
+    [Fact]
+    public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("host-throw");
+        try
+        {
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the geolocation call inside hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(rc == 0,
+                $"rc was {rc}: the handler faulted after it began a host call the shell answered inside begin, "
+                + "and the fault came back as the dispatch's rc. That is #455.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice reached the shell for a fault after a begun host call.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("click", args["event"]);
+            Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
+            Assert.Equal("after-host", args["message"]);
+            Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultAfterBeginningAHostCall_WithoutAwaitingIt_IsAFaultNotice_AndRc0()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("begin-then-throw");
+        try
+        {
+            Assert.True(rc == 0, $"rc was {rc}: a fault after the handler BEGAN a host call must be a FaultNotice, "
+                + "even when it never awaited the call. The contract's boundary is the begin, not the await.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for a fault after a begun call.");
+            Assert.Equal("after-begin", NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args)["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultWithNoShellCallBegun_IsStillRc2_Control()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("completed-throw");
+        try
+        {
+            Assert.True(rc == 2, $"rc was {rc}: a handler that began no shell call and faulted in its synchronous "
+                + "part must still return rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            Thread.Sleep(200); // a wrongly sent notice is asynchronous: give it time to arrive
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void ANoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
+        try
+        {
+            Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends is not a shell call the handler began, so a "
+                + "fault after it must stay rc 2.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
+    private sealed class ShellCallProbe : ComponentBase
+    {
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            Button(b, 0, "host-throw", async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("after-host");
+            });
+            Button(b, 10, "begin-then-throw", () =>
+            {
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("after-begin");
+            });
+            Button(b, 20, "completed-throw", async () =>
+            {
+                await Task.CompletedTask;
+                throw new InvalidOperationException("no-shell-call");
+            });
+            Button(b, 30, "notice-then-throw", () =>
+            {
+                // A notice .NET sends is not a shell call the handler began: it must not mark.
+                NativeShellBridge.SendFaultNotice(0, "probe", new InvalidOperationException("notice"));
+                throw new InvalidOperationException("after-notice");
+            });
+            Button(b, 40, "fetch-throw", async () =>
+            {
+                await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
+                throw new InvalidOperationException("after-fetch");
+            });
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Func<Task> onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Action onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+    }
+
+    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+        DispatchProbe(string label, bool autoCompleteFetch = false)
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        NativeRenderer renderer = StartSession(strict: false, frames);
+        renderer.Mount<ShellCallProbe>();
+        int handlerId = HandlerFor(frames, "click", label);
+        FakeShellHost.AutoCompleteHostCall = true;
+        FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
+        int rc = DispatchBounded(handlerId, """{"name":"click"}""");
+        return (rc, frames, pending, previous);
+    }
+
     /// <summary>"click" awaits a held geolocation check, then throws; "change" does the
     /// same with a payload; "sync" throws before any await.</summary>
     private sealed class LateFaultNoticeProbe : ComponentBase

@@ -12,6 +12,12 @@ internal enum DispatchOutcomeKind
     /// yielded. Export rc 2.</summary>
     Faulted,
 
+    /// <summary>The synchronous part faulted AFTER the handler began a host call or a fetch
+    /// (16.7, #455). Export rc 0; the fault goes to the shell as a FaultNotice, exactly as
+    /// a fault after a yield does, so the outcome no longer depends on whether the shell
+    /// answered inside begin.</summary>
+    FaultedAfterShellCall,
+
     /// <summary>The handler yielded on an await and is still running. Export rc 0; the
     /// pending Task goes to fault delivery.</summary>
     Pending,

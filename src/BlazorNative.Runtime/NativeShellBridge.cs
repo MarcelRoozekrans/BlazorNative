@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using BlazorNative.Core;
+using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
 
@@ -462,6 +463,11 @@ public sealed class NativeShellBridge : IMobileBridge
         var tcs = new TaskCompletionSource<HostCallResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         s_pendingHostCalls[id] = tcs;
+
+        // 16.7 (#455): a host call the HANDLER began marks its dispatch, so a fault after it is
+        // a FaultNotice, never rc 2. A notice .NET sends itself is not such a call.
+        if (op is not (HostCallOp.FaultNotice or HostCallOp.BackState or HostCallOp.BackUnhandled))
+            NativeRenderer.NoteShellCallBegun();
 
         try
         {
