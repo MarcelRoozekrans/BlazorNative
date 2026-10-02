@@ -98,8 +98,10 @@ dependencies {
     // (added 1.5.0) entirely, so MainActivity's `windowInsets.getInsets(…Type.systemBars()
     // or …Type.displayCutout())` fails to resolve against the transitive version. An
     // explicit `implementation` wins Gradle's version resolution over a lower transitive
-    // request, the same reason jna-platform's jna exclusion exists above. 1.13.1 is the
-    // latest stable release compatible with this project's compileSdk 34.
+    // request, the same reason jna-platform's jna exclusion exists above. 1.19.1's AAR
+    // metadata requires compileSdk 37 and AGP 9.1.0 or later. That is the highest floor
+    // of the androidx pins, so it is what sets compileSdk below; targetSdk, the runtime
+    // behaviour, is unaffected.
     implementation("androidx.core:core:1.19.1")
 
     // Phase 16.2 (#346): androidx.activity, pinned EXPLICITLY. MainActivity's back is an
@@ -108,8 +110,8 @@ dependencies {
     // 1.1.0, which predates the dispatcher's platform predictive-back integration (added
     // 1.6.0): on API 33+ with enableOnBackInvokedCallback it would not register an
     // OnBackInvokedCallback at all. 1.13.0's AAR metadata requires compileSdk 36, which
-    // is what sets compileSdk below; targetSdk, the runtime behaviour, is unaffected. It
-    // depends on androidx.core 1.18.0, which Gradle resolves over the lower core pin above.
+    // the core pin above already exceeds. Its own androidx.core requirement, 1.18.0, is
+    // met by the 1.19.1 pin above.
     implementation("androidx.activity:activity:1.13.0")
 
     // Kotlin stdlib
@@ -146,7 +148,7 @@ dependencies {
 
 android {
     namespace = "io.blazornative.shell"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.blazornative.shell"

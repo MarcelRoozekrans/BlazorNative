@@ -80,8 +80,8 @@ dependencies {
     // transitively, but only at 1.3.2 — which predates WindowInsetsCompat.Type (added
     // 1.5.0) entirely, so MainActivity's safe-area listener fails to resolve against
     // the transitive version. An explicit `implementation` wins Gradle's version
-    // resolution over a lower transitive request. 1.13.1 is the latest stable release
-    // compatible with this project's compileSdk 34.
+    // resolution over a lower transitive request. 1.19.1 requires compileSdk 37 and
+    // AGP 9.1.0 or later. It must stay pinned to the same version the reference shell uses.
     implementation("androidx.core:core:1.19.1")
 
     // androidx.activity, pinned EXPLICITLY (Phase 16.2). The shell's back is an AndroidX
@@ -99,7 +99,7 @@ android {
     // identity on the device) are BOTH yours — and neither has to match a source
     // package, which is why the shell's Kotlin can stay in io.blazornative.shell.
     namespace = "com.example.starterapp"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.starterapp"
