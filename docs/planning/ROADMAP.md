@@ -3750,12 +3750,13 @@ on the handler's queue, though never the render thread.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 16.7: Make the rc contract true (#455) [status: pending]
+#### Phase 16.7: Make the rc contract true (#455) [status: active]
 **Goal:** A fault after the first await reaches the shell as a FaultNotice and never as an rc,
 including when the awaited host call completed inside `hostCallBegin`. The owner chose on
 2026-10-01 to change the code, not the words. The rc change on that path is called out in the
 changelog. Pin the inline-completion path, mutation-proven, and pin the "verbatim" claim that the
 `Exports.cs` and C-header copies of the contract agree.
+**Design:** [`docs/superpowers/specs/2026-10-02-phase-16.7-design.md`](../superpowers/specs/2026-10-02-phase-16.7-design.md)
 **Surface:** Backend
 **HelpWanted:** no
 
