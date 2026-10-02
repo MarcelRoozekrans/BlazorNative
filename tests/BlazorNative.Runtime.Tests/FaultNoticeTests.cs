@@ -462,11 +462,18 @@ public sealed class FaultNoticeTests
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice reached the shell.");
             int dispatchThread = s_lastDispatchThread;
             int noticeThread = FakeShellHost.HostCallBeginThread(Assert.Single(Notices()).RequestId);
+            int renderThread = HostSession.EnsureSession().RenderThreadId;
             Assert.True(dispatchThread > 0 && noticeThread > 0,
                 $"anchor: a thread was not recorded: dispatch {dispatchThread}, notice {noticeThread}.");
             Assert.True(noticeThread != dispatchThread,
                 $"the FaultNotice was begun on thread {noticeThread}, the thread that called DispatchEventCore: "
                 + "the shell was re-entered from its own dispatch lane.");
+            // The notice must also be off the render thread: a notice sent synchronously from the
+            // classification, which runs on the render thread, is not on the dispatch thread
+            // either, so the check above alone would pass it.
+            Assert.True(renderThread > 0 && noticeThread != renderThread,
+                $"the FaultNotice was begun on thread {noticeThread}, the render thread {renderThread}: "
+                + "it was sent synchronously from the classification instead of from the pool.");
         }
         finally { TearDown(pending, previous); }
     }
@@ -551,9 +558,12 @@ public sealed class FaultNoticeTests
         // device back tests drive this probe; this fact is the bounded .NET pin. Under such a
         // regression it reds within its budget, and its finally abandons the deadlocked session
         // through HostSession.AbandonForTests instead of disposing it, so the next fact gets a
-        // fresh session and the rest of the run completes. The deadlocked render thread and
-        // the dispatch worker are background threads, left blocked until the test process
-        // exits. The 16.7 record's M7 row measured this with the CI test command.
+        // fresh session and the rest of the run completes. Only the deadlocked render thread
+        // stays blocked, a background thread left until the test process exits. The dispatch
+        // worker is released: AbandonForTests shuts the dispatcher down with a zero join
+        // budget, the join fails, and CancelPending cancels the post the worker waits on, so
+        // DispatchEventCore takes its catch and returns rc 2. The 16.7 record's M7 row
+        // measured this with the CI test command.
         var frames = new List<RenderFrame>();
         int rc = -1;
         bool started = false;
@@ -620,7 +630,8 @@ public sealed class FaultNoticeTests
             // A released handler, or one never dispatched, lets the session go normally. A
             // deadlocked one would hang ResetForTests, whose dispose waits on the blocked render
             // thread with no bound, and with it every later fact. So it is abandoned instead:
-            // detached without a dispose, its threads left blocked. The fact has already failed.
+            // detached without a dispose, its render thread left blocked while the cancelled
+            // post releases the dispatch worker with rc 2. The fact has already failed.
             if (!started || returned.IsSet)
                 HostSession.ResetForTests();
             else

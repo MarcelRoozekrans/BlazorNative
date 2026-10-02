@@ -385,9 +385,10 @@ internal static unsafe class HostSession
     /// a real deadlock the next test's reset would hang the whole run. This detaches the
     /// session under s_lock, so the next EnsureSession builds a fresh one; closes the frame
     /// gate, bounded as in <see cref="Shutdown"/>; and closes the render thread's queue
-    /// without waiting, cancelling what is queued. The blocked render thread is a background
-    /// thread and is left blocked until the test process exits. The production ABI never
-    /// calls this.</summary>
+    /// without waiting, cancelling every pending post, including the one in flight. The
+    /// blocked render thread is a background thread and is left blocked until the test process
+    /// exits; a dispatch worker waiting on a cancelled post is released and returns rc 2. The
+    /// production ABI never calls this.</summary>
     internal static void AbandonForTests()
     {
         (NativeRenderer? renderer, FrameGate? gate) = Detach();
