@@ -3728,7 +3728,7 @@ on the handler's queue, though never the render thread.
 **Audit:** [`docs/plans/2026-10-01-milestone-16-audit.md`](../plans/2026-10-01-milestone-16-audit.md)
 **Completed:** 2026-10-01 · [PR #456](https://github.com/MarcelRoozekrans/BlazorNative/pull/456), verdict **FAIL**. The audit phase is complete; the milestone is not, and its gap phases follow.
 
-#### Phase 16.6: Prove the unreddened pins [status: pending]
+#### Phase 16.6: Prove the unreddened pins [status: complete]
 **Goal:** Close the 16.5 audit's NOT MET item, the pin standard:
 - run and record a mutation that turns each of the **16 pins never seen red** red:
   - XCTest: `BnFaultNoticeTests` ×4, `BnDispatchLaneTests` ×1, `BnBackOffMainTests` ×6;
@@ -3745,6 +3745,8 @@ on the handler's queue, though never the render thread.
   again).
 **Design:** [`docs/superpowers/specs/2026-10-01-phase-16.6-design.md`](../superpowers/specs/2026-10-01-phase-16.6-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-01-phase-16.6-prove-pins.md`](../superpowers/plans/2026-10-01-phase-16.6-prove-pins.md)
+**Record:** [`docs/plans/2026-10-01-phase-16.6-record.md`](../plans/2026-10-01-phase-16.6-record.md)
+**Completed:** 2026-10-02 · [PR #459](https://github.com/MarcelRoozekrans/BlazorNative/pull/459). The population is 38 distinct pins, 39 list entries. Every pin has a recorded red on current code, and each partial is named. About 25 pin defects found by mutation were fixed in test code, each green before and red after. Production changed only in `BnLog.swift`, a lock-guarded test hook. .NET 1295, JVM 191, iOS 288, Android 233. #458 filed. The status went straight from `pending` to `complete`, because it was never set `active` when work began.
 **Surface:** Mixed
 **HelpWanted:** no
 
