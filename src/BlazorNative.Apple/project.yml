@@ -79,7 +79,7 @@ options:
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git
-    exactVersion: 8.12.0
+    exactVersion: 8.13.0
 
 settings:
   base:
