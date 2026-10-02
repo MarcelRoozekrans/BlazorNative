@@ -584,6 +584,25 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AFetchTheShellRefusesToBegin_FaultsTheHandlerWithRc2_AndSendsNoNotice()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("refused-fetch", fetchBeginReturnCode: -1);
+        try
+        {
+            // FetchBeginFn records the url before it checks its return code, so this proves the
+            // begin was attempted, and refused.
+            Assert.True(FakeShellHost.LastFetchUrl == "https://refused.test/",
+                $"anchor: the fetch begin was never attempted, the last fetch url was '{FakeShellHost.LastFetchUrl}', "
+                + "so this fact tests nothing.");
+            Assert.True(rc == 2, $"rc was {rc}: a fetch begin the shell refused throws into the handler before any shell "
+                + "call is begun, so that fault must stay the dispatch's rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void AFaultAfterBeginningAHostCall_WithoutAwaitingIt_IsAFaultNotice_AndRc0()
     {
         var (rc, _, pending, previous) = DispatchProbe("begin-then-throw");
@@ -824,6 +843,10 @@ public sealed class FaultNoticeTests
                 NativeShellBridge.SendBackUnhandled();
                 throw new InvalidOperationException("after-back-unhandled");
             });
+            Button(b, 110, "refused-fetch", async () =>
+            {
+                await Bridge.FetchAsync(new BridgeHttpRequest("https://refused.test/"));
+            });
             Button(b, 40, "fetch-throw", async () =>
             {
                 await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
@@ -849,7 +872,8 @@ public sealed class FaultNoticeTests
     }
 
     private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0)
+        DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
+            int fetchBeginReturnCode = 0)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -863,6 +887,7 @@ public sealed class FaultNoticeTests
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
         FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
+        FakeShellHost.FetchBeginReturnCode = fetchBeginReturnCode;
         int rc = DispatchBounded(handlerId, """{"name":"click"}""");
         return (rc, frames, pending, previous);
     }
