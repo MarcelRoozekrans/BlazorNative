@@ -429,6 +429,128 @@ public sealed class FaultNoticeTests
         finally { TearDown(pending, previous); }
     }
 
+    // ── 16.7 regression guards: no scheduling change after begin ──
+    //
+    // 16.7 classifies a fault after a begun shell call and changes no scheduling. The first
+    // 16.7 design added a yield after begin, and that broke exactly the two things below. Each
+    // guard passes today and goes red if a later change puts a yield back after begin.
+
+    [Fact]
+    public void AComponentAwaitingAnInlineAnsweredHostCall_InOnInitializedAsync_MountsSynchronously()
+    {
+        // Guards against any future scheduling change after begin. A page whose
+        // OnInitializedAsync awaits a host call the shell answers inside begin must still render
+        // synchronously, because Mount<T> refuses a first render that is not complete. The first
+        // 16.7 design yielded after begin and broke exactly this mount.
+        var frames = new List<RenderFrame>();
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            Assert.True(FakeShellHost.AutoCompleteHostCall, "the fake must answer host calls inside begin.");
+
+            int componentId = renderer.Mount<InitAwaitMountProbe>(); // 1: Mount does not throw
+
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1, // 2: the counter anchor
+                $"anchor: the fake must answer the page's geolocation call INSIDE hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(componentId >= 0, $"Mount returned {componentId}.");
+
+            // 3: the mount frame, the first frame, already carries the continuation's text.
+            RenderFrame first;
+            lock (frames)
+            {
+                Assert.True(frames.Count > 0, "Mount returned but no frame was delivered.");
+                first = frames[0];
+            }
+            Assert.True(first.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text.StartsWith("init:", StringComparison.Ordinal)),
+                "the first frame lacks the text set after the awaited host call: the first render was not synchronous.");
+        }
+        finally
+        {
+            HostSession.ResetForTests();
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void TheBackHoldProbe_HoldsTheRenderThread_AndTheShellsAnswerReleasesIt()
+    {
+        // Guards that blocking the render thread on an asynchronously answered host call still
+        // releases when the shell answers. Any captured-context yield after begin posts the
+        // call's continuation to the render thread, which is blocked waiting for it, and
+        // deadlocks. The first 16.7 design did exactly that. The JVM BackNoticeTest and both
+        // device back tests drive this probe; this fact is the bounded .NET pin, so a
+        // regression reds here instead of hanging there.
+        var frames = new List<RenderFrame>();
+        int rc = -1;
+        using var returned = new ManualResetEventSlim(false);
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            FakeShellHost.AutoCompleteHostCall = false; // the shell holds the capture
+            renderer.Mount<BlazorNative.SampleApp.BackHoldProbe>();
+            int hold = HandlerFor(frames, "click");
+
+            var worker = new Thread(() =>
+            {
+                rc = Exports.DispatchEventCore((ulong)hold, """{"name":"click"}""");
+                returned.Set();
+            })
+            { IsBackground = true, Name = "back-hold-probe" };
+            worker.Start();
+
+            // Anchor: the capture really began and the handler really is held on it.
+            Assert.True(WaitUntil(() => FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Camera), Budget),
+                "the Hold handler never began its camera call.");
+            Assert.False(returned.Wait(TimeSpan.FromMilliseconds(200)),
+                "the Hold dispatch returned while its camera call was still held: the probe no longer holds the render thread.");
+
+            long capture = FakeShellHost.HostCalls().Single(c => c.Op == (int)HostCallOp.Camera).RequestId;
+            Assert.Equal(0, NativeShellBridge.CompleteHostCall(capture, 1, null)); // 1 = Cancelled
+
+            Assert.True(returned.Wait(Budget),
+                $"the Hold dispatch did not return within {Budget.TotalSeconds:0}s of the shell answering its camera "
+                + "call. The render thread is blocked on a call whose continuation was posted back to the render "
+                + "thread itself: something now yields after begin.");
+            Assert.Equal(0, rc);
+            Assert.True(WaitUntil(() =>
+            {
+                lock (frames)
+                    return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>())
+                        .Any(p => p.Text == BlazorNative.SampleApp.BackHoldProbe.ReleasedPrefix + "Cancelled");
+            }, Budget), "the released Hold handler never rendered its echo.");
+        }
+        finally
+        {
+            // Only a released handler lets the session go; a deadlocked one is left to the
+            // background thread, and the fact has already failed.
+            if (returned.IsSet)
+            {
+                HostSession.ResetForTests();
+                NativeShellBridge.ResetForTests();
+            }
+        }
+    }
+
+    private sealed class InitAwaitMountProbe : ComponentBase
+    {
+        private string _status = "pending";
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override async Task OnInitializedAsync()
+        {
+            var s = await Bridge.CheckGeolocationPermissionAsync();
+            _status = "init:" + s;
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "text");
+            b.AddContent(1, _status);
+            b.CloseElement();
+        }
+    }
+
     [Fact]
     public void AHostCallTheShellRefusesToBegin_FaultsTheHandlerWithRc2_AndSendsNoNotice()
     {
