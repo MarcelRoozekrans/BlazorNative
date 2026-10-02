@@ -138,7 +138,7 @@ final class BnRuntime {
     ///
     /// THREAD: called on ANY thread, never guaranteed main — the dispatch lane, the frame
     /// callback's thread, and since Phase 16.1 a .NET thread-pool thread: a handler fault
-    /// after its first await arrives as a FaultNotice that AppleShellBridge hands here on
+    /// after it began a host call or a fetch arrives as a FaultNotice that AppleShellBridge hands here on
     /// whatever .NET thread sent it. An override that touches UI must hop to
     /// `DispatchQueue.main` first.
     var onError: ((String, Error) -> Void) = { msg, err in

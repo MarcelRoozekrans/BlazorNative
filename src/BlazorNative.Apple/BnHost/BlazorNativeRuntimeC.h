@@ -130,14 +130,19 @@ void blazornative_shutdown(void);
 // handler runs on the runtime's render thread, and this waits only for its synchronous
 // part — never for an await on the host (#345).
 //
-// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-// first await (the handler may still be running); 2 = it faulted before yielding. A fault
-// after the first await is delivered later through the FaultNotice host-call op, never as
-// an rc. Frames from the synchronous part are delivered before this returns; frames from a
+// BEGIN rc-contract
+// rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault, or it faulted only
+// after it began a host call or a fetch (it may still be running); 2 = it faulted before
+// beginning one. A fault after the handler has begun a host call or a fetch arrives as a
+// FaultNotice host-call op, never as an rc, whether the shell answers inside `hostCallBegin` or
+// later. Frames from the synchronous part are delivered before the export returns; frames from a
 // continuation are delivered later, from the render thread.
+// END rc-contract
 //
-// Return: 0 dispatched (incl. a still-running handler and a stale handler) / 1 no
-// session / 2 faulted before yielding / 3 malformed args or handlerId out of int range.
+// Return: 0 dispatched, and the handler did not fault or faulted only after it began a host
+// call or a fetch (incl. a still-running handler and a stale handler) / 1 no session / 2 the
+// synchronous part faulted before the handler began a host call or a fetch / 3 malformed args
+// or handlerId out of int range.
 int32_t blazornative_dispatch_event(uint64_t handlerId, const char* argsJsonUtf8);
 
 // The host-implemented shell callbacks (BridgeProtocolNative.cs
