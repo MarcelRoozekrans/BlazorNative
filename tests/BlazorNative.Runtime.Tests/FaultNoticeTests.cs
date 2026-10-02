@@ -666,6 +666,31 @@ public sealed class FaultNoticeTests
         finally { TearDown(pending, previous); }
     }
 
+    [Theory]
+    [InlineData("back-state-then-throw")]
+    [InlineData("back-unhandled-then-throw")]
+    public void ABackNoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2(string label)
+    {
+        // The other two notices .NET sends itself. Each is its own arm of the exclusion in
+        // InvokeHostCallAsync, so each needs a probe that enters it: dropping either arm alone
+        // left every other fact green.
+        int op = label == "back-state-then-throw" ? (int)HostCallOp.BackState : (int)HostCallOp.BackUnhandled;
+        var (rc, _, pending, previous) = DispatchProbe(label);
+        try
+        {
+            // Anchor: the probe's notice really was begun inside the synchronous part.
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == op),
+                $"anchor: the probe's notice, op {op}, was not begun; ops seen: "
+                + $"[{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}]");
+            Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends, op {op}, is not a shell call the handler began, "
+                + "so a fault after it must stay rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every FaultNotice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
     [Fact]
     public void AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
@@ -785,6 +810,16 @@ public sealed class FaultNoticeTests
                     return Bridge.CheckGeolocationPermissionAsync().AsTask();
                 }).Wait();
                 throw new InvalidOperationException("after-pool-begin");
+            });
+            Button(b, 90, "back-state-then-throw", () =>
+            {
+                NativeShellBridge.SendBackState(true);
+                throw new InvalidOperationException("after-back-state");
+            });
+            Button(b, 100, "back-unhandled-then-throw", () =>
+            {
+                NativeShellBridge.SendBackUnhandled();
+                throw new InvalidOperationException("after-back-unhandled");
             });
             Button(b, 40, "fetch-throw", async () =>
             {
