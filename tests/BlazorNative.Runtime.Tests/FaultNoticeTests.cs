@@ -379,7 +379,11 @@ public sealed class FaultNoticeTests
     //     mark is thread-bound to the synchronous part, so that call is not marked, and a
     //     synchronous fault after it stays rc 2;
     //   - a handler cancelled in its synchronous part. It stays rc 2, even after a begun
-    //     call, because a cancellation is not a fault.
+    //     call, because a cancellation is not a fault;
+    //   - a host call or fetch begun by a CHILD component during the handler's re-render.
+    //     The re-render is part of the handler's synchronous part, so that call marks the
+    //     dispatch too, and a later render fault in the same synchronous part is a
+    //     FaultNotice with rc 0, not rc 2.
 
     [Fact]
     public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
@@ -427,7 +431,9 @@ public sealed class FaultNoticeTests
             Assert.True(rc == 2, $"rc was {rc}: a handler that began no shell call and faulted in its synchronous "
                 + "part must still return rc 2.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
-            Thread.Sleep(200); // a wrongly sent notice is asynchronous: give it time to arrive
+            // No wait is needed. rc 2 and an empty pending list exclude every notice source:
+            // the FaultedAfterShellCall arm returns rc 0, and DeliverLateFault attaches only
+            // to a Pending dispatch. So the check below is immediate by construction.
             Assert.Empty(Notices());
         }
         finally { TearDown(pending, previous); }
@@ -439,8 +445,45 @@ public sealed class FaultNoticeTests
         var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
         try
         {
+            // Rule 2 anchor: the probe's own notice really was begun inside the synchronous
+            // part, so the rc below is about a dispatch that went through the notice path.
+            var messages = Notices()
+                .Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)["message"])
+                .ToList();
+            Assert.True(messages.Contains("notice"),
+                $"anchor: the probe's FaultNotice was not begun; notices seen: [{string.Join(", ", messages)}]");
             Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends is not a shell call the handler began, so a "
                 + "fault after it must stay rc 2.");
+            Assert.DoesNotContain("after-notice", messages);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void DispatchUiEventAsync_FaultsWithAFaultAfterABegunHostCall()
+    {
+        // DispatchUiEventAsync is the direct caller's path, BnTestHost's and the Renderer
+        // tests'. It has no FaultNotice, so the classification must not swallow the fault:
+        // its Task faults with it, exactly as for a plain synchronous fault.
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            renderer.Mount<ShellCallProbe>();
+            int handlerId = HandlerFor(frames, "click", "begin-then-throw");
+
+            Task dispatch = renderer.DispatchUiEventAsync(new NativeUiEvent(0, handlerId, "click", null));
+
+            Assert.True(WaitUntil(() => dispatch.IsCompleted, Budget), "DispatchUiEventAsync did not complete");
+            // Anchor: the bridge really began the geolocation call, so the dispatch was marked.
+            Assert.Contains(FakeShellHost.HostCalls(), c => c.Op == (int)HostCallOp.Geolocation);
+            Assert.True(dispatch.IsFaulted,
+                $"DispatchUiEventAsync ended {dispatch.Status}: a fault after a begun host call was swallowed "
+                + "on the direct path, which has no FaultNotice to carry it.");
+            var fault = Assert.IsType<InvalidOperationException>(dispatch.Exception!.InnerException);
+            Assert.Equal("after-begin", fault.Message);
         }
         finally { TearDown(pending, previous); }
     }

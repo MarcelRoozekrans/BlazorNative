@@ -24,7 +24,8 @@ internal enum DispatchOutcomeKind
 }
 
 /// <summary>The result of <see cref="NativeRenderer.DispatchSyncPart"/>:
-/// <paramref name="Fault"/> is set for <see cref="DispatchOutcomeKind.Faulted"/>, and
+/// <paramref name="Fault"/> is set for <see cref="DispatchOutcomeKind.Faulted"/> and
+/// <see cref="DispatchOutcomeKind.FaultedAfterShellCall"/>, and
 /// <paramref name="Pending"/>, the handler's still-running Task, for
 /// <see cref="DispatchOutcomeKind.Pending"/>.</summary>
 internal readonly record struct DispatchOutcome(DispatchOutcomeKind Kind, Exception? Fault, Task? Pending);

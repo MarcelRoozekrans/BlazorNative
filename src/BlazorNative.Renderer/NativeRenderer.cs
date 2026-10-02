@@ -1926,14 +1926,17 @@ public sealed class NativeRenderer : BlazorRenderer
     /// callers such as the test host. Marshalled onto the render thread (Phase 16.1)
     /// and run through <see cref="DispatchSyncPart"/>. The returned task completes when
     /// the WHOLE handler has completed, continuation included. It faults with the
-    /// fault the dispatch's window captured or, for a handler still running after its
+    /// fault the dispatch's window captured, including one classified as
+    /// <see cref="DispatchOutcomeKind.FaultedAfterShellCall"/>, or, for a handler still running after its
     /// synchronous part, with the fault its Task ends in. The export does not use
     /// this: it waits only for the synchronous part.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
             DispatchOutcome outcome = DispatchSyncPart(e);
-            if (outcome.Kind == DispatchOutcomeKind.Faulted)
+            // A fault after a begun shell call is still the dispatch's fault here: this path
+            // has no FaultNotice to carry it (16.7).
+            if (outcome.Kind is DispatchOutcomeKind.Faulted or DispatchOutcomeKind.FaultedAfterShellCall)
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(outcome.Fault!).Throw();
             if (outcome.Kind == DispatchOutcomeKind.Pending)
                 await outcome.Pending!;
