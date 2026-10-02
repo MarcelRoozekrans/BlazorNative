@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.1...v0.17.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency androidx.activity:activity to v1.13.0 ([#433](https://github.com/MarcelRoozekrans/BlazorNative/issues/433)) ([af8297b](https://github.com/MarcelRoozekrans/BlazorNative/commit/af8297baed38fb73253cc23e5709864c9e28f3bf))
+* **deps:** update dependency androidx.core:core to v1.19.1 ([#353](https://github.com/MarcelRoozekrans/BlazorNative/issues/353)) ([ff813f5](https://github.com/MarcelRoozekrans/BlazorNative/commit/ff813f5793c0a36a19072c3aa8098fbcfcfc2d1e))
+
 ## [0.17.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.0...v0.17.1) (2026-10-02)
 
 
