@@ -55,7 +55,7 @@ class BiometricsSecureStorageTest {
     private class Session(val runtime: BlazorNativeRuntime, val frames: MutableList<RenderFrame>, val host: SecureHost)
 
     private fun boot(status: Int, payload: Map<String, String>? = null): Session {
-        val frames = mutableListOf<RenderFrame>()
+        val frames = java.util.Collections.synchronizedList(mutableListOf<RenderFrame>())
         val host = SecureHost(status, payload)
         val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
         runtime.start(componentName = "BnSecureDemo", platformOs = "test-host", bridge = host)
@@ -107,7 +107,7 @@ class BiometricsSecureStorageTest {
             s.host.calls.single().second.contains("\"action\":\"authenticate\""),
             "the args JSON must carry action:authenticate; got ${s.host.calls.single().second}")
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Authenticated")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Authenticated"), echo, "status:Authenticated")
         s.runtime.retire()
     }
 
@@ -129,7 +129,7 @@ class BiometricsSecureStorageTest {
             "the args JSON must carry action:getWithAuth; got ${s.host.calls.single().second}")
 
         // The Ok status + {"value":"hunter2"} payload round-trips into the echo AS DATA.
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "value:hunter2")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "value:hunter2"), echo, "value:hunter2")
         s.runtime.retire()
     }
 
@@ -148,7 +148,7 @@ class BiometricsSecureStorageTest {
         val before = s.frames.size
         assertEquals(0, s.runtime.dispatchEventBlocking(handler, "click"))
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:AuthFailed")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:AuthFailed"), echo, "status:AuthFailed")
         s.runtime.retire()
     }
 
@@ -169,7 +169,7 @@ class BiometricsSecureStorageTest {
         assertTrue(args.contains("\"action\":\"set\""), "must carry action:set; got $args")
         assertTrue(args.contains("\"auth\":\"1\""), "the demo sets requireAuth:true → auth:1; got $args")
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Ok")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Ok"), echo, "status:Ok")
         s.runtime.retire()
     }
 

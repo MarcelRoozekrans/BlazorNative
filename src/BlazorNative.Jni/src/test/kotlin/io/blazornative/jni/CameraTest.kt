@@ -54,7 +54,7 @@ class CameraTest {
     private class Session(val runtime: BlazorNativeRuntime, val frames: MutableList<RenderFrame>, val host: CameraHost)
 
     private fun boot(status: Int, payload: Map<String, String>? = null): Session {
-        val frames = mutableListOf<RenderFrame>()
+        val frames = java.util.Collections.synchronizedList(mutableListOf<RenderFrame>())
         val host = CameraHost(status, payload)
         val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
         runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
@@ -101,7 +101,7 @@ class CameraTest {
 
         // The Captured status + the path/dims payload round-trips into the echo AS DATA — the
         // FINAL dims + size, proof the file the path names has real bytes.
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "captured:240x320:4096")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "captured:240x320:4096"), echo, "captured:240x320:4096")
         s.runtime.retire()
     }
 
@@ -120,7 +120,7 @@ class CameraTest {
         val before = s.frames.size
         assertEquals(0, s.runtime.dispatchEventBlocking(handler, "click"))
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Cancelled")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Cancelled"), echo, "status:Cancelled")
         s.runtime.retire()
     }
 
@@ -141,7 +141,7 @@ class CameraTest {
             s.host.calls.single().second.contains("\"action\":\"check\""),
             "the args JSON must carry action:check; got ${s.host.calls.single().second}")
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Unavailable")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Unavailable"), echo, "status:Unavailable")
         s.runtime.retire()
     }
 

@@ -54,7 +54,7 @@ class NotificationsTest {
     private class Session(val runtime: BlazorNativeRuntime, val frames: MutableList<RenderFrame>, val host: NotifHost)
 
     private fun boot(componentName: String, status: Int): Session {
-        val frames = mutableListOf<RenderFrame>()
+        val frames = java.util.Collections.synchronizedList(mutableListOf<RenderFrame>())
         val host = NotifHost(status)
         val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) })
         runtime.start(componentName = componentName, platformOs = "test-host", bridge = host)
@@ -100,7 +100,7 @@ class NotificationsTest {
             "the args JSON must carry action:show; got ${s.host.calls.single().second}")
 
         // The returned status re-renders on the echo node AS DATA.
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Granted")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Granted"), echo, "status:Granted")
         s.runtime.retire()
     }
 
@@ -117,7 +117,7 @@ class NotificationsTest {
         val before = s.frames.size
         assertEquals(0, s.runtime.dispatchEventBlocking(showHandler, "click"))
 
-        replaceTextOn(s.frames.subList(before, s.frames.size).toList(), echo, "status:Denied")
+        replaceTextOn(awaitReplaceText(s.frames, before, echo, "status:Denied"), echo, "status:Denied")
         s.runtime.retire()
     }
 
