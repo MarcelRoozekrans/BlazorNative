@@ -321,6 +321,8 @@ public sealed class NativeShellBridge : IMobileBridge
             TaskCreationOptions.RunContinuationsAsynchronously);
         s_pendingFetches[id] = tcs;
 
+        // 16.7 (#455): a fetch the handler began marks its dispatch, as a host call does.
+        NativeRenderer.NoteShellCallBegun();
         try
         {
             BeginFetch(id, in request);

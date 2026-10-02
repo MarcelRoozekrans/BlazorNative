@@ -409,6 +409,25 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AFaultAfterAnInlineAnsweredFetch_IsAFaultNotice_AndRc0()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("fetch-throw", autoCompleteFetch: true);
+        try
+        {
+            Assert.True(FakeShellHost.FetchesCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the fetch inside fetchBegin, but it answered "
+                + $"{FakeShellHost.FetchesCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(rc == 0, $"rc was {rc}: a fault after the handler began a fetch the shell answered inside "
+                + "begin came back as the dispatch's rc.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for a fault after a begun fetch.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("after-fetch", args["message"]);
+            Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void AFaultAfterBeginningAHostCall_WithoutAwaitingIt_IsAFaultNotice_AndRc0()
     {
         var (rc, _, pending, previous) = DispatchProbe("begin-then-throw");
