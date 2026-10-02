@@ -450,6 +450,27 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AFaultAfterAnInlineCompletedFetch_IsAFaultNotice_NotRc2()
+    {
+        var (rc, _, pending, previous) = DispatchInline("fetch-throw", autoCompleteFetch: true);
+        try
+        {
+            Assert.True(FakeShellHost.FetchesCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the fetch INSIDE fetchBegin, but it answered "
+                + $"{FakeShellHost.FetchesCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(rc == 0,
+                $"rc was {rc}: a fault after an await on a fetch the shell completed inside begin came back as "
+                + "the dispatch's rc. The fetch await did not yield.");
+            AssertStillRunningAtTheReturn(pending);
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice reached the shell for the fault after the inline-completed fetch.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("inline-fetch", args["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void AFaultAfterAwaitingACompletedTask_IsStillRc2_Control()
     {
         // The contract's exception, pinned: the app's own completed task does not yield.

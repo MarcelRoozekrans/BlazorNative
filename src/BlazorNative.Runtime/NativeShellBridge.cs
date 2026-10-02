@@ -330,6 +330,11 @@ public sealed class NativeShellBridge : IMobileBridge
             throw;
         }
 
+        // A fetch the shell answered inside begin must still yield (16.7, #455): the same
+        // reason as the host-call path. Pinned by FaultNoticeTests' inline-completion facts.
+        if (tcs.Task.IsCompleted)
+            await Task.Yield();
+
         // Registered AFTER FetchBegin: if the host completed synchronously the
         // id is already out of the table and cancellation is a no-op. On
         // cancel, whoever removes the id from the table wins — a completion
