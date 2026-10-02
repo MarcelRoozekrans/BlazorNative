@@ -377,7 +377,14 @@ public sealed class FaultNoticeTests
     // DOES NOT COVER:
     //   - a shell call the handler starts on another thread, such as inside Task.Run. The
     //     mark is thread-bound to the synchronous part, so that call is not marked, and a
-    //     synchronous fault after it stays rc 2;
+    //     synchronous fault after it stays rc 2. The contract does not promise this, but
+    //     AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2 pins it,
+    //     and with it the thread-bound choice: it is the fact the 16.7 record's M4 reds;
+    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline,
+    //     for example by completing a TaskCompletionSource that continuation awaits. Measured
+    //     on 2026-10-02: a call that continuation begins marks THIS dispatch, because the mark
+    //     is thread-bound, and its fault is captured in this dispatch's window. Not pinned:
+    //     whether that outcome is right is open, see the 16.7 record, M4;
     //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
     //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
     //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
@@ -660,6 +667,33 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
+    {
+        // The mark is thread-bound to the synchronous part, never the flowing AsyncLocal scope.
+        // A call begun inside Task.Run carries the flowing scope but runs on a pool thread, so
+        // it must not mark the dispatch, and the synchronous fault after it stays rc 2.
+        var (rc, _, pending, previous) = DispatchProbe("pool-begin-then-throw");
+        try
+        {
+            // Anchors: the call really was begun, answered inside begin, on a thread other than
+            // the handler's. Without them rc 2 would only show that no call was begun.
+            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
+                $"anchor: the begin was not attempted, the last host-call op was {FakeShellHost.LastHostCallOp}.");
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
+            Assert.True(ShellCallProbe.PoolBeginThread > 0 && ShellCallProbe.PoolBeginThread != ShellCallProbe.HandlerThread,
+                $"anchor: the call was begun on thread {ShellCallProbe.PoolBeginThread}, the handler ran on "
+                + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
+            Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
+                + "after it stays rc 2. rc 0 means the mark followed the flowing scope off the synchronous part's thread.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every notice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void DispatchUiEventAsync_FaultsWithAFaultAfterABegunHostCall()
     {
         // DispatchUiEventAsync is the direct caller's path, BnTestHost's and the Renderer
@@ -694,6 +728,10 @@ public sealed class FaultNoticeTests
         /// <summary>Set immediately before a cancellation probe throws: proves the handler body ran.
         /// DispatchProbe resets it.</summary>
         public static volatile bool ReachedThrow;
+
+        /// <summary>The threads pool-begin-then-throw ran its handler and its begin on.
+        /// DispatchProbe resets both.</summary>
+        public static volatile int HandlerThread, PoolBeginThread;
 
         [Inject] public IMobileBridge Bridge { get; set; } = default!;
 
@@ -737,6 +775,17 @@ public sealed class FaultNoticeTests
             {
                 await Bridge.CheckGeolocationPermissionAsync();
             });
+            Button(b, 80, "pool-begin-then-throw", () =>
+            {
+                HandlerThread = Environment.CurrentManagedThreadId;
+                // The fake answers inside begin, so this wait never blocks on the shell.
+                Task.Run(() =>
+                {
+                    PoolBeginThread = Environment.CurrentManagedThreadId;
+                    return Bridge.CheckGeolocationPermissionAsync().AsTask();
+                }).Wait();
+                throw new InvalidOperationException("after-pool-begin");
+            });
             Button(b, 40, "fetch-throw", async () =>
             {
                 await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
@@ -772,6 +821,7 @@ public sealed class FaultNoticeTests
         renderer.Mount<ShellCallProbe>();
         int handlerId = HandlerFor(frames, "click", label);
         ShellCallProbe.ReachedThrow = false;
+        ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
         FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
