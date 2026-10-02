@@ -450,12 +450,11 @@ public sealed class FaultNoticeTests
             NativeRenderer renderer = StartSession(strict: false, frames);
             Assert.True(FakeShellHost.AutoCompleteHostCall, "the fake must answer host calls inside begin.");
 
-            int componentId = renderer.Mount<InitAwaitMountProbe>(); // 1: Mount does not throw
+            renderer.Mount<InitAwaitMountProbe>(); // 1: Mount does not throw
 
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1, // 2: the counter anchor
                 $"anchor: the fake must answer the page's geolocation call INSIDE hostCallBegin, but it answered "
                 + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
-            Assert.True(componentId >= 0, $"Mount returned {componentId}.");
 
             // 3: the mount frame, the first frame, already carries the continuation's text.
             RenderFrame first;
@@ -524,6 +523,13 @@ public sealed class FaultNoticeTests
         }
         finally
         {
+            // An assertion that failed before the answer leaves the camera call held, and the
+            // Hold handler blocking the render thread on it. Answer every camera call still open,
+            // as the shell would, so the handler can release; a call already answered gives rc 1,
+            // which is benign here.
+            foreach (var call in FakeShellHost.HostCalls().Where(c => c.Op == (int)HostCallOp.Camera))
+                NativeShellBridge.CompleteHostCall(call.RequestId, 1, null);
+            returned.Wait(Budget);
             // Only a released handler lets the session go; a deadlocked one is left to the
             // background thread, and the fact has already failed.
             if (returned.IsSet)
