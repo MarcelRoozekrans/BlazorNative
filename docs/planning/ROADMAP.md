@@ -3757,6 +3757,7 @@ including when the awaited host call completed inside `hostCallBegin`. The owner
 changelog. Pin the inline-completion path, mutation-proven, and pin the "verbatim" claim that the
 `Exports.cs` and C-header copies of the contract agree.
 **Design:** [`docs/superpowers/specs/2026-10-02-phase-16.7-design.md`](../superpowers/specs/2026-10-02-phase-16.7-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-02-phase-16.7-rc-contract.md`](../superpowers/plans/2026-10-02-phase-16.7-rc-contract.md)
 **Surface:** Backend
 **HelpWanted:** no
 
