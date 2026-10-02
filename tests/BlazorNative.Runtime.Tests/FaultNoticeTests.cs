@@ -141,6 +141,13 @@ public sealed class FaultNoticeTests
         return rc;
     }
 
+    /// <summary>Every text a ReplaceTextPatch has set so far, in delivery order.</summary>
+    private static List<string> FrameTexts(List<RenderFrame> frames)
+    {
+        lock (frames)
+            return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Select(p => p.Text).ToList();
+    }
+
     private static List<(long RequestId, int Op, string? Args)> Notices()
         => FakeShellHost.HostCalls().Where(c => c.Op == FaultNoticeOp).ToList();
 
@@ -404,7 +411,7 @@ public sealed class FaultNoticeTests
     [Fact]
     public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
     {
-        var (rc, _, pending, previous) = DispatchProbe("host-throw");
+        var (rc, frames, pending, previous) = DispatchProbe("host-throw");
         try
         {
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
@@ -420,6 +427,15 @@ public sealed class FaultNoticeTests
             Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
             Assert.Equal("after-host", args["message"]);
             Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+
+            // The session survives the reclassified fault: the next dispatch, a handler that
+            // begins no shell call and completes, returns rc 0 and its frame arrives before the
+            // export returns, as a synchronous part's frames always do.
+            Assert.DoesNotContain(FrameTexts(frames), t => t.StartsWith("ok:", StringComparison.Ordinal));
+            int next = DispatchBounded(HandlerFor(frames, "click", "next-ok"), """{"name":"click"}""");
+            Assert.True(next == 0, $"rc was {next}: the dispatch after a reclassified fault did not complete normally.");
+            Assert.True(FrameTexts(frames).Contains("ok:1"),
+                "the dispatch after a reclassified fault returned, but its frame never arrived: the session did not survive.");
         }
         finally { TearDown(pending, previous); }
     }
