@@ -66,10 +66,8 @@ A page's first render must finish synchronously for the shell to mount it. Becau
 a host call or a fetch always yields, a page whose `OnInitializedAsync` awaits one cannot finish
 its first render in time, and the mount fails with "requires RenderRootComponentAsync to
 complete synchronously". This holds on both platforms, including when the shell answers the call
-inside `hostCallBegin` or `fetchBegin`. Before 0.18.0 such a page mounted on Android when the
-shell answered inside begin; on iOS it never did. Await the call in `OnAfterRenderAsync`
-instead, or start it in `OnInitialized` without awaiting it and render its result when it
-arrives.
+inside `hostCallBegin` or `fetchBegin`. Await the call in `OnAfterRenderAsync` instead, or
+start it in `OnInitialized` without awaiting it and render its result when it arrives.
 
 ## Re-rendering from another thread
 
