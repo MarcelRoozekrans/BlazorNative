@@ -378,11 +378,10 @@ public sealed class FaultNoticeTests
     //   - a shell call the handler starts on another thread, such as inside Task.Run. The
     //     mark is thread-bound to the synchronous part, so that call is not marked, and a
     //     synchronous fault after it stays rc 2;
-    //   - a handler cancelled in its synchronous part is rc 0 with nothing sent, after a begun
-    //     call or before one: Blazor's own error handling completes a cancelled handler Task
-    //     before DispatchSyncPart sees it, so a cancellation is never a fault here. Measured on
-    //     2026-10-02: with the cancelled-Task branch in DispatchSyncPart made to throw, the
-    //     cancel-only fact still returned rc 0, so that branch is not reached through Blazor;
+    //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
+    //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
+    //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
+    //     arm was not reached. Why is not established here; it rests on that measurement;
     //   - a host call or fetch begun by a CHILD component during the handler's re-render.
     //     The re-render is part of the handler's synchronous part, so that call marks the
     //     dispatch too, and a later render fault in the same synchronous part is a
@@ -589,6 +588,10 @@ public sealed class FaultNoticeTests
         var (rc, _, pending, previous) = DispatchProbe("begin-then-cancel");
         try
         {
+            Assert.True(ShellCallProbe.ReachedThrow, "anchor: the handler body never reached its throw, so rc 0 "
+                + "and no notice would prove nothing.");
+            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
+                $"anchor: the begin was not attempted, the last host-call op was {FakeShellHost.LastHostCallOp}.");
             Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
                 + "call must match a late cancellation: rc 0 and nothing sent.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
@@ -604,6 +607,9 @@ public sealed class FaultNoticeTests
         var (rc, _, pending, previous) = DispatchProbe("cancel-only");
         try
         {
+            Assert.True(ShellCallProbe.ReachedThrow, "anchor: the handler body never reached its throw, so rc 0 "
+                + "and no notice would prove nothing.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
             Assert.True(rc == 0, $"rc was {rc}: a cancelled handler is not a fault, so it is rc 0 and sends nothing.");
             Assert.Empty(Notices());
         }
@@ -679,6 +685,10 @@ public sealed class FaultNoticeTests
     /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
     private sealed class ShellCallProbe : ComponentBase
     {
+        /// <summary>Set immediately before a cancellation probe throws: proves the handler body ran.
+        /// DispatchProbe resets it.</summary>
+        public static volatile bool ReachedThrow;
+
         [Inject] public IMobileBridge Bridge { get; set; } = default!;
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -708,11 +718,13 @@ public sealed class FaultNoticeTests
             {
                 _ = Bridge.CheckGeolocationPermissionAsync();
                 await Task.CompletedTask;
+                ReachedThrow = true;
                 throw new OperationCanceledException();
             });
             Button(b, 70, "cancel-only", async () =>
             {
                 await Task.CompletedTask;
+                ReachedThrow = true;
                 throw new OperationCanceledException();
             });
             Button(b, 50, "refused-begin", async () =>
@@ -753,6 +765,7 @@ public sealed class FaultNoticeTests
         NativeRenderer renderer = StartSession(strict: false, frames);
         renderer.Mount<ShellCallProbe>();
         int handlerId = HandlerFor(frames, "click", label);
+        ShellCallProbe.ReachedThrow = false;
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
         FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
