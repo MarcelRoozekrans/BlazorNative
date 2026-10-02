@@ -60,8 +60,11 @@ import java.util.concurrent.atomic.AtomicReference
  * through `hasEnabledCallbacks()`, the dispatcher's own public answer.
  *
  * Every launch uses an explicit Intent with NO action. `ActivityScenario.launch(Class)` builds an
- * ACTION_MAIN + CATEGORY_LAUNCHER intent, and on API 31+ the system's default back moves such a
- * task root to the background rather than finishing it, so DESTROYED would never come.
+ * ACTION_MAIN + CATEGORY_LAUNCHER intent, and on API 31+ the system's default back may move such
+ * a task root to the background rather than finish it. That is a guard, not a measured need: in
+ * 16.6, row B3r, the root test launched with `launch(Class)` on the API 34 lane still reached
+ * DESTROYED. Why the system finished it there is not measured; the guard is not what makes the
+ * pin pass on that lane.
  *
  * THE SESSION IS PROCESS-GLOBAL. The .NET navigation history survives from test to test, and
  * since 16.2 every mount resends the current back state, so a fresh launch can start with back
@@ -374,6 +377,11 @@ class BackAndroidTest {
             firstMatch(root) { v -> v is Button && v.text.toString() == label }
         } as? Button
 
+    /** Neutral on purpose: the poll sees only the state, not what finished the activity. A back
+     * press that was not handled on the page is one cause; a crash or the system is another. */
+    private val destroyedWhilePolled =
+        "the activity was DESTROYED while the test still expected it on screen"
+
     private fun pollUntil(
         scenario: ActivityScenario<MainActivity>,
         deadlineMs: Long,
@@ -383,7 +391,16 @@ class BackAndroidTest {
         val deadline = System.currentTimeMillis() + deadlineMs
         while (System.currentTimeMillis() < deadline) {
             val ok = AtomicReference(false)
-            scenario.onActivity { act -> ok.set(predicate(act)) }
+            // An activity destroyed under a poll, whatever destroyed it, would otherwise surface
+            // as ActivityScenario's bare NullPointerException, which does not name the state.
+            // Only an NPE with the activity really destroyed is reworded; any other rethrows.
+            if (scenario.state == Lifecycle.State.DESTROYED) throw AssertionError(destroyedWhilePolled)
+            try {
+                scenario.onActivity { act -> ok.set(predicate(act)) }
+            } catch (e: NullPointerException) {
+                if (scenario.state != Lifecycle.State.DESTROYED) throw e
+                throw AssertionError(destroyedWhilePolled, e)
+            }
             if (ok.get()) return true
             Thread.sleep(sleepMs)
         }
