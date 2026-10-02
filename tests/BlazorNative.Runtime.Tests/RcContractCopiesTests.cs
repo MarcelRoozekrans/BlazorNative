@@ -10,8 +10,11 @@ namespace BlazorNative.Runtime.Tests;
 // sits between a BEGIN rc-contract and an END rc-contract line; the text between them
 // is compared after comment prefixes, code fences and whitespace are normalised.
 //
-// DOES NOT COVER: whether the contract is TRUE, which FaultNoticeTests' inline-completion
-// facts pin; the return-code lists under the contract, which are written per file.
+// DOES NOT COVER:
+//   - whether the contract is TRUE, which FaultNoticeTests' inline-completion facts pin;
+//   - the return-code lists under the contract, which are written per file;
+//   - whether the contract matches the spec: the pin compares the copies with each other, never
+//     with the spec, so one identical change to all three stays green.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class RcContractCopiesTests

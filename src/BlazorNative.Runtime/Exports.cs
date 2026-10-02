@@ -561,7 +561,7 @@ public static class Exports
         switch (outcome.Kind)
         {
             case DispatchOutcomeKind.Faulted:
-                // Dispatch fault (DoD #9 partial): the handler before its first await, the
+                // Dispatch fault (DoD #9 partial): the handler before it first yielded, the
                 // resulting re-render, or frame delivery threw — visible via rc 2 + full
                 // detail on stderr so a device-side crash is diagnosable from logcat.
                 BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", outcome.Fault!);

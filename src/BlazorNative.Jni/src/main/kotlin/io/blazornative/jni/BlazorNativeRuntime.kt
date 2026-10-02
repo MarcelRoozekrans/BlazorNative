@@ -43,7 +43,7 @@ class BlazorNativeRuntime(
     // the pluggable sink stays, and the Activity still passes Log.e.)
     //
     // THREAD SET: ANY thread — the start() caller, the BlazorNative-Dispatch lane, and
-    // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after its first await
+    // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after it yielded
     // arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
     // thread sent it. A sink that touches UI must post to the main thread first.
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },

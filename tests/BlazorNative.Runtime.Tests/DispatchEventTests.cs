@@ -17,7 +17,7 @@ namespace BlazorNative.Runtime.Tests;
 //   0 = dispatched (INCLUDING stale handlerId — at-most-once delivery; the
 //       renderer already catches the ArgumentException + logs)
 //   1 = no session / nothing mounted
-//   2 = the synchronous part faulted — the handler before its first await,
+//   2 = the synchronous part faulted — the handler before it first yielded,
 //       the resulting re-render, or frame delivery threw (detail
 //       ex.ToString() on stderr)
 //   3 = malformed / NULL args JSON (incl. handlerId beyond int range)

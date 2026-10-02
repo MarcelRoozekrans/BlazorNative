@@ -251,7 +251,7 @@ final class AppleShellBridge {
         return 0
     }
 
-    /// Phase 16.1 (#8): a .NET handler faulted AFTER its first await, too late to be its
+    /// Phase 16.1 (#8): a .NET handler faulted AFTER it yielded, too late to be its
     /// dispatch rc 2. The Kotlin `BridgeRegistrar.deliverFaultNotice` twin: routed to the
     /// live runtime's `onError`, whose default logs through `BnLog.error`, or straight to
     /// `BnLog.error` when no runtime is booted; then completed OK with no payload. The args

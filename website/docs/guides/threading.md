@@ -48,18 +48,16 @@ thread.
 ```
 <!-- END rc-contract -->
 
-In plain terms: **rc only ever describes the synchronous half of a handler.** If your handler
-awaits and then throws, that fault does not come back as an rc — by the time it happens, the
-export that would have reported it has long since returned 0. Instead it is delivered later as
-a `FaultNotice` host call, which reaches the shell's `onError` on a thread-pool thread, not the
-render thread. This is true in production mode as well as strict/debug mode — a late fault is
-never silently dropped just because the app isn't running under a debugger.
-
-Where the synchronous half ends is decided by the await, not by the shell. An await on a host
-call or a fetch always yields, even when the shell answers inside `hostCallBegin` or
-`fetchBegin`, so a throw after it is always a late fault. An await on a task your own code
-already completed, such as `Task.CompletedTask` or a cached result, does not yield, so a throw
-after it is still part of the synchronous half and comes back as rc 2.
+In plain terms: **rc only ever describes the synchronous half of a handler, and an await on a
+host call or a fetch always ends that half.** If your handler awaits a host call or a fetch and
+then throws, that fault does not come back as an rc — by the time it happens, the export that
+would have reported it has long since returned 0, even when the shell answered inside
+`hostCallBegin` or `fetchBegin`. Instead it is delivered later as a `FaultNotice` host call,
+which reaches the shell's `onError` on a thread-pool thread, not the render thread. This is true
+in production mode as well as strict/debug mode — a late fault is never silently dropped just
+because the app isn't running under a debugger. The one exception is an await on a task your own
+code already completed, such as `Task.CompletedTask` or a cached result: that does not yield, so
+a throw after it is still part of the synchronous half and comes back as rc 2.
 
 ## Re-rendering from another thread
 

@@ -555,7 +555,7 @@ public sealed class NativeShellBridge : IMobileBridge
     // A notice is .NET telling the shell something, as a host call on the existing
     // slot, with no ABI change. .NET ignores the answer.
     //
-    // FaultNotice: a handler that faults AFTER its first await faults too late to be
+    // FaultNotice: a handler that faults AFTER it yielded faults too late to be
     // its export's rc 2, because the export has already returned rc 0. This hands that
     // fault to the shell so it reaches onError instead of only stderr. A shell that
     // predates the op still reaches onError through its unknown-op branch on Android,

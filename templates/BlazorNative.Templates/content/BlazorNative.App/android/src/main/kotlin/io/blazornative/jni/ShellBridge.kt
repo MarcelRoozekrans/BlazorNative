@@ -365,7 +365,7 @@ class BridgeRegistrar(
     }
 
     /**
-     * Phase 16.1 (#8): a .NET handler faulted AFTER its first await, too late to be its
+     * Phase 16.1 (#8): a .NET handler faulted AFTER it yielded, too late to be its
      * dispatch rc 2. Answered HERE, not by [handlers], so every host routes it to the
      * same [onError] the runtime was given, and no [ShellBridgeHandlers] can drop it.
      * The args are flat JSON: handlerId (0 for a reserved host event), event, type and
