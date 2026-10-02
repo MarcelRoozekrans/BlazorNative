@@ -82,7 +82,7 @@ dependencies {
     // the transitive version. An explicit `implementation` wins Gradle's version
     // resolution over a lower transitive request. 1.13.1 is the latest stable release
     // compatible with this project's compileSdk 34.
-    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.core:core:1.19.1")
 
     // androidx.activity, pinned EXPLICITLY (Phase 16.2). The shell's back is an AndroidX
     // OnBackPressedCallback, and the version biometric/fragment pull in transitively,

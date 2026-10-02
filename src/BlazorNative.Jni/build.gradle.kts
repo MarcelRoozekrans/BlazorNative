@@ -100,7 +100,7 @@ dependencies {
     // explicit `implementation` wins Gradle's version resolution over a lower transitive
     // request, the same reason jna-platform's jna exclusion exists above. 1.13.1 is the
     // latest stable release compatible with this project's compileSdk 34.
-    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.core:core:1.19.1")
 
     // Phase 16.2 (#346): androidx.activity, pinned EXPLICITLY. MainActivity's back is an
     // AndroidX OnBackPressedCallback toggled from the back state .NET pushes, so the main
