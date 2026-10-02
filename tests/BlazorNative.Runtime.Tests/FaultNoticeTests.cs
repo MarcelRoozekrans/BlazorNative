@@ -379,12 +379,14 @@ public sealed class FaultNoticeTests
     //     mark is thread-bound to the synchronous part, so that call is not marked, and a
     //     synchronous fault after it stays rc 2. The contract does not promise this, but
     //     AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2 pins it,
-    //     and with it the thread-bound choice: it is the fact the 16.7 record's M4 reds;
+    //     and with it the thread-bound choice: the 16.7 record's M4-after is its red under M4;
     //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline,
     //     for example by completing a TaskCompletionSource that continuation awaits. Measured
-    //     on 2026-10-02: a call that continuation begins marks THIS dispatch, because the mark
-    //     is thread-bound, and its fault is captured in this dispatch's window. Not pinned:
-    //     whether that outcome is right is open, see the 16.7 record, M4;
+    //     on 2026-10-02, the 16.7 record's M4-explore: a call that continuation begins marks
+    //     THIS dispatch, because the mark is thread-bound, so this dispatch returns rc 0; the
+    //     continuation's fault is captured in this dispatch's window and sent under this
+    //     handler's id; and this dispatch's own synchronous fault is never reported. Not
+    //     pinned: that is the known 16.1 window-attribution defect, filed as #464;
     //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
     //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
     //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
@@ -491,6 +493,7 @@ public sealed class FaultNoticeTests
         // regression reds here instead of hanging there.
         var frames = new List<RenderFrame>();
         int rc = -1;
+        bool started = false;
         using var returned = new ManualResetEventSlim(false);
         try
         {
@@ -506,6 +509,7 @@ public sealed class FaultNoticeTests
             })
             { IsBackground = true, Name = "back-hold-probe" };
             worker.Start();
+            started = true;
 
             // Anchor: the capture really began and the handler really is held on it.
             Assert.True(WaitUntil(() => FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Camera), Budget),
@@ -531,15 +535,28 @@ public sealed class FaultNoticeTests
         finally
         {
             // An assertion that failed before the answer leaves the camera call held, and the
-            // Hold handler blocking the render thread on it. Answer every camera call still open,
-            // as the shell would, so the handler can release; a call already answered gives rc 1,
-            // which is benign here.
-            foreach (var call in FakeShellHost.HostCalls().Where(c => c.Op == (int)HostCallOp.Camera))
-                NativeShellBridge.CompleteHostCall(call.RequestId, 1, null);
-            returned.Wait(Budget);
-            // Only a released handler lets the session go; a deadlocked one is left to the
-            // background thread, and the fact has already failed.
-            if (returned.IsSet)
+            // Hold handler blocking the render thread on it. Until the dispatch returns, within
+            // the budget, answer every camera call seen so far, as the shell would. The log is
+            // read again on each pass, so a begin that lands late is answered too. Each call is
+            // answered once; one the body already answered gives rc 1, which is benign here.
+            // Skipped when the worker never started: then nothing is held.
+            if (started)
+            {
+                var answered = new HashSet<long>();
+                var sw = Stopwatch.StartNew();
+                do
+                {
+                    foreach (var call in FakeShellHost.HostCalls().Where(c => c.Op == (int)HostCallOp.Camera))
+                    {
+                        if (answered.Add(call.RequestId))
+                            NativeShellBridge.CompleteHostCall(call.RequestId, 1, null);
+                    }
+                }
+                while (!returned.Wait(TimeSpan.FromMilliseconds(50)) && sw.Elapsed < Budget);
+            }
+            // Only a released handler, or one never dispatched, lets the session go; a
+            // deadlocked one is left to the background thread, and the fact has already failed.
+            if (!started || returned.IsSet)
             {
                 HostSession.ResetForTests();
                 NativeShellBridge.ResetForTests();
