@@ -456,9 +456,12 @@ public sealed class NativeShellBridge : IMobileBridge
     /// call a null pointer. Cancellation removes the id and cancels the task (a
     /// process killed during the prompt is the caller's token to abandon, never a
     /// leaked entry); a late/unknown completion takes the unknown-id path in
-    /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.</summary>
+    /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.
+    /// <paramref name="markDispatch"/> is false only for a notice .NET sends itself, through
+    /// <see cref="SendNotice"/>: that is not a shell call the handler began, so it must never
+    /// mark the dispatch (16.7). Every capability call keeps the default.</summary>
     private static async ValueTask<HostCallResult> InvokeHostCallAsync(
-        HostCallOp op, string argsJson, CancellationToken ct)
+        HostCallOp op, string argsJson, CancellationToken ct, bool markDispatch = true)
     {
         var cb = GetCallbacks();
         RequireSlot(cb.HostCallBegin, "host-call-begin");
@@ -482,8 +485,9 @@ public sealed class NativeShellBridge : IMobileBridge
         // 16.7 (#455): a host call the shell accepted marks its dispatch, so a fault after it is
         // a FaultNotice, never rc 2. Only reached when begin returned normally: a refused begin
         // throws into the handler, and that fault stays rc 2. A notice .NET sends itself is not
-        // a call the handler began.
-        if (op is not (HostCallOp.FaultNotice or HostCallOp.BackState or HostCallOp.BackUnhandled))
+        // a call the handler began: SendNotice passes markDispatch false, so no op list here
+        // can fall out of step with the notices.
+        if (markDispatch)
             NativeRenderer.NoteShellCallBegun();
 
         // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
@@ -649,7 +653,7 @@ public sealed class NativeShellBridge : IMobileBridge
     private static void SendNotice(HostCallOp op, string args, string what)
     {
         var timeout = new CancellationTokenSource(FaultNoticeTimeout);
-        _ = AwaitNotice(InvokeHostCallAsync(op, args, timeout.Token), timeout, what);
+        _ = AwaitNotice(InvokeHostCallAsync(op, args, timeout.Token, markDispatch: false), timeout, what);
     }
 
     /// <summary>Observes a sent notice so its outcome is never an unobserved Task

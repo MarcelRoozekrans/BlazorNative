@@ -737,9 +737,10 @@ public sealed class FaultNoticeTests
     [InlineData("back-unhandled-then-throw")]
     public void ABackNoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2(string label)
     {
-        // The other two notices .NET sends itself. Each is its own arm of the exclusion in
-        // InvokeHostCallAsync, so each needs a probe that enters it: dropping either arm alone
-        // left every other fact green.
+        // The other two notices .NET sends itself. Each reaches InvokeHostCallAsync through
+        // SendNotice, which passes markDispatch false. Before that parameter the exclusion was
+        // an op list with one arm per notice, and dropping either arm alone left every other
+        // fact green; each notice keeps its own case so a notice that bypasses SendNotice reds.
         int op = label == "back-state-then-throw" ? (int)HostCallOp.BackState : (int)HostCallOp.BackUnhandled;
         var (rc, _, pending, previous) = DispatchProbe(label);
         try
