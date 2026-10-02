@@ -62,14 +62,25 @@ public sealed class FaultNoticeTests
 
     // ── Harness ─────────────────────────────────────────────────────────────
 
-    private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
+    /// <summary><paramref name="deliveringThreads"/>, when given, receives the managed thread
+    /// each frame was delivered on, at the same index as the frame in <paramref name="frames"/>,
+    /// under the same lock.</summary>
+    private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames, List<int>? deliveringThreads = null)
     {
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();
         NativeRenderer renderer = HostSession.EnsureSession();
         renderer.StrictErrors = strict;
-        renderer.Frames += (f, _) => { lock (frames) frames.Add(f); return ValueTask.CompletedTask; };
+        renderer.Frames += (f, _) =>
+        {
+            lock (frames)
+            {
+                frames.Add(f);
+                deliveringThreads?.Add(Environment.CurrentManagedThreadId);
+            }
+            return ValueTask.CompletedTask;
+        };
         return renderer;
     }
 
@@ -369,30 +380,40 @@ public sealed class FaultNoticeTests
 
     // ── 16.7 (#455): a call the shell completes INSIDE begin still yields ─────
     //
-    // Since 16.7 NativeShellBridge yields after begin when the call already completed, so
-    // the handler's await always suspends and a fault after it is a FaultNotice, never the
+    // Since 16.7 NativeShellBridge yields after every begin, unconditionally, so the
+    // handler's await always suspends and a fault after it is a FaultNotice, never the
     // dispatch's rc. Each fact anchors that the fake really completed the call inside begin
     // (Rule 2). The Task.CompletedTask control pins the contract's own exception: an await
-    // on a task the app completed itself does not yield (Rule 3).
+    // on a task the app completed itself does not yield (Rule 3). The mount fact pins the
+    // accepted cost: a page whose OnInitializedAsync awaits such a call no longer mounts.
     //
-    // DOES NOT COVER: a shell that completes the call on another thread while begin is still
-    // running, which is a race no fake here reproduces; an inline-completed call awaited
-    // outside a dispatch, such as in OnInitializedAsync, where there is no rc to protect.
+    // DOES NOT COVER:
+    //   - the real shells' inline arms. FakeShellHost completes the call on begin's own
+    //     thread, the shape Android's inline arms have (#440); FaultNoticeTest.kt runs the
+    //     host-call scenario through the NativeAOT dll, and no fact here drives a shell;
+    //   - every host-call op and fetch shape. Only the geolocation check and one GET fetch
+    //     are driven. The other ops go through the same InvokeHostCallAsync and its yield,
+    //     by reading the code, not by a test;
+    //   - a shell that completes the call from another thread while begin is still running.
+    //     No fake here reproduces that timing. The yield has no IsCompleted check, so by
+    //     reading the code there is no window for it to skip, but no fact measures it.
 
-    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+    private static (int Rc, int HandlerId, NativeRenderer Renderer, List<RenderFrame> Frames, List<int> Threads,
+        List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchInline(string label, bool autoCompleteFetch = false)
     {
         var frames = new List<RenderFrame>();
+        var threads = new List<int>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
         Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
-        NativeRenderer renderer = StartSession(strict: false, frames);
+        NativeRenderer renderer = StartSession(strict: false, frames, threads);
         renderer.Mount<InlineCompletionProbe>();
         int handlerId = HandlerFor(frames, "click", label);
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
         int rc = DispatchBounded(handlerId, """{"name":"click"}""");
-        return (rc, frames, pending, previous);
+        return (rc, handlerId, renderer, frames, threads, pending, previous);
     }
 
     /// <summary>The discriminator for the yield itself: the dispatch observer records a
@@ -411,7 +432,7 @@ public sealed class FaultNoticeTests
     [Fact]
     public void AFaultAfterAnInlineCompletedHostCall_IsAFaultNotice_NotRc2()
     {
-        var (rc, _, pending, previous) = DispatchInline("host-throw");
+        var (rc, handlerId, _, _, _, pending, previous) = DispatchInline("host-throw");
         try
         {
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
@@ -424,6 +445,7 @@ public sealed class FaultNoticeTests
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice reached the shell for the fault after the inline-completed host call.");
             var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(handlerId.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
             Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
             Assert.Equal("inline-host", args["message"]);
         }
@@ -433,17 +455,24 @@ public sealed class FaultNoticeTests
     [Fact]
     public void AnInlineCompletedHostCall_WithNoFault_IsRc0_AndTheHandlerIsStillRunningAtTheReturn()
     {
-        var (rc, frames, pending, previous) = DispatchInline("host-ok");
+        var (rc, _, renderer, frames, threads, pending, previous) = DispatchInline("host-ok");
         try
         {
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
             Assert.Equal(0, rc);
             AssertStillRunningAtTheReturn(pending);
-            Assert.True(WaitUntil(() =>
-            {
-                lock (frames) return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Any(p => p.Text == "host-ok:done");
-            }, Budget), "the handler's continuation never rendered 'host-ok:done' after the inline-completed call.");
+            static bool IsDone(RenderFrame f) => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == "host-ok:done");
+            Assert.True(WaitUntil(() => { lock (frames) return frames.Any(IsDone); }, Budget),
+                "the handler's continuation never rendered 'host-ok:done' after the inline-completed call.");
+            // The contract's last sentence: a continuation's frame is delivered from the render
+            // thread. Asserted here because this fact runs non-strict, where the renderer's own
+            // render-owner check only warns.
+            int deliveredOn;
+            lock (frames) deliveredOn = threads[frames.FindIndex(IsDone)];
+            Assert.True(deliveredOn == renderer.RenderThreadId,
+                $"the continuation's 'host-ok:done' frame was delivered on thread {deliveredOn}, not on the "
+                + $"renderer's render thread {renderer.RenderThreadId}.");
             Assert.Empty(Notices());
         }
         finally { TearDown(pending, previous); }
@@ -452,7 +481,7 @@ public sealed class FaultNoticeTests
     [Fact]
     public void AFaultAfterAnInlineCompletedFetch_IsAFaultNotice_NotRc2()
     {
-        var (rc, _, pending, previous) = DispatchInline("fetch-throw", autoCompleteFetch: true);
+        var (rc, handlerId, _, _, _, pending, previous) = DispatchInline("fetch-throw", autoCompleteFetch: true);
         try
         {
             Assert.True(FakeShellHost.FetchesCompletedInsideBegin == 1,
@@ -465,6 +494,7 @@ public sealed class FaultNoticeTests
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice reached the shell for the fault after the inline-completed fetch.");
             var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(handlerId.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
             Assert.Equal("inline-fetch", args["message"]);
         }
         finally { TearDown(pending, previous); }
@@ -474,7 +504,7 @@ public sealed class FaultNoticeTests
     public void AFaultAfterAwaitingACompletedTask_IsStillRc2_Control()
     {
         // The contract's exception, pinned: the app's own completed task does not yield.
-        var (rc, _, pending, previous) = DispatchInline("completed-throw");
+        var (rc, _, _, _, _, pending, previous) = DispatchInline("completed-throw");
         try
         {
             Assert.True(rc == 2,
@@ -489,6 +519,81 @@ public sealed class FaultNoticeTests
             Assert.Empty(Notices());
         }
         finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void APageAwaitingAnInlineCompletedHostCallInOnInitializedAsync_NoLongerMounts()
+    {
+        // The accepted cost of the unconditional yield, owner decision 2026-10-02. Before
+        // 16.7 an OnInitializedAsync whose only await was a call the shell answered inside
+        // begin completed synchronously, so Mount<T> accepted the page on Android. iOS never
+        // answers inside begin and already refused it. Now both refuse it.
+        var frames = new List<RenderFrame>();
+        InitAwaitProbe.Resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            FakeShellHost.AutoCompleteHostCall = true;
+
+            // Rule 3 control: this harness mounts a page whose OnInitializedAsync awaits a task
+            // the app completed itself, so the refusal below is about the shell call's yield.
+            renderer.Mount<CompletedTaskInitProbe>();
+
+            Exception? refused = Record.Exception(() => renderer.Mount<InitAwaitProbe>());
+
+            // Rule 2 anchor: the page's call really was answered inside hostCallBegin.
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the page's geolocation call INSIDE hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(refused is InvalidOperationException,
+                "a page whose OnInitializedAsync awaits a host call the shell answered inside begin mounted, or "
+                + $"failed with something else: {refused?.GetType().FullName ?? "no exception"}. Since 16.7 the "
+                + "await yields, so its first render cannot complete synchronously and Mount<T> must refuse it.");
+            Assert.Contains("requires RenderRootComponentAsync to complete synchronously", refused!.Message, StringComparison.Ordinal);
+
+            // The page's continuation still runs, later, from the dispatcher queue.
+            Assert.True(WaitUntil(() => InitAwaitProbe.Resumed.Task.IsCompleted, Budget),
+                "the refused page's OnInitializedAsync never resumed after its yield.");
+        }
+        finally
+        {
+            WaitUntil(() => InitAwaitProbe.Resumed.Task.IsCompleted, Budget);
+            HostSession.ResetForTests();
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
+    /// <summary>16.7: a page that awaits a host call in OnInitializedAsync.</summary>
+    private sealed class InitAwaitProbe : ComponentBase
+    {
+        public static TaskCompletionSource Resumed = new();
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override async Task OnInitializedAsync()
+        {
+            await Bridge.CheckGeolocationPermissionAsync();
+            Resumed.TrySetResult();
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "text");
+            b.AddContent(1, "init-await");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>16.7, the mount fact's control: OnInitializedAsync awaits only a completed task.</summary>
+    private sealed class CompletedTaskInitProbe : ComponentBase
+    {
+        protected override async Task OnInitializedAsync() => await Task.CompletedTask;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "text");
+            b.AddContent(1, "init-completed");
+            b.CloseElement();
+        }
     }
 
     /// <summary>"click" awaits a held geolocation check, then throws; "change" does the

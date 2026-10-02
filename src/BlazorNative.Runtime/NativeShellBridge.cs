@@ -330,10 +330,11 @@ public sealed class NativeShellBridge : IMobileBridge
             throw;
         }
 
-        // A fetch the shell answered inside begin must still yield (16.7, #455): the same
-        // reason as the host-call path. Pinned by FaultNoticeTests' inline-completion facts.
-        if (tcs.Task.IsCompleted)
-            await Task.Yield();
+        // Every fetch yields here, unconditionally (16.7, #455), for the same reasons as the
+        // host-call path: a fetch the shell answered inside begin and one it answers later
+        // then behave alike, and there is no IsCompleted check for a completion from another
+        // thread to race. Pinned by FaultNoticeTests' inline-completion facts.
+        await Task.Yield();
 
         // Registered AFTER FetchBegin: if the host completed synchronously the
         // id is already out of the table and cancellation is a no-op. On
@@ -478,11 +479,16 @@ public sealed class NativeShellBridge : IMobileBridge
             throw;
         }
 
-        // A call the shell answered inside begin must still yield (16.7, #455): the
-        // handler's await then always suspends, so a fault after it is a FaultNotice,
-        // never the dispatch's rc. Pinned by FaultNoticeTests' inline-completion facts.
-        if (tcs.Task.IsCompleted)
-            await Task.Yield();
+        // Every host call yields here, unconditionally (16.7, #455), so the handler's await
+        // always suspends and a fault after it is a FaultNotice, never the dispatch's rc.
+        // Unconditional on purpose. A call the shell answered inside begin and one it answers
+        // later then behave alike. And a guard such as "yield only if already completed"
+        // races: a shell completing the call on another thread between the check and the
+        // await would skip the yield. The cost is accepted by the owner, 2026-10-02: an
+        // OnInitializedAsync that awaits a host call or a fetch no longer completes
+        // synchronously, so Mount<T> refuses that page on Android as it already did on iOS.
+        // Pinned by FaultNoticeTests' inline-completion facts and its mount fact.
+        await Task.Yield();
 
         // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
         // completion has already removed the id, so cancel is a no-op; on cancel
