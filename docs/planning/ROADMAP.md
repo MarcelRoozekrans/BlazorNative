@@ -3750,12 +3750,17 @@ on the handler's queue, though never the render thread.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 16.7: Make the rc contract true (#455) [status: pending]
+#### Phase 16.7: Make the rc contract true (#455) [status: active]
 **Goal:** A fault after the first await reaches the shell as a FaultNotice and never as an rc,
 including when the awaited host call completed inside `hostCallBegin`. The owner chose on
 2026-10-01 to change the code, not the words. The rc change on that path is called out in the
 changelog. Pin the inline-completion path, mutation-proven, and pin the "verbatim" claim that the
-`Exports.cs` and C-header copies of the contract agree.
+`Exports.cs` and C-header copies of the contract agree. **Revised 2026-10-02, by owner
+decision:** the fault is classified, not rescheduled. A fault after the handler has begun a host
+call or a fetch is a FaultNotice with rc 0. A first design that forced a yield deadlocked a
+blocked render thread, raced, and broke a mount, and it was abandoned on branch
+`feat/16.7-rc-contract`.
+**Design:** [`docs/superpowers/specs/2026-10-02-phase-16.7-design.md`](../superpowers/specs/2026-10-02-phase-16.7-design.md)
 **Surface:** Backend
 **HelpWanted:** no
 
