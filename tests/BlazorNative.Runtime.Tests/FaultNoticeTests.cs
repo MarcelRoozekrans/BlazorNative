@@ -367,7 +367,7 @@ public sealed class FaultNoticeTests
         }
     }
 
-    // â”€â”€ 16.7 (#455): a call the shell completes INSIDE begin still yields â”€â”€â”€â”€â”€
+    // ── 16.7 (#455): a call the shell completes INSIDE begin still yields ─────
     //
     // Since 16.7 NativeShellBridge yields after begin when the call already completed, so
     // the handler's await always suspends and a fault after it is a FaultNotice, never the
@@ -395,6 +395,19 @@ public sealed class FaultNoticeTests
         return (rc, frames, pending, previous);
     }
 
+    /// <summary>The discriminator for the yield itself: the dispatch observer records a
+    /// dispatch only when its handler was still running at the export's return. Without the
+    /// yield the inline-completed call lets the handler finish inside the export, and the
+    /// count is 0.</summary>
+    private static void AssertStillRunningAtTheReturn(List<Task> pending)
+    {
+        lock (pending)
+            Assert.True(pending.Count == 1,
+                $"{pending.Count} dispatch(es) were still running at the export's return, not 1: the await on "
+                + "the host call the shell completed inside begin did not yield, so the handler finished "
+                + "inside the export (#455).");
+    }
+
     [Fact]
     public void AFaultAfterAnInlineCompletedHostCall_IsAFaultNotice_NotRc2()
     {
@@ -407,6 +420,7 @@ public sealed class FaultNoticeTests
             Assert.True(rc == 0,
                 $"rc was {rc}: a fault after an await on a host call the shell completed inside begin came back "
                 + "as the dispatch's rc. The await did not yield, which is #455.");
+            AssertStillRunningAtTheReturn(pending);
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice reached the shell for the fault after the inline-completed host call.");
             var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
@@ -417,7 +431,7 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
-    public void AnInlineCompletedHostCall_WithNoFault_IsRc0_AndItsResultRendersAfterTheReturn()
+    public void AnInlineCompletedHostCall_WithNoFault_IsRc0_AndTheHandlerIsStillRunningAtTheReturn()
     {
         var (rc, frames, pending, previous) = DispatchInline("host-ok");
         try
@@ -425,6 +439,7 @@ public sealed class FaultNoticeTests
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
             Assert.Equal(0, rc);
+            AssertStillRunningAtTheReturn(pending);
             Assert.True(WaitUntil(() =>
             {
                 lock (frames) return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Any(p => p.Text == "host-ok:done");
@@ -444,6 +459,12 @@ public sealed class FaultNoticeTests
             Assert.True(rc == 2,
                 $"rc was {rc}: an await on Task.CompletedTask yielded, or its fault was lost; the contract "
                 + "says a fault after it is still in the synchronous part, rc 2.");
+            // Bounded: nothing was still running at the return, so no late fault can follow
+            // and an empty notice list now is final, not a check made too early.
+            lock (pending)
+                Assert.True(pending.Count == 0,
+                    $"{pending.Count} dispatch(es) were still running at the return; the handler awaited only "
+                    + "Task.CompletedTask, so it must have finished inside the export.");
             Assert.Empty(Notices());
         }
         finally { TearDown(pending, previous); }
