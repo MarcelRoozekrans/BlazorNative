@@ -68,10 +68,13 @@ public sealed class RcContractCopiesTests
         // floor of 200 leaves 309 of headroom, on purpose: the floor only has to tell an empty
         // or collapsed block from the contract.
         // Shortening the contract identically in all three copies stays green; that is a spec
-        // question, not drift.
+        // question, not drift. The floor is load-bearing, measured in the 16.7 record's section 4:
+        // with it, an emptied block reds here, rows M11 and M14b; without it, three emptied
+        // blocks compare equal and the pin stays green, row M14a.
         Assert.True(reference.Length > 200,
             $"{refPath}: the contract between the markers is {reference.Length} characters, too short to be it. "
-            + "It measured 509 when this floor of 200 was set, a margin of 309.");
+            + "It measured 509 when this floor of 200 was set, a margin of 309. Without this floor an empty "
+            + "block in every copy passes: see rows M11, M14a and M14b in docs/plans/2026-10-02-phase-16.7-record.md.");
         foreach (var (copy, prefix, fenced) in Copies.Skip(1))
         {
             string text = ContractIn(copy, prefix, fenced);
