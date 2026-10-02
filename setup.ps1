@@ -238,13 +238,13 @@ if (-not $SkipAndroid) {
             Write-Warn "JDK 21 not found at Adoptium default location — sdkmanager may fail with Java version mismatch"
         }
 
-        Write-Step "Installing Android SDK packages (platform-tools, build-tools, platforms-36, NDK 26.3, x86_64 system image)..."
+        Write-Step "Installing Android SDK packages (platform-tools, build-tools, platforms-37, NDK 26.3, x86_64 system image)..."
         # Auto-accept all license prompts
         & cmd /c "echo y| `"$sdkmanager`" --licenses" 2>&1 | Out-Null
         echo "y" | & $sdkmanager `
             "platform-tools" `
             "build-tools;34.0.0" `
-            "platforms;android-36" `
+            "platforms;android-37.0" `
             "ndk;26.3.11579264" `
             "system-images;android-34;google_apis;x86_64" `
             "emulator"
