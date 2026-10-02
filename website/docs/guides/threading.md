@@ -29,19 +29,24 @@ and
 
 ## Return codes: the rc contract
 
-`blazornative_dispatch_event`'s return code is written once in
-[`Exports.cs`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Runtime/Exports.cs)
-and once more, verbatim, in
-[`BlazorNativeRuntimeC.h`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Apple/BnHost/BlazorNativeRuntimeC.h),
-so the two can't drift apart:
+`blazornative_dispatch_event`'s return code is written in
+[`Exports.cs`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Runtime/Exports.cs),
+in
+[`BlazorNativeRuntimeC.h`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Apple/BnHost/BlazorNativeRuntimeC.h)
+and here, and `RcContractCopiesTests` fails if the three copies differ:
 
+<!-- BEGIN rc-contract -->
 ```text
-rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-first await (the handler may still be running); 2 = it faulted before yielding. A fault
-after the first await is delivered later through the FaultNotice host-call op, never as
-an rc. Frames from the synchronous part are delivered before this returns; frames from a
-continuation are delivered later, from the render thread.
+rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault before it first yielded (it may
+still be running); 2 = it faulted before yielding. An await on a host call or a fetch always yields,
+even when the shell completes the call inside `hostCallBegin` or `fetchBegin`, so a fault after the
+first such await arrives later as a FaultNotice host-call op, never as an rc. An await on a task the
+app already completed itself, such as `Task.CompletedTask` or a cached result, does not yield: a
+fault after it is still in the synchronous part, rc 2. Frames from the synchronous part are
+delivered before the export returns; frames from a continuation are delivered later, from the render
+thread.
 ```
+<!-- END rc-contract -->
 
 In plain terms: **rc only ever describes the synchronous half of a handler.** If your handler
 awaits and then throws, that fault does not come back as an rc — by the time it happens, the
@@ -49,6 +54,12 @@ export that would have reported it has long since returned 0. Instead it is deli
 a `FaultNotice` host call, which reaches the shell's `onError` on a thread-pool thread, not the
 render thread. This is true in production mode as well as strict/debug mode — a late fault is
 never silently dropped just because the app isn't running under a debugger.
+
+Where the synchronous half ends is decided by the await, not by the shell. An await on a host
+call or a fetch always yields, even when the shell answers inside `hostCallBegin` or
+`fetchBegin`, so a throw after it is always a late fault. An await on a task your own code
+already completed, such as `Task.CompletedTask` or a cached result, does not yield, so a throw
+after it is still part of the synchronous half and comes back as rc 2.
 
 ## Re-rendering from another thread
 

@@ -130,11 +130,16 @@ void blazornative_shutdown(void);
 // handler runs on the runtime's render thread, and this waits only for its synchronous
 // part — never for an await on the host (#345).
 //
-// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-// first await (the handler may still be running); 2 = it faulted before yielding. A fault
-// after the first await is delivered later through the FaultNotice host-call op, never as
-// an rc. Frames from the synchronous part are delivered before this returns; frames from a
-// continuation are delivered later, from the render thread.
+// BEGIN rc-contract
+// rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault before it first yielded (it
+// may still be running); 2 = it faulted before yielding. An await on a host call or a fetch always
+// yields, even when the shell completes the call inside `hostCallBegin` or `fetchBegin`, so a fault
+// after the first such await arrives later as a FaultNotice host-call op, never as an rc. An await
+// on a task the app already completed itself, such as `Task.CompletedTask` or a cached result, does
+// not yield: a fault after it is still in the synchronous part, rc 2. Frames from the synchronous
+// part are delivered before the export returns; frames from a continuation are delivered later,
+// from the render thread.
+// END rc-contract
 //
 // Return: 0 dispatched (incl. a still-running handler and a stale handler) / 1 no
 // session / 2 faulted before yielding / 3 malformed args or handlerId out of int range.

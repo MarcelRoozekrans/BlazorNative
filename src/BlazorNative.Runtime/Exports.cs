@@ -465,22 +465,29 @@ public static class Exports
     /// (NativeShellBridge internals — same hand-rolled pair the Kotlin side
     /// mirrors): <c>{"name":"click"}</c> / <c>{"name":"change","payload":"…"}</c>.
     ///
-    /// The rc contract, written once here and once in BlazorNativeRuntimeC.h:
+    /// The rc contract, written here, in BlazorNativeRuntimeC.h and in threading.md,
+    /// and pinned identical by RcContractCopiesTests:
     ///
-    /// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-    /// first await (the handler may still be running); 2 = it faulted before yielding. A fault
-    /// after the first await is delivered later through the FaultNotice host-call op, never as
-    /// an rc. Frames from the synchronous part are delivered before this returns; frames from a
-    /// continuation are delivered later, from the render thread.
+    /// BEGIN rc-contract
+    /// rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault before it first yielded
+    /// (it may still be running); 2 = it faulted before yielding. An await on a host call or a
+    /// fetch always yields, even when the shell completes the call inside `hostCallBegin` or
+    /// `fetchBegin`, so a fault after the first such await arrives later as a FaultNotice host-call
+    /// op, never as an rc. An await on a task the app already completed itself, such as
+    /// `Task.CompletedTask` or a cached result, does not yield: a fault after it is still in the
+    /// synchronous part, rc 2. Frames from the synchronous part are delivered before the export
+    /// returns; frames from a continuation are delivered later, from the render thread.
+    /// END rc-contract
     ///
     /// Return codes:
-    ///   0 = dispatched, and the synchronous part did not fault — INCLUDING a
+    ///   0 = dispatched, and the handler did not fault before it first yielded — INCLUDING a
     ///       handler still suspended on an await, and a stale handlerId:
     ///       delivery is at-most-once, the renderer catches Blazor's
     ///       ArgumentException for a handler that died in a re-render and logs
     ///       it (a stale tap is not an error);
     ///   1 = no session / nothing mounted;
-    ///   2 = the synchronous part faulted — the handler before its first await,
+    ///   2 = the synchronous part faulted — the handler before it first yielded (an await
+    ///       on a host call or a fetch always yields),
     ///       the resulting re-render, frame delivery, or a navigation swap it
     ///       queued (anything routed to HandleException inside this dispatch's
     ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
