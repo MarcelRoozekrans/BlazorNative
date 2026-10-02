@@ -321,8 +321,6 @@ public sealed class NativeShellBridge : IMobileBridge
             TaskCreationOptions.RunContinuationsAsynchronously);
         s_pendingFetches[id] = tcs;
 
-        // 16.7 (#455): a fetch the handler began marks its dispatch, as a host call does.
-        NativeRenderer.NoteShellCallBegun();
         try
         {
             BeginFetch(id, in request);
@@ -332,6 +330,11 @@ public sealed class NativeShellBridge : IMobileBridge
             s_pendingFetches.TryRemove(id, out _);
             throw;
         }
+
+        // 16.7 (#455): a fetch the shell accepted marks its dispatch, as a host call does. Only
+        // reached when begin returned normally: a refused begin throws into the handler, and
+        // that fault stays rc 2.
+        NativeRenderer.NoteShellCallBegun();
 
         // Registered AFTER FetchBegin: if the host completed synchronously the
         // id is already out of the table and cancellation is a no-op. On
@@ -466,11 +469,6 @@ public sealed class NativeShellBridge : IMobileBridge
             TaskCreationOptions.RunContinuationsAsynchronously);
         s_pendingHostCalls[id] = tcs;
 
-        // 16.7 (#455): a host call the HANDLER began marks its dispatch, so a fault after it is
-        // a FaultNotice, never rc 2. A notice .NET sends itself is not such a call.
-        if (op is not (HostCallOp.FaultNotice or HostCallOp.BackState or HostCallOp.BackUnhandled))
-            NativeRenderer.NoteShellCallBegun();
-
         try
         {
             BeginHostCall(id, (int)op, argsJson);
@@ -480,6 +478,13 @@ public sealed class NativeShellBridge : IMobileBridge
             s_pendingHostCalls.TryRemove(id, out _);
             throw;
         }
+
+        // 16.7 (#455): a host call the shell accepted marks its dispatch, so a fault after it is
+        // a FaultNotice, never rc 2. Only reached when begin returned normally: a refused begin
+        // throws into the handler, and that fault stays rc 2. A notice .NET sends itself is not
+        // a call the handler began.
+        if (op is not (HostCallOp.FaultNotice or HostCallOp.BackState or HostCallOp.BackUnhandled))
+            NativeRenderer.NoteShellCallBegun();
 
         // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
         // completion has already removed the id, so cancel is a no-op; on cancel

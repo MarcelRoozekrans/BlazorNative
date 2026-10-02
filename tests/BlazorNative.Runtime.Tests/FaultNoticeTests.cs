@@ -421,8 +421,25 @@ public sealed class FaultNoticeTests
                 + "begin came back as the dispatch's rc.");
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for a fault after a begun fetch.");
             var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("click", args["event"]);
+            Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
             Assert.Equal("after-fetch", args["message"]);
             Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AHostCallTheShellRefusesToBegin_FaultsTheHandlerWithRc2_AndSendsNoNotice()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("refused-begin", hostCallBeginReturnCode: -1);
+        try
+        {
+            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
+                "anchor: the begin was never attempted, so this fact tests nothing.");
+            Assert.True(rc == 2, $"rc was {rc}: a begin the shell refused throws into the handler before any shell "
+                + "call is begun, so that fault must stay the dispatch's rc 2.");
+            Assert.Empty(Notices());
         }
         finally { TearDown(pending, previous); }
     }
@@ -535,6 +552,10 @@ public sealed class FaultNoticeTests
                 NativeShellBridge.SendFaultNotice(0, "probe", new InvalidOperationException("notice"));
                 throw new InvalidOperationException("after-notice");
             });
+            Button(b, 50, "refused-begin", async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+            });
             Button(b, 40, "fetch-throw", async () =>
             {
                 await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
@@ -560,7 +581,7 @@ public sealed class FaultNoticeTests
     }
 
     private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchProbe(string label, bool autoCompleteFetch = false)
+        DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -571,6 +592,7 @@ public sealed class FaultNoticeTests
         int handlerId = HandlerFor(frames, "click", label);
         FakeShellHost.AutoCompleteHostCall = true;
         FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
+        FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
         int rc = DispatchBounded(handlerId, """{"name":"click"}""");
         return (rc, frames, pending, previous);
     }
