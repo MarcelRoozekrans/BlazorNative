@@ -50,14 +50,26 @@ thread.
 
 In plain terms: **rc only ever describes the synchronous half of a handler, and an await on a
 host call or a fetch always ends that half.** If your handler awaits a host call or a fetch and
-then throws, that fault does not come back as an rc — by the time it happens, the export that
-would have reported it has long since returned 0, even when the shell answered inside
-`hostCallBegin` or `fetchBegin`. Instead it is delivered later as a `FaultNotice` host call,
+then throws, that fault does not come back as an rc. The rc was fixed at 0 when the handler first
+yielded, even when the shell answered inside `hostCallBegin` or `fetchBegin`. The continuation
+may even start before the export has handed that 0 back to the shell, but it can no longer change
+it. Instead the fault is delivered later as a `FaultNotice` host call,
 which reaches the shell's `onError` on a thread-pool thread, not the render thread. This is true
 in production mode as well as strict/debug mode — a late fault is never silently dropped just
 because the app isn't running under a debugger. The one exception is an await on a task your own
 code already completed, such as `Task.CompletedTask` or a cached result: that does not yield, so
 a throw after it is still part of the synchronous half and comes back as rc 2.
+
+### Don't await a shell call in `OnInitializedAsync`
+
+A page's first render must finish synchronously for the shell to mount it. Because an await on
+a host call or a fetch always yields, a page whose `OnInitializedAsync` awaits one cannot finish
+its first render in time, and the mount fails with "requires RenderRootComponentAsync to
+complete synchronously". This holds on both platforms, including when the shell answers the call
+inside `hostCallBegin` or `fetchBegin`. Before 0.18.0 such a page mounted on Android when the
+shell answered inside begin; on iOS it never did. Await the call in `OnAfterRenderAsync`
+instead, or start it in `OnInitialized` without awaiting it and render its result when it
+arrives.
 
 ## Re-rendering from another thread
 
