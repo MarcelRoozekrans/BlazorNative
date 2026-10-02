@@ -17,9 +17,10 @@ namespace BlazorNative.Runtime.Tests;
 //   0 = dispatched (INCLUDING stale handlerId — at-most-once delivery; the
 //       renderer already catches the ArgumentException + logs)
 //   1 = no session / nothing mounted
-//   2 = the synchronous part faulted — the handler before its first await,
-//       the resulting re-render, or frame delivery threw (detail
-//       ex.ToString() on stderr)
+//   2 = the synchronous part faulted before it began a host call or a fetch
+//       — the handler, the resulting re-render, or frame delivery threw
+//       (detail ex.ToString() on stderr). A fault after the handler began one
+//       is a FaultNotice with rc 0 (16.7, FaultNoticeTests)
 //   3 = malformed / NULL args JSON (incl. handlerId beyond int range)
 //
 // Since Phase 16.1 rc reports the handler's SYNCHRONOUS part. Every handler

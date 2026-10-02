@@ -8,8 +8,8 @@ internal enum DispatchOutcomeKind
     /// stale. Export rc 0.</summary>
     Completed,
 
-    /// <summary>The handler, its re-render or frame delivery faulted before the handler
-    /// yielded. Export rc 2.</summary>
+    /// <summary>The handler, its re-render or frame delivery faulted in the synchronous
+    /// part, before the handler began a host call or a fetch. Export rc 2.</summary>
     Faulted,
 
     /// <summary>The synchronous part faulted AFTER the handler began a host call or a fetch

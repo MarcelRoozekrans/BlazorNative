@@ -244,8 +244,9 @@ public sealed class FaultNoticeTests
     [Fact]
     public void ASynchronousFault_IsRc2_AndSendsNoFaultNotice()
     {
-        // The other branch. A fault before the first await is the export's own rc 2, and a
-        // notice as well would report one fault twice.
+        // The other branch. A synchronous fault before the handler began a host call or a
+        // fetch is the export's own rc 2, and a notice as well would report one fault twice.
+        // This handler begins none, so its fault is rc 2.
         var frames = new List<RenderFrame>();
         try
         {
@@ -406,7 +407,14 @@ public sealed class FaultNoticeTests
     //   - a host call or fetch begun by a CHILD component during the handler's re-render.
     //     The re-render is part of the handler's synchronous part, so that call marks the
     //     dispatch too, and a later render fault in the same synchronous part is a
-    //     FaultNotice with rc 0, not rc 2.
+    //     FaultNotice with rc 0, not rc 2. The ORDER is pinned: a fault captured before that
+    //     call stays rc 2, AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice;
+    //   - a host call or fetch begun by a NAVIGATION SWAP the handler queued. The swap runs
+    //     when the synchronous part's scope closes, still inside the export, so the rc counts
+    //     its faults; but the scope is no longer this thread's synchronous scope then, so a
+    //     call the new page begins never marks the dispatch, and a later fault in the swap
+    //     stays rc 2 unless the handler itself had begun a call. That rests on reading
+    //     DispatchSyncPart's finally, which restores the thread-bound scope before it drains.
 
     [Fact]
     public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
@@ -489,6 +497,13 @@ public sealed class FaultNoticeTests
     // 16.7 classifies a fault after a begun shell call and changes no scheduling. The first
     // 16.7 design added a yield after begin, and that broke exactly the two things below. Each
     // guard passes today and goes red if a later change puts a yield back after begin.
+    //
+    // DOES NOT COVER:
+    //   - a yield after a FETCH begin. The mount guard's page awaits a host call only, so a
+    //     yield added after BeginFetch alone leaves it green;
+    //   - a held host call other than the camera call. The hold guard drives BackHoldProbe,
+    //     which blocks on a camera capture; another op with its own path would need its own
+    //     probe. Both rest on what the two probes call, read from their code.
 
     [Fact]
     public void AComponentAwaitingAnInlineAnsweredHostCall_InOnInitializedAsync_MountsSynchronously()

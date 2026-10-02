@@ -569,7 +569,8 @@ public static class Exports
                 // 16.7 (#455): the handler faulted after it began a host call or a fetch. That is a
                 // FaultNotice, never an rc, whether or not the shell answered inside begin. Sent from
                 // the pool, as every late fault is, so the shell is never re-entered from its own
-                // dispatch lane.
+                // dispatch lane. Pinned by FaultNoticeTests'
+                // AFaultNoticeAfterABegunCall_IsNotBegunOnTheDispatchingThread, red under a direct call.
                 {
                     Exception fault = outcome.Fault!;
                     BnLog.Error("Exports", $"dispatch_event handler {handlerId} '{name}' faulted after beginning a shell call", fault);

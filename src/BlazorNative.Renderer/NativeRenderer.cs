@@ -91,7 +91,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// contract violations (poisoned cursor, out-of-range diff-provided
     /// sibling index) raise through the same switch. INSIDE the dispatch
     /// window the 3.2 capture still wins (the dispatch task faults → export
-    /// rc 2; no double-report).
+    /// rc 2, or a FaultNotice with rc 0 after a begun shell call, 16.7; no
+    /// double-report).
     /// Default FALSE — the deliberate production POC posture: renderer errors
     /// log to stderr rather than crash the host process (a diagnostics
     /// surface is M4+ work). ONE carve-out since Phase 11.4 Gate D (#164):
@@ -273,7 +274,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="DispatchScope"/>, to run when the scope closes (still inside the
     /// dispatch export call). A queued action's exception — including strict-mode
     /// renderer errors from the frames it produces — is captured into that same
-    /// scope, so it faults the dispatch exactly like a handler fault (export rc 2).
+    /// scope, so it faults the dispatch exactly like a handler fault: export rc 2, or,
+    /// when the handler had already begun a host call or a fetch, a FaultNotice with
+    /// rc 0 (16.7). A call the action itself begins never marks the dispatch: the
+    /// action runs after the scope closed.
     /// A handler SUSPENDED on an await holds no scope, so a dispatch arriving
     /// meanwhile queues into its own scope and swaps before its own export returns
     /// (16.0 spike requirement 1). Honest boundary (NON-strict mode): the drain
@@ -281,7 +285,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// own batches routes through <see cref="HandleException"/>'s log-only path —
     /// the action "succeeds" and the export returns 0. Only exceptions the action
     /// itself throws (or strict-mode rethrows) reach the scope. In-window faults
-    /// are unaffected: they always map to rc 2.</summary>
+    /// are unaffected: rc 2 before a begun shell call, a FaultNotice with rc 0 after
+    /// one (16.7).</summary>
     public void RunAfterDispatch(Action action)
     {
         // 16.1: reads the current scope, which only the render thread may touch.
@@ -583,10 +588,11 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override void HandleException(Exception exception)
     {
         // Inside a dispatch's synchronous part, remember the first exception in
-        // THAT dispatch's scope so DispatchSyncPart reports it as Faulted (Blazor
-        // swallows dispatch exceptions here otherwise — see DispatchScope). The
-        // window wins over strict mode: the fault surfaces ONCE, at the dispatch
-        // boundary (export rc 2) — never from this stack. A handler suspended on
+        // THAT dispatch's scope so DispatchSyncPart reports it (Blazor swallows
+        // dispatch exceptions here otherwise — see DispatchScope). The window wins
+        // over strict mode: the fault surfaces ONCE, at the dispatch boundary —
+        // export rc 2, or a FaultNotice with rc 0 when the handler had begun a host
+        // call or a fetch before it (16.7) — never from this stack. A handler suspended on
         // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
         // is that dispatch's, never the suspended one's (16.0 requirement 1).
         if (_currentScope is { } scope)
@@ -1502,8 +1508,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// propagate a handler's exception to its caller — it goes to
     /// HandleExceptionViaErrorBoundary → (no error boundary here) →
     /// HandleException, and the returned task completes successfully. Without the
-    /// capture, blazornative_dispatch_event could never honor its "2 = faulted
-    /// before yielding" contract (Phase 3.2, DoD #9 partial). The capture is a
+    /// capture, blazornative_dispatch_event could never honor its "2 = the
+    /// synchronous part faulted before it began a host call or a fetch" contract
+    /// (Phase 3.2, DoD #9 partial; the boundary is 16.7's). The capture is a
     /// WINDOW, not a handler hook: anything routed to HandleException while it is
     /// open is captured — the handler itself, the resulting re-render
     /// (UpdateDisplayAsync failures land here too), or frame delivery.</para>
