@@ -73,6 +73,11 @@ internal static unsafe class FakeShellHost
     public static string? LastHostCallArgs;
     public static int HostCallBeginReturnCode;
     public static bool AutoCompleteHostCall = true;
+    // 16.7 (#455): how many calls the auto-complete branches answered INSIDE begin. The
+    // inline-completion facts assert these, so a completion that arrived later cannot
+    // pass them vacuously (pin standard Rule 2).
+    public static int HostCallsCompletedInsideBegin;
+    public static int FetchesCompletedInsideBegin;
     /// <summary>The wire status the auto-completion returns (0 = Granted).</summary>
     public static int HostCallStatus;
     /// <summary>The flat-JSON fix payload the auto-completion returns (Granted only);
@@ -120,6 +125,8 @@ internal static unsafe class FakeShellHost
         LastHostCallArgs = null;
         HostCallBeginReturnCode = 0;
         AutoCompleteHostCall = true;
+        HostCallsCompletedInsideBegin = 0;
+        FetchesCompletedInsideBegin = 0;
         HostCallStatus = 0;
         HostCallPayloadJson = null;
         lock (HostCallLog) HostCallLog.Clear();
@@ -244,6 +251,7 @@ internal static unsafe class FakeShellHost
                     HeadersJson = headers,
                 };
                 NativeShellBridge.CompleteFetch(requestId, in resp);
+                FetchesCompletedInsideBegin++;
             }
             finally
             {
@@ -275,6 +283,7 @@ internal static unsafe class FakeShellHost
             // from managed code; the thin Exports.HostCallComplete wrapper only
             // marshals the payload pointer, exactly like FetchComplete).
             NativeShellBridge.CompleteHostCall(requestId, HostCallStatus, HostCallPayloadJson);
+            HostCallsCompletedInsideBegin++;
         }
         return 0;
     }

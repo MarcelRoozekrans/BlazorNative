@@ -367,6 +367,88 @@ public sealed class FaultNoticeTests
         }
     }
 
+    // â”€â”€ 16.7 (#455): a call the shell completes INSIDE begin still yields â”€â”€â”€â”€â”€
+    //
+    // Since 16.7 NativeShellBridge yields after begin when the call already completed, so
+    // the handler's await always suspends and a fault after it is a FaultNotice, never the
+    // dispatch's rc. Each fact anchors that the fake really completed the call inside begin
+    // (Rule 2). The Task.CompletedTask control pins the contract's own exception: an await
+    // on a task the app completed itself does not yield (Rule 3).
+    //
+    // DOES NOT COVER: a shell that completes the call on another thread while begin is still
+    // running, which is a race no fake here reproduces; an inline-completed call awaited
+    // outside a dispatch, such as in OnInitializedAsync, where there is no rc to protect.
+
+    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+        DispatchInline(string label, bool autoCompleteFetch = false)
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        NativeRenderer renderer = StartSession(strict: false, frames);
+        renderer.Mount<InlineCompletionProbe>();
+        int handlerId = HandlerFor(frames, "click", label);
+        FakeShellHost.AutoCompleteHostCall = true;
+        FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
+        int rc = DispatchBounded(handlerId, """{"name":"click"}""");
+        return (rc, frames, pending, previous);
+    }
+
+    [Fact]
+    public void AFaultAfterAnInlineCompletedHostCall_IsAFaultNotice_NotRc2()
+    {
+        var (rc, _, pending, previous) = DispatchInline("host-throw");
+        try
+        {
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the geolocation call INSIDE hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing (#455).");
+            Assert.True(rc == 0,
+                $"rc was {rc}: a fault after an await on a host call the shell completed inside begin came back "
+                + "as the dispatch's rc. The await did not yield, which is #455.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice reached the shell for the fault after the inline-completed host call.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
+            Assert.Equal("inline-host", args["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AnInlineCompletedHostCall_WithNoFault_IsRc0_AndItsResultRendersAfterTheReturn()
+    {
+        var (rc, frames, pending, previous) = DispatchInline("host-ok");
+        try
+        {
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
+            Assert.Equal(0, rc);
+            Assert.True(WaitUntil(() =>
+            {
+                lock (frames) return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Any(p => p.Text == "host-ok:done");
+            }, Budget), "the handler's continuation never rendered 'host-ok:done' after the inline-completed call.");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultAfterAwaitingACompletedTask_IsStillRc2_Control()
+    {
+        // The contract's exception, pinned: the app's own completed task does not yield.
+        var (rc, _, pending, previous) = DispatchInline("completed-throw");
+        try
+        {
+            Assert.True(rc == 2,
+                $"rc was {rc}: an await on Task.CompletedTask yielded, or its fault was lost; the contract "
+                + "says a fault after it is still in the synchronous part, rc 2.");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
     /// <summary>"click" awaits a held geolocation check, then throws; "change" does the
     /// same with a payload; "sync" throws before any await.</summary>
     private sealed class LateFaultNoticeProbe : ComponentBase
@@ -396,6 +478,56 @@ public sealed class FaultNoticeTests
             b.AddAttribute(6, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this,
                 () => throw new InvalidOperationException("sync")));
             b.AddContent(7, "sync");
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>16.7 (#455): handlers whose awaited call the shell completes INSIDE begin.</summary>
+    private sealed class InlineCompletionProbe : ComponentBase
+    {
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+        private string _status = "idle";
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("inline-host");
+            }));
+            b.AddContent(2, "host-throw");
+            b.CloseElement();
+
+            b.OpenElement(3, "button");
+            b.AddAttribute(4, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
+                throw new InvalidOperationException("inline-fetch");
+            }));
+            b.AddContent(5, "fetch-throw");
+            b.CloseElement();
+
+            b.OpenElement(6, "button");
+            b.AddAttribute(7, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+                _status = "host-ok:done";
+            }));
+            b.AddContent(8, "host-ok");
+            b.CloseElement();
+
+            b.OpenElement(9, "button");
+            b.AddAttribute(10, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, async () =>
+            {
+                await Task.CompletedTask;
+                throw new InvalidOperationException("completed-task");
+            }));
+            b.AddContent(11, "completed-throw");
+            b.CloseElement();
+
+            b.OpenElement(12, "text");
+            b.AddContent(13, _status);
             b.CloseElement();
         }
     }

@@ -28,7 +28,7 @@ public sealed class BnSecureDemoTests
         var frames = new List<RenderFrame>();
         renderer.Frames += (f, _) =>
         {
-            frames.Add(f);
+            lock (frames) frames.Add(f);
             return ValueTask.CompletedTask;
         };
         Assert.Equal(0, HostSession.TryMount("BnSecureDemo"));
@@ -95,9 +95,14 @@ public sealed class BnSecureDemoTests
             int echo = EchoTextNode(mount);
             int auth = ClickHandlerForLabel(mount, "Authenticate");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)auth, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnSecureDemo.StatusPrefix + "LockedOut"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnSecureDemo.StatusPrefix + "LockedOut");
             Assert.Equal(echo, echoed.NodeId);
         }
@@ -117,9 +122,14 @@ public sealed class BnSecureDemoTests
             int echo = EchoTextNode(mount);
             int unlock = ClickHandlerForLabel(mount, "Unlock");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)unlock, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnSecureDemo.ValuePrefix + "hunter2"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnSecureDemo.ValuePrefix + "hunter2");
             Assert.Equal(echo, echoed.NodeId);
         }
@@ -138,9 +148,14 @@ public sealed class BnSecureDemoTests
             int echo = EchoTextNode(mount);
             int unlock = ClickHandlerForLabel(mount, "Unlock");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)unlock, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnSecureDemo.StatusPrefix + "AuthFailed"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnSecureDemo.StatusPrefix + "AuthFailed");
             Assert.Equal(echo, echoed.NodeId);
         }

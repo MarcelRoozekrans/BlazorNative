@@ -25,7 +25,7 @@ public sealed class BnGeolocationDemoTests
         var frames = new List<RenderFrame>();
         renderer.Frames += (f, _) =>
         {
-            frames.Add(f);
+            lock (frames) frames.Add(f);
             return ValueTask.CompletedTask;
         };
         Assert.Equal(0, HostSession.TryMount("BnGeolocationDemo"));
@@ -127,9 +127,14 @@ public sealed class BnGeolocationDemoTests
             int echo = EchoTextNode(mount);
             int locate = ClickHandlerForLabel(mount, "Locate");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text.StartsWith(BnGeolocationDemo.FixPrefix, StringComparison.Ordinal)), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text.StartsWith(BnGeolocationDemo.FixPrefix, StringComparison.Ordinal));
             Assert.Equal(echo, echoed.NodeId);
             Assert.Contains("52.3702", echoed.Text);
@@ -149,11 +154,16 @@ public sealed class BnGeolocationDemoTests
             int accuracy = AccuracyTextNode(mount);
             int locate = ClickHandlerForLabel(mount, "Locate");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
 
             // The accuracy value (12.0) reaches the SEPARATE trailing node as "acc:<metres>"
             // — pinned by node id (issue #169), not by uniqueness, and distinct from the echo.
-            var accuracyEcho = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text.StartsWith(BnGeolocationDemo.AccuracyPrefix, StringComparison.Ordinal)), "the accuracyEcho patch");
+            var accuracyEcho = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text.StartsWith(BnGeolocationDemo.AccuracyPrefix, StringComparison.Ordinal));
             Assert.Equal(accuracy, accuracyEcho.NodeId);
             Assert.Contains("12", accuracyEcho.Text);
@@ -172,12 +182,23 @@ public sealed class BnGeolocationDemoTests
             int accuracy = AccuracyTextNode(mount);
             int locate = ClickHandlerForLabel(mount, "Locate");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
+
+            // 16.7 (#455): the handler's continuation renders after the export returns. Wait
+            // for its denial echo first, or the check below reads the frame from before the
+            // click and passes with nothing rendered.
+            ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnGeolocationDemo.StatusPrefix + "Denied"),
+                "the denial echo");
 
             // Denial-as-data for accuracy too: the accuracy node NEVER carries an "acc:" value
             // on a non-Granted outcome (it stays "" — either unchanged, so no patch, or a patch
-            // back to ""). Assert no accuracy patch ever announces a value on this node.
-            Assert.DoesNotContain(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // back to ""). Assert no accuracy patch ever announces a value on this node, in any
+            // frame since the click.
+            List<RenderFrame> since;
+            lock (frames) since = frames.Skip(before).ToList();
+            Assert.DoesNotContain(since.SelectMany(f => f.Patches).OfType<ReplaceTextPatch>(),
                 p => p.NodeId == accuracy && p.Text.StartsWith(BnGeolocationDemo.AccuracyPrefix, StringComparison.Ordinal));
         }
         finally { TearDown(); }
@@ -196,9 +217,14 @@ public sealed class BnGeolocationDemoTests
 
             // Denial is DATA: dispatch returns 0 (handled cleanly), and the echo
             // shows the status — never a fault (rc 2), never a blank hang.
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)locate, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnGeolocationDemo.StatusPrefix + "Denied"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnGeolocationDemo.StatusPrefix + "Denied");
             Assert.Equal(echo, echoed.NodeId);
         }

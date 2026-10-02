@@ -32,7 +32,7 @@ public sealed class BnCameraDemoTests
         var frames = new List<RenderFrame>();
         renderer.Frames += (f, _) =>
         {
-            frames.Add(f);
+            lock (frames) frames.Add(f);
             return ValueTask.CompletedTask;
         };
         Assert.Equal(0, HostSession.TryMount("BnCameraDemo"));
@@ -132,17 +132,22 @@ public sealed class BnCameraDemoTests
             int echo = EchoTextNode(mount);
             int take = ClickHandlerForLabel(mount, "Take Photo");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)take, """{"name":"click"}"""));
 
             // The capabilities compose: the captured file:// path is now the display
             // image's Src (an UpdateProp `src` on the image node) — the named
             // wrong-key mutation (reading `file`/`data`) reds THIS.
-            var src = Assert.Single(frames[^1].Patches.OfType<UpdatePropPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<UpdatePropPatch>().Any(p => p.NodeId == image && p.Name == "src"), "the src patch");
+            var src = Assert.Single(done.Patches.OfType<UpdatePropPatch>(),
                 p => p.NodeId == image && p.Name == "src");
             Assert.Equal(path, src.Value);
 
             // …and the dims are echoed (the file the path names has real bytes).
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.NodeId == echo);
             Assert.Equal(BnCameraDemo.CapturedPrefix + "1600x1200:204800", echoed.Text);
         }
@@ -165,14 +170,21 @@ public sealed class BnCameraDemoTests
 
             // Denial is DATA: dispatch returns 0 (handled cleanly), the echo shows the
             // status, and NO src is set on the image (never a fault, never a hang).
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)take, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.NodeId == echo), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.NodeId == echo);
             Assert.Equal(BnCameraDemo.StatusPrefix + "Cancelled", echoed.Text);
 
+            List<RenderFrame> all;
+            lock (frames) all = frames.ToList();
             Assert.DoesNotContain(
-                frames.SelectMany(f => f.Patches).OfType<UpdatePropPatch>(),
+                all.SelectMany(f => f.Patches).OfType<UpdatePropPatch>(),
                 p => p.NodeId == image && p.Name == "src" && p.Value is not null);
         }
         finally { TearDown(); }
@@ -190,9 +202,14 @@ public sealed class BnCameraDemoTests
             int echo = EchoTextNode(mount);
             int check = ClickHandlerForLabel(mount, "Check");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)check, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.NodeId == echo), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.NodeId == echo);
             Assert.Equal(BnCameraDemo.StatusPrefix + "Unavailable", echoed.Text);
         }

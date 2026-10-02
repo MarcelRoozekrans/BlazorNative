@@ -27,7 +27,7 @@ public sealed class BnNotificationsDemoTests
         var frames = new List<RenderFrame>();
         renderer.Frames += (f, _) =>
         {
-            frames.Add(f);
+            lock (frames) frames.Add(f);
             return ValueTask.CompletedTask;
         };
         Assert.Equal(0, HostSession.TryMount("BnNotificationsDemo"));
@@ -95,9 +95,14 @@ public sealed class BnNotificationsDemoTests
             int echo = EchoTextNode(mount);
             int show = ClickHandlerForLabel(mount, "Show");
 
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)show, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnNotificationsDemo.StatusPrefix + "Granted"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnNotificationsDemo.StatusPrefix + "Granted");
             Assert.Equal(echo, echoed.NodeId);
         }
@@ -118,9 +123,14 @@ public sealed class BnNotificationsDemoTests
 
             // Denial is DATA: dispatch returns 0 (handled cleanly), the echo shows
             // the status — never a fault (rc 2), never a blank hang.
+            int before = ContinuationFrames.Count(frames);
             Assert.Equal(0, Exports.DispatchEventCore((ulong)show, """{"name":"click"}"""));
 
-            var echoed = Assert.Single(frames[^1].Patches.OfType<ReplaceTextPatch>(),
+            // 16.7 (#455): the handler's continuation renders this after the export
+            // returns, so wait for its frame rather than read frames[^1].
+            RenderFrame done = ContinuationFrames.WaitFor(frames, before,
+                f => f.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text == BnNotificationsDemo.StatusPrefix + "Denied"), "the echoed patch");
+            var echoed = Assert.Single(done.Patches.OfType<ReplaceTextPatch>(),
                 p => p.Text == BnNotificationsDemo.StatusPrefix + "Denied");
             Assert.Equal(echo, echoed.NodeId);
         }

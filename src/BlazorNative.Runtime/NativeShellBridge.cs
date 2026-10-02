@@ -473,6 +473,12 @@ public sealed class NativeShellBridge : IMobileBridge
             throw;
         }
 
+        // A call the shell answered inside begin must still yield (16.7, #455): the
+        // handler's await then always suspends, so a fault after it is a FaultNotice,
+        // never the dispatch's rc. Pinned by FaultNoticeTests' inline-completion facts.
+        if (tcs.Task.IsCompleted)
+            await Task.Yield();
+
         // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
         // completion has already removed the id, so cancel is a no-op; on cancel
         // whoever removes the id wins, and a completion arriving after finds nothing
