@@ -572,7 +572,9 @@ public sealed class FaultNoticeTests
         var (rc, _, pending, previous) = DispatchProbe("refused-begin", hostCallBeginReturnCode: -1);
         try
         {
-            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
+            // The log, not LastHostCallOp: a FaultNotice sent from the pool under a mutation would
+            // overwrite LastHostCallOp and red this anchor instead of the rc. The log keeps refused begins.
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
                 "anchor: the begin was never attempted, so this fact tests nothing.");
             Assert.True(rc == 2, $"rc was {rc}: a begin the shell refused throws into the handler before any shell "
                 + "call is begun, so that fault must stay the dispatch's rc 2.");
@@ -603,8 +605,8 @@ public sealed class FaultNoticeTests
         {
             Assert.True(ShellCallProbe.ReachedThrow, "anchor: the handler body never reached its throw, so rc 0 "
                 + "and no notice would prove nothing.");
-            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
-                $"anchor: the begin was not attempted, the last host-call op was {FakeShellHost.LastHostCallOp}.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
                 + "call must match a late cancellation: rc 0 and nothing sent.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
@@ -702,15 +704,16 @@ public sealed class FaultNoticeTests
         {
             // Anchors: the call really was begun, answered inside begin, on a thread other than
             // the handler's. Without them rc 2 would only show that no call was begun.
-            Assert.True(FakeShellHost.LastHostCallOp == (int)HostCallOp.Geolocation,
-                $"anchor: the begin was not attempted, the last host-call op was {FakeShellHost.LastHostCallOp}.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
             Assert.True(ShellCallProbe.PoolBeginThread > 0 && ShellCallProbe.PoolBeginThread != ShellCallProbe.HandlerThread,
                 $"anchor: the call was begun on thread {ShellCallProbe.PoolBeginThread}, the handler ran on "
                 + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
             Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
-                + "after it stays rc 2. rc 0 means the mark followed the flowing scope off the synchronous part's thread.");
+                + "after it stays rc 2. rc 0 means the dispatch was marked although no call was begun on its synchronous "
+                + "part's thread, for example because the mark followed the flowing scope.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
             // rc 2 and an empty pending list exclude every notice source, as in the control.
             Assert.Empty(Notices());
