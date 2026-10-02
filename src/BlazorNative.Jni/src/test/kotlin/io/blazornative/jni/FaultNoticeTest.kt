@@ -63,6 +63,7 @@ class FaultNoticeTest {
     private class InlineCameraHost : ShellBridgeHandlers {
         @Volatile private var route: String = "/"
         @Volatile var answeredInsideBegin = 0
+        @Volatile var completeRc = -1
         override fun navigate(route: String) { this.route = route }
         override fun currentRoute(): String = route
         override fun storageRead(key: String): String? = null
@@ -77,7 +78,7 @@ class FaultNoticeTest {
         override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
             if (op == HostCallOp.CAMERA) {
                 val bad = Memory(6).apply { setString(0, "{bad", "UTF-8") }
-                NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad)
+                completeRc = NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad)
                 java.lang.ref.Reference.reachabilityFence(bad)
                 answeredInsideBegin++
             } else {
@@ -106,11 +107,15 @@ class FaultNoticeTest {
             val rc = runtime.dispatchEventBlocking(takePhoto, "click")
             // Anchor: the call really was answered inside begin.
             assertEquals(1, host.answeredInsideBegin, "the camera call was not answered inside hostCallBegin")
+            assertEquals(0, host.completeRc, "the camera call answered inside hostCallBegin was not pending")
             assertEquals(0, rc,
                 "a fault after an await on a call answered inside hostCallBegin came back as rc $rc. " +
                     "The await did not yield, which is #455, through the NativeAOT dll.")
             assertTrue(faultSeen.await(10, TimeUnit.SECONDS),
                 "no FaultNotice reached onError for the fault after the inline-answered call. onError saw: $errors")
+            val (msg, _) = errors.first { it.first.startsWith("handler fault after await:") }
+            assertTrue(msg.contains("System.FormatException:"), "message was: $msg")
+            assertTrue(msg.contains("event 'click'"), "message was: $msg")
         } finally {
             runtime.retire()
         }
