@@ -107,9 +107,9 @@ dependencies {
     // thread never waits on .NET for a back. Biometric/fragment pull activity in only at
     // 1.1.0, which predates the dispatcher's platform predictive-back integration (added
     // 1.6.0): on API 33+ with enableOnBackInvokedCallback it would not register an
-    // OnBackInvokedCallback at all. 1.9.3 is the newest release compatible with this
-    // project's compileSdk 34; 1.10.0 and later require compileSdk 35. Its own
-    // androidx.core requirement, 1.13.0, is met by the 1.13.1 pin above.
+    // OnBackInvokedCallback at all. 1.13.0's AAR metadata requires compileSdk 36, which
+    // is what sets compileSdk below; targetSdk, the runtime behaviour, is unaffected. It
+    // depends on androidx.core 1.18.0, which Gradle resolves over the lower core pin above.
     implementation("androidx.activity:activity:1.13.0")
 
     // Kotlin stdlib
@@ -146,7 +146,7 @@ dependencies {
 
 android {
     namespace = "io.blazornative.shell"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.blazornative.shell"

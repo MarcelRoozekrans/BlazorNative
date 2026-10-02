@@ -86,9 +86,8 @@ dependencies {
 
     // androidx.activity, pinned EXPLICITLY (Phase 16.2). The shell's back is an AndroidX
     // OnBackPressedCallback, and the version biometric/fragment pull in transitively,
-    // 1.1.0, predates predictive back on API 33+ (added 1.6.0). 1.9.3 is the newest
-    // release compatible with this project's compileSdk 34; 1.10.0 and later require
-    // compileSdk 35. It must stay pinned to the same version the reference shell uses.
+    // 1.1.0, predates predictive back on API 33+ (added 1.6.0). 1.13.0 requires
+    // compileSdk 36. It must stay pinned to the same version the reference shell uses.
     implementation("androidx.activity:activity:1.13.0")
 
     // Kotlin stdlib
@@ -100,7 +99,7 @@ android {
     // identity on the device) are BOTH yours — and neither has to match a source
     // package, which is why the shell's Kotlin can stay in io.blazornative.shell.
     namespace = "com.example.starterapp"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.starterapp"
