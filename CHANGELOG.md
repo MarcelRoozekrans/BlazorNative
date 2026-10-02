@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.0...v0.17.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **16.4:** the lost first tap, a harness race and a cold LAContext on the render thread ([#449](https://github.com/MarcelRoozekrans/BlazorNative/issues/449)) ([3f432a3](https://github.com/MarcelRoozekrans/BlazorNative/commit/3f432a36c6bbe24c5f101d7a66e8b2473f5a2b27))
+
 ## [0.17.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.3...v0.17.0) (2026-09-28)
 
 
