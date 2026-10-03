@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using BlazorNative.Core;
+using BlazorNative.Renderer;
 
 namespace BlazorNative.Runtime;
 
@@ -330,6 +331,11 @@ public sealed class NativeShellBridge : IMobileBridge
             throw;
         }
 
+        // 16.7 (#455): a fetch the shell accepted marks its dispatch, as a host call does. Only
+        // reached when begin returned normally: a refused begin throws into the handler, and
+        // that fault stays rc 2.
+        NativeRenderer.NoteShellCallBegun();
+
         // Registered AFTER FetchBegin: if the host completed synchronously the
         // id is already out of the table and cancellation is a no-op. On
         // cancel, whoever removes the id from the table wins — a completion
@@ -450,9 +456,12 @@ public sealed class NativeShellBridge : IMobileBridge
     /// call a null pointer. Cancellation removes the id and cancels the task (a
     /// process killed during the prompt is the caller's token to abandon, never a
     /// leaked entry); a late/unknown completion takes the unknown-id path in
-    /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.</summary>
+    /// CompleteHostCall (return 1, never a throw). The exact FetchAsync posture.
+    /// <paramref name="markDispatch"/> is false only for a notice .NET sends itself, through
+    /// <see cref="SendNotice"/>: that is not a shell call the handler began, so it must never
+    /// mark the dispatch (16.7). Every capability call keeps the default.</summary>
     private static async ValueTask<HostCallResult> InvokeHostCallAsync(
-        HostCallOp op, string argsJson, CancellationToken ct)
+        HostCallOp op, string argsJson, CancellationToken ct, bool markDispatch = true)
     {
         var cb = GetCallbacks();
         RequireSlot(cb.HostCallBegin, "host-call-begin");
@@ -472,6 +481,14 @@ public sealed class NativeShellBridge : IMobileBridge
             s_pendingHostCalls.TryRemove(id, out _);
             throw;
         }
+
+        // 16.7 (#455): a host call the shell accepted marks its dispatch, so a fault after it is
+        // a FaultNotice, never rc 2. Only reached when begin returned normally: a refused begin
+        // throws into the handler, and that fault stays rc 2. A notice .NET sends itself is not
+        // a call the handler began: SendNotice passes markDispatch false, so no op list here
+        // can fall out of step with the notices.
+        if (markDispatch)
+            NativeRenderer.NoteShellCallBegun();
 
         // Registered AFTER BeginHostCall (the FetchAsync ordering): a synchronous
         // completion has already removed the id, so cancel is a no-op; on cancel
@@ -544,8 +561,8 @@ public sealed class NativeShellBridge : IMobileBridge
     // A notice is .NET telling the shell something, as a host call on the existing
     // slot, with no ABI change. .NET ignores the answer.
     //
-    // FaultNotice: a handler that faults AFTER its first await faults too late to be
-    // its export's rc 2, because the export has already returned rc 0. This hands that
+    // FaultNotice: a handler that faults AFTER it began a host call or a fetch is never
+    // its export's rc, whether the shell answered inside hostCallBegin or later. This hands that
     // fault to the shell so it reaches onError instead of only stderr. A shell that
     // predates the op still reaches onError through its unknown-op branch on Android,
     // and completes it with Error on iOS.
@@ -636,7 +653,7 @@ public sealed class NativeShellBridge : IMobileBridge
     private static void SendNotice(HostCallOp op, string args, string what)
     {
         var timeout = new CancellationTokenSource(FaultNoticeTimeout);
-        _ = AwaitNotice(InvokeHostCallAsync(op, args, timeout.Token), timeout, what);
+        _ = AwaitNotice(InvokeHostCallAsync(op, args, timeout.Token, markDispatch: false), timeout, what);
     }
 
     /// <summary>Observes a sent notice so its outcome is never an unobserved Task

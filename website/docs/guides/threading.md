@@ -17,8 +17,9 @@ Every mounted session gets one dedicated thread, named `BlazorNative-Render`. Bl
 when you are actually on that thread.
 
 The shell's own dispatch lane hands each UI event and host event to the render thread and
-waits, but only for the handler's **synchronous part** — up to its first `await`, if it has
-one. A handler that yields frees the lane at once; the render thread keeps running the
+waits, but only for the handler's **synchronous part** — up to its first `await` that suspends, if
+it has one. An `await` on a call the shell answers inside its begin does not suspend. A handler
+that yields frees the lane at once; the render thread keeps running the
 continuation on its own. When that continuation resumes, it resumes on the render thread too,
 same as it started — nothing needs to marshal back manually just because an `await` happened.
 
@@ -33,22 +34,30 @@ and
 [`Exports.cs`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Runtime/Exports.cs)
 and once more, verbatim, in
 [`BlazorNativeRuntimeC.h`](https://github.com/MarcelRoozekrans/BlazorNative/blob/main/src/BlazorNative.Apple/BnHost/BlazorNativeRuntimeC.h),
-so the two can't drift apart:
+and once more on this page, so the three can't drift apart: `RcContractCopiesTests` fails when
+they differ.
 
+<!-- BEGIN rc-contract -->
 ```text
-rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-first await (the handler may still be running); 2 = it faulted before yielding. A fault
-after the first await is delivered later through the FaultNotice host-call op, never as
-an rc. Frames from the synchronous part are delivered before this returns; frames from a
+rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault, or it faulted only
+after it began a host call or a fetch (it may still be running); 2 = it faulted before
+beginning one. A fault after the handler has begun a host call or a fetch arrives as a
+FaultNotice host-call op, never as an rc, whether the shell answers inside `hostCallBegin` or
+later. Frames from the synchronous part are delivered before the export returns; frames from a
 continuation are delivered later, from the render thread.
 ```
+<!-- END rc-contract -->
 
-In plain terms: **rc only ever describes the synchronous half of a handler.** If your handler
-awaits and then throws, that fault does not come back as an rc — by the time it happens, the
-export that would have reported it has long since returned 0. Instead it is delivered later as
-a `FaultNotice` host call, which reaches the shell's `onError` on a thread-pool thread, not the
-render thread. This is true in production mode as well as strict/debug mode — a late fault is
-never silently dropped just because the app isn't running under a debugger.
+In plain terms: **rc only ever describes the synchronous half of a handler.** Once that
+synchronous part, which includes the handler's own re-render, has begun a host call or a fetch,
+a fault after that never comes back as an rc, whether the shell answers at once or later: by
+then the export that would have reported it has returned 0, or is about to. It is delivered as a
+`FaultNotice` host call instead, which reaches the shell's `onError` on a thread-pool thread, not
+the render thread. A fault in the synchronous part before any such call is rc 2. A fault after the handler yields,
+on anything, also arrives as a `FaultNotice`. A refused begin does not count as a begun call.
+This is true in production mode as well as
+strict/debug mode: a late fault is never silently dropped just because the app isn't running
+under a debugger.
 
 ## Re-rendering from another thread
 

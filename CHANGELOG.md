@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.2...v0.18.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **16.7:** blazornative_dispatch_event rc reports only the synchronous part of a handler. Since 0.17.0 rc 0 means the handler did not fault in its synchronous part, not that it finished. Since this release a fault after the handler began a host call or a fetch arrives as a FaultNotice host-call op with rc 0, where a call the shell answered inside begin used to give rc 2. Shells must route FaultNotice to their error handler, as both shipped shells do.
+
+### Bug Fixes
+
+* **16.7:** a fault after a handler began a shell call is a FaultNotice ([#465](https://github.com/MarcelRoozekrans/BlazorNative/issues/465)) ([dc5b737](https://github.com/MarcelRoozekrans/BlazorNative/commit/dc5b73743d6ace2203d9446d4bc53c3b6ac17f6a))
+
 ## [0.17.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.1...v0.17.2) (2026-10-02)
 
 
@@ -23,6 +34,10 @@
 * **16.1:** give the renderer its own thread, deliver late faults, quiesce shutdown ([#428](https://github.com/MarcelRoozekrans/BlazorNative/issues/428)) ([5634ed1](https://github.com/MarcelRoozekrans/BlazorNative/commit/5634ed1385a1668a387b68dd0fb5c3acd5fec4fa))
 * **16.2:** take back and navigation off the main thread ([#431](https://github.com/MarcelRoozekrans/BlazorNative/issues/431)) ([f249b7b](https://github.com/MarcelRoozekrans/BlazorNative/commit/f249b7b727d92f0fa55f78ec467cb7e134610e6f))
 * **16.3:** measure lane starvation and warn once on a slow synchronous handler ([#437](https://github.com/MarcelRoozekrans/BlazorNative/issues/437)) ([1397cf8](https://github.com/MarcelRoozekrans/BlazorNative/commit/1397cf8373226835c33e129e262a9961d0678e85))
+
+### Behaviour changes
+
+* **dispatch rc:** `blazornative_dispatch_event` returns once the handler's synchronous part has run, so rc 0 means the handler did not fault in its synchronous part, not that it finished. A fault after that arrives through the FaultNotice host-call op. This note was missing from the 0.17.0 release; see #455.
 
 ## [0.16.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.2...v0.16.3) (2026-09-25)
 
