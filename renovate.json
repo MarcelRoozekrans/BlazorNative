@@ -3,11 +3,31 @@
   "extends": [
     "local>MarcelRoozekrans/renovate-config"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Package.resolved is committed and xcodebuild runs with -onlyUsePackageVersionsFromResolvedFile, so a bump of a SwiftPM package in src/BlazorNative.Apple/project.yml that leaves this file behind fails the iOS lanes. The xcodegen manager only edits project.yml. This updates each GitHub-hosted pin's version and revision, the commit its tag points to, in the same branch: Renovate names both by the lower-cased package name, so they combine into one PR.",
+      "managerFilePatterns": [
+        "/^src/BlazorNative\\.Apple/Package\\.resolved$/"
+      ],
+      "matchStrings": [
+        "\"identity\" : \"(?<depName>[^\"]+)\",\\s*\"kind\" : \"remoteSourceControl\",\\s*\"location\" : \"https://github\\.com/(?<packageName>[^/\"]+/[^/\"]+?)(?:\\.git)?\",\\s*\"state\" : \\{\\s*\"revision\" : \"(?<currentDigest>[0-9a-f]{40})\",\\s*\"version\" : \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-tags"
+    }
+  ],
   "packageRules": [
     {
       "description": "Kotlin is governed by AGP 9's built-in Kotlin (KGP 2.2.10), not Renovate. The kotlinVersion pin in src/BlazorNative.Jni/build.gradle.kts must equal AGP's bundled KGP - a stdlib ahead of the compiler fails the android-build check (see #77). Bump Kotlin only in lockstep with an AGP upgrade whose built-in KGP moves.",
       "matchManagers": ["gradle"],
       "matchPackageNames": ["org.jetbrains.kotlin:*"],
+      "enabled": false
+    },
+    {
+      "description": "The release-notes parse guard in scripts/commit-parse-check (#302) must run the exact release-please that the SHA-pinned googleapis/release-please-action bundles. action-version.json records it, measured from the action's own lockfile, and ReleaseParserVersionPinTests holds package.json and package-lock.json to it. An independent npm bump can never be correct, so Renovate does not offer one. The version moves only with a release-please-action bump: re-measure as action-version.json's $doc says, then update actionSha, releasePlease, conventionalCommitsParser, package.json and package-lock.json together.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["scripts/commit-parse-check/package.json"],
+      "matchPackageNames": ["release-please"],
       "enabled": false
     }
   ]
