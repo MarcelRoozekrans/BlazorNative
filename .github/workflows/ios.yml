@@ -188,14 +188,14 @@ jobs:
           - leg: simulator
             rid: iossimulator-arm64
             sdk: iphonesimulator
-            min_flag: -mios-simulator-version-min=13.0
+            min_flag: -mios-simulator-version-min=15.0
             expected_platform: IOSSIMULATOR
             expected_platform_num: "7"
             runs_tests: true
           - leg: device
             rid: ios-arm64
             sdk: iphoneos
-            min_flag: -miphoneos-version-min=13.0
+            min_flag: -miphoneos-version-min=15.0
             expected_platform: IOS
             expected_platform_num: "2"
             runs_tests: false

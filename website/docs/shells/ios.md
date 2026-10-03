@@ -86,6 +86,12 @@ iOS copy is pinned by nothing.** Diff it against the reference when you update.
 You also need **`project.yml`** (the XcodeGen spec) and its `vendor/` layout. Read it: it is
 the most load-bearing file in the iOS build and it is thoroughly commented.
 
+**The minimum is iOS 15.0.** `project.yml` sets `deploymentTarget.iOS: "15.0"`, and the Yoga
+build in §6 compiles with the matching `-miphoneos-version-min=15.0` (device) or
+`-mios-simulator-version-min=15.0` (simulator). Kingfisher, the shell's image loader, requires
+iOS 15 from 8.13 on, so the floor cannot go lower without pinning an older Kingfisher. Keep the
+deployment target and both flags equal in your copy.
+
 ---
 
 ## 2. What to delete

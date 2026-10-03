@@ -223,11 +223,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        if #available(iOS 14.0, *) {
-            completionHandler([.banner, .sound])
-        } else {
-            completionHandler([.alert, .sound])
-        }
+        completionHandler([.banner, .sound])
     }
 
     // ── Delegate installation + the tap fire (hand-rolled — run the REAL handler) ──

@@ -71,8 +71,8 @@ public sealed class IosSliceMatrixDriftTests
 
     private static readonly Slice[] RequiredSlices =
     [
-        new("simulator", "iossimulator-arm64", "iphonesimulator", "-mios-simulator-version-min=13.0", "generic/platform=iOS Simulator", "IOSSIMULATOR", "7"),
-        new("device", "ios-arm64", "iphoneos", "-miphoneos-version-min=13.0", "generic/platform=iOS", "IOS", "2"),
+        new("simulator", "iossimulator-arm64", "iphonesimulator", "-mios-simulator-version-min=15.0", "generic/platform=iOS Simulator", "IOSSIMULATOR", "7"),
+        new("device", "ios-arm64", "iphoneos", "-miphoneos-version-min=15.0", "generic/platform=iOS", "IOS", "2"),
     ];
 
     /// <summary>Matches one `- leg: <value>` entry header inside the `include:` block. Each
@@ -313,6 +313,37 @@ public sealed class IosSliceMatrixDriftTests
             + "the tree and is held by this fixture instead. A fixture proves the REGEX still "
             + "recognises the shape; it cannot prove the regex is pointed at anything real. That "
             + "second property is what the aggregator assertion above buys.");
+    }
+
+    /// <summary>THE iOS FLOOR IS ONE DECISION WRITTEN IN TWO PLACES. project.yml's
+    /// <c>deploymentTarget.iOS</c> sets it for the Swift shell and its SwiftPM graph; each
+    /// leg's <c>min_flag</c> sets it for Yoga, which the matrix compiles with clang outside
+    /// Xcode. #462 raised it from 13.0 to 15.0 to take Kingfisher 8.13, and every copy had to
+    /// move together. <see cref="RequiredSlices"/> is already held to ci.yml by
+    /// <see cref="IosBuildSliceMatrix_DeclaresEveryRequiredSlice_Unconditionally"/>; this
+    /// chains it to project.yml, so moving the floor in one file and not the other reds here
+    /// rather than shipping a shell whose two halves disagree about the minimum iOS.</summary>
+    [Fact]
+    public void EverySliceMinFlag_MatchesProjectYmlsDeploymentTarget()
+    {
+        string projectYml = ReadCheckoutFile(Path.Combine("src", "BlazorNative.Apple", "project.yml"));
+
+        MatchCollection targets = Regex.Matches(projectYml,
+            @"(?m)^\s+deploymentTarget:[ \t]*\r?\n\s+iOS:[ \t]*""(?<v>[0-9]+(?:\.[0-9]+)*)""[ \t]*\r?$");
+        Assert.True(targets.Count == 1,
+            $"Expected exactly ONE `deploymentTarget:` / `iOS: \"<version>\"` pair in project.yml, "
+            + $"found {targets.Count}. Zero means the key moved or was reshaped and this pin is reading "
+            + "nothing; fix the pattern, do not delete the test.");
+
+        string floor = targets[0].Groups["v"].Value;
+
+        foreach (Slice slice in RequiredSlices)
+        {
+            Assert.True(slice.MinFlag.EndsWith("=" + floor, StringComparison.Ordinal),
+                $"the {slice.Leg} leg's min_flag is `{slice.MinFlag}` but project.yml's "
+                + $"deploymentTarget.iOS is \"{floor}\". The iOS floor is one decision: move "
+                + "project.yml, both min_flag values in ci.yml and ios.yml, and this roster together.");
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────
