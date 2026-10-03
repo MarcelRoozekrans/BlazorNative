@@ -81,7 +81,8 @@ interface NativeBindings : Library {
      *
      * RETURNS WHEN THE HANDLER'S SYNCHRONOUS PART HAS RUN (Phase 16.1): that
      * part, its re-render, and that re-render's frame callback complete before
-     * this returns. A handler that awaits returns here at its first await.
+     * this returns. A handler that awaits returns here at its first await that suspends; an await
+     * on a call the shell answers inside begin does not suspend.
      * FRAMES ARE NOT CONFINED TO HOST CALLS: they come from the .NET render
      * thread, during a host call or later from a continuation, when the
      * awaited work completes. [BlazorNativeRuntime.retire] drains only the

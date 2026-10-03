@@ -73,6 +73,14 @@ internal static unsafe class FakeShellHost
     public static string? LastHostCallArgs;
     public static int HostCallBeginReturnCode;
     public static bool AutoCompleteHostCall = true;
+    // 16.7 (#455): how many calls the auto-complete branches answered INSIDE begin. The
+    // inline-completion facts assert these, so a completion that arrived later cannot
+    // pass them vacuously (pin standard Rule 2). Only a completion the bridge accepted,
+    // rc 0, counts. FaultNotice host calls are not counted: a notice is the bridge
+    // reporting a late fault, not the call under test, and it arrives on its own thread,
+    // so counting it would race the anchor.
+    public static int HostCallsCompletedInsideBegin;
+    public static int FetchesCompletedInsideBegin;
     /// <summary>The wire status the auto-completion returns (0 = Granted).</summary>
     public static int HostCallStatus;
     /// <summary>The flat-JSON fix payload the auto-completion returns (Granted only);
@@ -84,6 +92,17 @@ internal static unsafe class FakeShellHost
     /// capability call it followed, so a test that needs both must read the log. Take
     /// the lock: the notice is begun from a thread-pool thread.</summary>
     public static readonly List<(long RequestId, int Op, string? Args)> HostCallLog = new();
+
+    /// <summary>16.7: the managed thread each host call was begun on, by request id. Written
+    /// under <see cref="HostCallLog"/>'s lock, next to the log entry. The FaultNotice
+    /// thread fact reads it: a notice must never be begun on the thread that dispatched.</summary>
+    public static readonly Dictionary<long, int> HostCallBeginThreads = new();
+
+    /// <summary>The thread <paramref name="requestId"/> was begun on, or -1.</summary>
+    public static int HostCallBeginThread(long requestId)
+    {
+        lock (HostCallLog) return HostCallBeginThreads.TryGetValue(requestId, out int t) ? t : -1;
+    }
 
     /// <summary>A snapshot of <see cref="HostCallLog"/>, taken under its lock.</summary>
     public static List<(long RequestId, int Op, string? Args)> HostCalls()
@@ -120,9 +139,15 @@ internal static unsafe class FakeShellHost
         LastHostCallArgs = null;
         HostCallBeginReturnCode = 0;
         AutoCompleteHostCall = true;
+        HostCallsCompletedInsideBegin = 0;
+        FetchesCompletedInsideBegin = 0;
         HostCallStatus = 0;
         HostCallPayloadJson = null;
-        lock (HostCallLog) HostCallLog.Clear();
+        lock (HostCallLog)
+        {
+            HostCallLog.Clear();
+            HostCallBeginThreads.Clear();
+        }
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -243,7 +268,8 @@ internal static unsafe class FakeShellHost
                     ErrorMessage = error,
                     HeadersJson = headers,
                 };
-                NativeShellBridge.CompleteFetch(requestId, in resp);
+                if (NativeShellBridge.CompleteFetch(requestId, in resp) == 0)
+                    Interlocked.Increment(ref FetchesCompletedInsideBegin);
             }
             finally
             {
@@ -264,7 +290,11 @@ internal static unsafe class FakeShellHost
         LastHostCallRequestId = requestId;
         LastHostCallOp = op;
         LastHostCallArgs = argsUtf8 == null ? null : Marshal.PtrToStringUTF8((IntPtr)argsUtf8);
-        lock (HostCallLog) HostCallLog.Add((requestId, op, LastHostCallArgs));
+        lock (HostCallLog)
+        {
+            HostCallLog.Add((requestId, op, LastHostCallArgs));
+            HostCallBeginThreads[requestId] = Environment.CurrentManagedThreadId;
+        }
         if (HostCallBeginReturnCode != 0)
             return HostCallBeginReturnCode;
 
@@ -274,7 +304,9 @@ internal static unsafe class FakeShellHost
             // pattern — the [UnmanagedCallersOnly] export cannot be called directly
             // from managed code; the thin Exports.HostCallComplete wrapper only
             // marshals the payload pointer, exactly like FetchComplete).
-            NativeShellBridge.CompleteHostCall(requestId, HostCallStatus, HostCallPayloadJson);
+            int completed = NativeShellBridge.CompleteHostCall(requestId, HostCallStatus, HostCallPayloadJson);
+            if (completed == 0 && op != (int)HostCallOp.FaultNotice)
+                Interlocked.Increment(ref HostCallsCompletedInsideBegin);
         }
         return 0;
     }

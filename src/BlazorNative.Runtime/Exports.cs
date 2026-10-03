@@ -465,23 +465,28 @@ public static class Exports
     /// (NativeShellBridge internals — same hand-rolled pair the Kotlin side
     /// mirrors): <c>{"name":"click"}</c> / <c>{"name":"change","payload":"…"}</c>.
     ///
-    /// The rc contract, written once here and once in BlazorNativeRuntimeC.h:
+    /// The rc contract, written once here, once in BlazorNativeRuntimeC.h and once in
+    /// website/docs/guides/threading.md, and pinned identical by RcContractCopiesTests:
     ///
-    /// rc reports the SYNCHRONOUS part of the handler: 0 = it ran and did not fault before its
-    /// first await (the handler may still be running); 2 = it faulted before yielding. A fault
-    /// after the first await is delivered later through the FaultNotice host-call op, never as
-    /// an rc. Frames from the synchronous part are delivered before this returns; frames from a
+    /// BEGIN rc-contract
+    /// rc reports the SYNCHRONOUS part of the handler: 0 = it did not fault, or it faulted only
+    /// after it began a host call or a fetch (it may still be running); 2 = it faulted before
+    /// beginning one. A fault after the handler has begun a host call or a fetch arrives as a
+    /// FaultNotice host-call op, never as an rc, whether the shell answers inside `hostCallBegin` or
+    /// later. Frames from the synchronous part are delivered before the export returns; frames from a
     /// continuation are delivered later, from the render thread.
+    /// END rc-contract
     ///
     /// Return codes:
-    ///   0 = dispatched, and the synchronous part did not fault — INCLUDING a
-    ///       handler still suspended on an await, and a stale handlerId:
+    ///   0 = dispatched, and the synchronous part did not fault, or faulted only
+    ///       after a host call or a fetch was begun in it — INCLUDING a handler
+    ///       still suspended on an await, and a stale handlerId:
     ///       delivery is at-most-once, the renderer catches Blazor's
     ///       ArgumentException for a handler that died in a re-render and logs
     ///       it (a stale tap is not an error);
     ///   1 = no session / nothing mounted;
-    ///   2 = the synchronous part faulted — the handler before its first await,
-    ///       the resulting re-render, frame delivery, or a navigation swap it
+    ///   2 = the synchronous part faulted before a host call or a fetch was begun
+    ///       in it — the handler, the resulting re-render, frame delivery, or a navigation swap it
     ///       queued (anything routed to HandleException inside this dispatch's
     ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
     ///   3 = malformed or NULL args, including a handlerId outside the int
@@ -554,11 +559,24 @@ public static class Exports
         switch (outcome.Kind)
         {
             case DispatchOutcomeKind.Faulted:
-                // Dispatch fault (DoD #9 partial): the handler before its first await, the
-                // resulting re-render, or frame delivery threw — visible via rc 2 + full
+                // Dispatch fault (DoD #9 partial): the handler before it began a host call or a
+                // fetch, the resulting re-render, or frame delivery threw — visible via rc 2 + full
                 // detail on stderr so a device-side crash is diagnosable from logcat.
                 BnLog.Error("Exports", $"dispatch_event handler {handlerId} faulted", outcome.Fault!);
                 return 2;
+
+            case DispatchOutcomeKind.FaultedAfterShellCall:
+                // 16.7 (#455): the handler faulted after it began a host call or a fetch. That is a
+                // FaultNotice, never an rc, whether or not the shell answered inside begin. Sent from
+                // the pool, as every late fault is, so the shell is never re-entered from its own
+                // dispatch lane. Pinned by FaultNoticeTests'
+                // AFaultNoticeAfterABegunCall_IsNotBegunOnTheDispatchingThread, red under a direct call.
+                {
+                    Exception fault = outcome.Fault!;
+                    BnLog.Error("Exports", $"dispatch_event handler {handlerId} '{name}' faulted after beginning a shell call", fault);
+                    _ = Task.Run(() => NativeShellBridge.SendFaultNotice(handlerId, name, fault));
+                }
+                break;
 
             case DispatchOutcomeKind.Pending:
                 // Decision 5: hand on a mirror the render thread cancels at shutdown. The

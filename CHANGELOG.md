@@ -24,6 +24,10 @@
 * **16.2:** take back and navigation off the main thread ([#431](https://github.com/MarcelRoozekrans/BlazorNative/issues/431)) ([f249b7b](https://github.com/MarcelRoozekrans/BlazorNative/commit/f249b7b727d92f0fa55f78ec467cb7e134610e6f))
 * **16.3:** measure lane starvation and warn once on a slow synchronous handler ([#437](https://github.com/MarcelRoozekrans/BlazorNative/issues/437)) ([1397cf8](https://github.com/MarcelRoozekrans/BlazorNative/commit/1397cf8373226835c33e129e262a9961d0678e85))
 
+### Behaviour changes
+
+* **dispatch rc:** `blazornative_dispatch_event` returns once the handler's synchronous part has run, so rc 0 means the handler did not fault in its synchronous part, not that it finished. A fault after that arrives through the FaultNotice host-call op. This note was missing from the 0.17.0 release; see #455.
+
 ## [0.16.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.16.2...v0.16.3) (2026-09-25)
 
 

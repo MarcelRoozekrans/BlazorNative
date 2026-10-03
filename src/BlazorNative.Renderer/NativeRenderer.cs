@@ -91,7 +91,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// contract violations (poisoned cursor, out-of-range diff-provided
     /// sibling index) raise through the same switch. INSIDE the dispatch
     /// window the 3.2 capture still wins (the dispatch task faults → export
-    /// rc 2; no double-report).
+    /// rc 2, or a FaultNotice with rc 0 after a begun shell call, 16.7; no
+    /// double-report).
     /// Default FALSE — the deliberate production POC posture: renderer errors
     /// log to stderr rather than crash the host process (a diagnostics
     /// surface is M4+ work). ONE carve-out since Phase 11.4 Gate D (#164):
@@ -273,7 +274,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="DispatchScope"/>, to run when the scope closes (still inside the
     /// dispatch export call). A queued action's exception — including strict-mode
     /// renderer errors from the frames it produces — is captured into that same
-    /// scope, so it faults the dispatch exactly like a handler fault (export rc 2).
+    /// scope, so it faults the dispatch exactly like a handler fault: export rc 2, or,
+    /// when the handler had already begun a host call or a fetch, a FaultNotice with
+    /// rc 0 (16.7). A call the action itself begins never marks the dispatch: the
+    /// action runs after the scope closed.
     /// A handler SUSPENDED on an await holds no scope, so a dispatch arriving
     /// meanwhile queues into its own scope and swaps before its own export returns
     /// (16.0 spike requirement 1). Honest boundary (NON-strict mode): the drain
@@ -281,7 +285,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// own batches routes through <see cref="HandleException"/>'s log-only path —
     /// the action "succeeds" and the export returns 0. Only exceptions the action
     /// itself throws (or strict-mode rethrows) reach the scope. In-window faults
-    /// are unaffected: they always map to rc 2.</summary>
+    /// are unaffected: rc 2 before a begun shell call, a FaultNotice with rc 0 after
+    /// one (16.7).</summary>
     public void RunAfterDispatch(Action action)
     {
         // 16.1: reads the current scope, which only the render thread may touch.
@@ -583,10 +588,11 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override void HandleException(Exception exception)
     {
         // Inside a dispatch's synchronous part, remember the first exception in
-        // THAT dispatch's scope so DispatchSyncPart reports it as Faulted (Blazor
-        // swallows dispatch exceptions here otherwise — see DispatchScope). The
-        // window wins over strict mode: the fault surfaces ONCE, at the dispatch
-        // boundary (export rc 2) — never from this stack. A handler suspended on
+        // THAT dispatch's scope so DispatchSyncPart reports it (Blazor swallows
+        // dispatch exceptions here otherwise — see DispatchScope). The window wins
+        // over strict mode: the fault surfaces ONCE, at the dispatch boundary —
+        // export rc 2, or a FaultNotice with rc 0 when the handler had begun a host
+        // call or a fetch before it (16.7) — never from this stack. A handler suspended on
         // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
         // is that dispatch's, never the suspended one's (16.0 requirement 1).
         if (_currentScope is { } scope)
@@ -1502,8 +1508,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// propagate a handler's exception to its caller — it goes to
     /// HandleExceptionViaErrorBoundary → (no error boundary here) →
     /// HandleException, and the returned task completes successfully. Without the
-    /// capture, blazornative_dispatch_event could never honor its "2 = faulted
-    /// before yielding" contract (Phase 3.2, DoD #9 partial). The capture is a
+    /// capture, blazornative_dispatch_event could never honor its "2 = the
+    /// synchronous part faulted before it began a host call or a fetch" contract
+    /// (Phase 3.2, DoD #9 partial; the boundary is 16.7's). The capture is a
     /// WINDOW, not a handler hook: anything routed to HandleException while it is
     /// open is captured — the handler itself, the resulting re-render
     /// (UpdateDisplayAsync failures land here too), or frame delivery.</para>
@@ -1553,6 +1560,8 @@ public sealed class NativeRenderer : BlazorRenderer
         /// <summary>Set once the handler has finished: at DispatchSyncPart's return when
         /// it never yielded, otherwise when its pending Task completes.</summary>
         public volatile bool Done;
+        /// <summary>Set when the handler began a host call or a fetch during the synchronous part (16.7).</summary>
+        public bool ShellCallBegun;
     }
 
     /// <summary>The scope of the dispatch whose synchronous part is running now, or
@@ -1560,6 +1569,27 @@ public sealed class NativeRenderer : BlazorRenderer
     /// capture use THIS, never <see cref="s_flowingScope"/>: a continuation must not
     /// queue into a scope that has already closed, or the cascade returns.</summary>
     private DispatchScope? _currentScope;
+
+    /// <summary>The scope of the synchronous part running on THIS thread, or null (16.7).
+    /// Thread-bound on purpose: only the synchronous part may be marked, never a continuation,
+    /// so this is never the flowing AsyncLocal scope. Set and restored with
+    /// <see cref="_currentScope"/>.</summary>
+    [ThreadStatic] private static DispatchScope? t_syncScope;
+
+    /// <summary>Marks the dispatch whose synchronous part is running on the calling thread
+    /// as having begun a shell call (16.7, #455). No-op anywhere else. Called by
+    /// NativeShellBridge after the shell accepts the begin of a host call the handler began,
+    /// or of a fetch; a notice .NET sends itself does not call it.
+    /// The mark is ORDERED: a scope that has already captured a fault is not marked, so a
+    /// fault raised before the first begun call stays rc 2 even when a later part of the
+    /// same synchronous part, a sibling's OnInitialized for example, begins a call.
+    /// Pinned by FaultNoticeTests' 16.7 facts, the ordering by
+    /// AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice.</summary>
+    internal static void NoteShellCallBegun()
+    {
+        if (t_syncScope is { Fault: null } scope)
+            scope.ShellCallBegun = true;
+    }
 
     /// <summary>The same scope, flowed with the execution context into the handler's
     /// continuations. Used ONLY to attribute a late fault in
@@ -1786,7 +1816,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// The scope closes when Blazor returns the handler's Task, and its post-dispatch
     /// actions (the navigation swap) run at that close, before this returns.
     /// Returns <see cref="DispatchOutcomeKind.Faulted"/> when the scope captured a
-    /// fault or the returned Task is faulted, <see cref="DispatchOutcomeKind.Completed"/>
+    /// fault or the returned Task is faulted or cancelled, but
+    /// <see cref="DispatchOutcomeKind.FaultedAfterShellCall"/> for a fault, not a
+    /// cancellation, raised after the handler began a host call or a fetch in its
+    /// synchronous part (16.7, #455), <see cref="DispatchOutcomeKind.Completed"/>
     /// when the Task is complete, and <see cref="DispatchOutcomeKind.Pending"/> when the
     /// handler is still running. The pending Task is <see cref="AwaitWholeHandler"/>'s,
     /// not Blazor's: it also faults with a fault raised after the first await.</summary>
@@ -1801,6 +1834,7 @@ public sealed class NativeRenderer : BlazorRenderer
 
         var scope = new DispatchScope(this);
         DispatchScope? outer = _currentScope;
+        DispatchScope? outerSync = t_syncScope;
         DispatchScope? outerFlowing = s_flowingScope.Value;
         // Phase 16.3: the slow-handler clock starts as the scope OPENS. The call site
         // is resolved NOW: the handler's own re-render can dispose its id, when its
@@ -1810,6 +1844,7 @@ public sealed class NativeRenderer : BlazorRenderer
             : null;
         long started = SyncPartTimestamp();
         _currentScope = scope;
+        t_syncScope = scope;
         s_flowingScope.Value = scope;
         Task? task = null;
         try
@@ -1833,6 +1868,7 @@ public sealed class NativeRenderer : BlazorRenderer
             // finally so a faulted dispatch still drains — the queue must never leak
             // into another dispatch; action faults join this scope, never escape.
             _currentScope = outer;
+            t_syncScope = outerSync;
             s_flowingScope.Value = outerFlowing;
             if (outer is null)
                 DrainPostDispatchActions(scope);
@@ -1854,7 +1890,9 @@ public sealed class NativeRenderer : BlazorRenderer
         if (scope.Fault is { } captured)
         {
             scope.Done = true;
-            return new DispatchOutcome(DispatchOutcomeKind.Faulted, captured, null);
+            return new DispatchOutcome(
+                scope.ShellCallBegun ? DispatchOutcomeKind.FaultedAfterShellCall : DispatchOutcomeKind.Faulted,
+                captured, null);
         }
         if (task is null || task.IsCompletedSuccessfully)
         {
@@ -1864,11 +1902,18 @@ public sealed class NativeRenderer : BlazorRenderer
         if (task.IsCompleted)
         {
             scope.Done = true;
-            // Faulted or cancelled before yielding: this dispatch's fault.
+            // Faulted or cancelled before yielding: this dispatch's fault. A fault after a
+            // begun shell call is classified apart (16.7). Both halves of this arm are defensive
+            // and unmeasured: no test reaches it through Blazor. A handler fault arrives through
+            // HandleException into scope.Fault above, and Blazor completes a cancelled handler
+            // Task before it reaches here. See rows M3b and M3c of the 16.7 record.
             Exception fault = task.IsFaulted
                 ? task.Exception!.InnerException ?? task.Exception
                 : new TaskCanceledException(task);
-            return new DispatchOutcome(DispatchOutcomeKind.Faulted, fault, null);
+            DispatchOutcomeKind kind = task.IsFaulted && scope.ShellCallBegun
+                ? DispatchOutcomeKind.FaultedAfterShellCall
+                : DispatchOutcomeKind.Faulted;
+            return new DispatchOutcome(kind, fault, null);
         }
         return new DispatchOutcome(DispatchOutcomeKind.Pending, null, AwaitWholeHandler(task, scope));
     }
@@ -1895,14 +1940,17 @@ public sealed class NativeRenderer : BlazorRenderer
     /// callers such as the test host. Marshalled onto the render thread (Phase 16.1)
     /// and run through <see cref="DispatchSyncPart"/>. The returned task completes when
     /// the WHOLE handler has completed, continuation included. It faults with the
-    /// fault the dispatch's window captured or, for a handler still running after its
+    /// fault the dispatch's window captured, including one classified as
+    /// <see cref="DispatchOutcomeKind.FaultedAfterShellCall"/>, or, for a handler still running after its
     /// synchronous part, with the fault its Task ends in. The export does not use
     /// this: it waits only for the synchronous part.</summary>
     public Task DispatchUiEventAsync(NativeUiEvent e)
         => Dispatcher.InvokeAsync(async () =>
         {
             DispatchOutcome outcome = DispatchSyncPart(e);
-            if (outcome.Kind == DispatchOutcomeKind.Faulted)
+            // A fault after a begun shell call is still the dispatch's fault here: this path
+            // has no FaultNotice to carry it (16.7).
+            if (outcome.Kind is DispatchOutcomeKind.Faulted or DispatchOutcomeKind.FaultedAfterShellCall)
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(outcome.Fault!).Throw();
             if (outcome.Kind == DispatchOutcomeKind.Pending)
                 await outcome.Pending!;

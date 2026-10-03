@@ -119,6 +119,10 @@ public sealed class FaultNoticeTests
         throw new Xunit.Sdk.XunitException($"no '{eventName}' handler{(label is null ? "" : $" labelled '{label}'")} was attached");
     }
 
+    /// <summary>The managed thread the last <see cref="DispatchBounded"/> called
+    /// DispatchEventCore on, the shell's dispatch lane in these facts.</summary>
+    private static volatile int s_lastDispatchThread;
+
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
     private static int DispatchBounded(int handlerId, string argsJson)
     {
@@ -126,6 +130,7 @@ public sealed class FaultNoticeTests
         using var returned = new ManualResetEventSlim(false);
         var worker = new Thread(() =>
         {
+            s_lastDispatchThread = Environment.CurrentManagedThreadId;
             rc = Exports.DispatchEventCore((ulong)handlerId, argsJson);
             returned.Set();
         })
@@ -134,6 +139,13 @@ public sealed class FaultNoticeTests
         Assert.True(returned.Wait(ExportBudget),
             $"dispatch_event for handler {handlerId} did not return within {ExportBudget.TotalSeconds:0}s");
         return rc;
+    }
+
+    /// <summary>Every text a ReplaceTextPatch has set so far, in delivery order.</summary>
+    private static List<string> FrameTexts(List<RenderFrame> frames)
+    {
+        lock (frames)
+            return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Select(p => p.Text).ToList();
     }
 
     private static List<(long RequestId, int Op, string? Args)> Notices()
@@ -232,8 +244,9 @@ public sealed class FaultNoticeTests
     [Fact]
     public void ASynchronousFault_IsRc2_AndSendsNoFaultNotice()
     {
-        // The other branch. A fault before the first await is the export's own rc 2, and a
-        // notice as well would report one fault twice.
+        // The other branch. A synchronous fault before the handler began a host call or a
+        // fetch is the export's own rc 2, and a notice as well would report one fault twice.
+        // This handler begins none, so its fault is rc 2.
         var frames = new List<RenderFrame>();
         try
         {
@@ -365,6 +378,687 @@ public sealed class FaultNoticeTests
         {
             NativeShellBridge.ResetForTests();
         }
+    }
+
+    // ── 16.7 (#455): a fault after the handler began a shell call ──
+    //
+    // The rc contract's boundary is the BEGIN of a host call or a fetch, not the yield. A
+    // handler that began one and then faulted in its synchronous part is a FaultNotice with
+    // rc 0, whether the shell answered inside hostCallBegin or later. The fake shell answers
+    // inside begin here, and the HostCallsCompletedInsideBegin anchor proves it did.
+    //
+    // DOES NOT COVER:
+    //   - a shell call the handler starts on another thread, such as inside Task.Run. The
+    //     mark is thread-bound to the synchronous part, so that call is not marked, and a
+    //     synchronous fault after it stays rc 2. The contract does not promise this, but
+    //     AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2 pins it,
+    //     and with it the thread-bound choice: the 16.7 record's M4-after is its red under M4;
+    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline,
+    //     for example by completing a TaskCompletionSource that continuation awaits. Measured
+    //     on 2026-10-02, the 16.7 record's M4-explore: a call that continuation begins marks
+    //     THIS dispatch, because the mark is thread-bound, so this dispatch returns rc 0; the
+    //     continuation's fault is captured in this dispatch's window and sent under this
+    //     handler's id; and this dispatch's own synchronous fault is never reported. Not
+    //     pinned: that is the known 16.1 window-attribution defect, filed as #464;
+    //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
+    //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
+    //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
+    //     arm was not reached. Why is not established here; it rests on that measurement;
+    //   - a host call or fetch begun by a CHILD component during the handler's re-render.
+    //     The re-render is part of the handler's synchronous part, so that call marks the
+    //     dispatch too, and a later render fault in the same synchronous part is a
+    //     FaultNotice with rc 0, not rc 2. The ORDER is pinned: a fault captured before that
+    //     call stays rc 2, AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice;
+    //   - a host call or fetch begun by a NAVIGATION SWAP the handler queued. The swap runs
+    //     when the synchronous part's scope closes, still inside the export, so the rc counts
+    //     its faults; but the scope is no longer this thread's synchronous scope then, so a
+    //     call the new page begins never marks the dispatch, and a later fault in the swap
+    //     stays rc 2 unless the handler itself had begun a call. That rests on reading
+    //     DispatchSyncPart's finally, which restores the thread-bound scope before it drains.
+
+    [Fact]
+    public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
+    {
+        var (rc, frames, pending, previous) = DispatchProbe("host-throw");
+        try
+        {
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the geolocation call inside hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(rc == 0,
+                $"rc was {rc}: the handler faulted after it began a host call the shell answered inside begin, "
+                + "and the fault came back as the dispatch's rc. That is #455.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice reached the shell for a fault after a begun host call.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("click", args["event"]);
+            Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
+            Assert.Equal("after-host", args["message"]);
+            Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+
+            // The session survives the reclassified fault: the next dispatch, a handler that
+            // begins no shell call and completes, returns rc 0 and its frame arrives before the
+            // export returns, as a synchronous part's frames always do.
+            Assert.DoesNotContain(FrameTexts(frames), t => t.StartsWith("ok:", StringComparison.Ordinal));
+            int next = DispatchBounded(HandlerFor(frames, "click", "next-ok"), """{"name":"click"}""");
+            Assert.True(next == 0, $"rc was {next}: the dispatch after a reclassified fault did not complete normally.");
+            Assert.True(FrameTexts(frames).Contains("ok:1"),
+                "the dispatch after a reclassified fault returned, but its frame never arrived: the session did not survive.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultNoticeAfterABegunCall_IsNotBegunOnTheDispatchingThread()
+    {
+        // Exports sends the FaultedAfterShellCall notice from the pool, so the shell is never
+        // re-entered from its own dispatch lane: a shell that serialises hostCallBegin behind
+        // the dispatch it is inside would otherwise wait on itself.
+        var (rc, _, pending, previous) = DispatchProbe("host-throw");
+        try
+        {
+            Assert.True(rc == 0, $"anchor: rc was {rc}, so the fault was not classified as after a begun call "
+                + "and no notice of this kind was sent.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice reached the shell.");
+            int dispatchThread = s_lastDispatchThread;
+            int noticeThread = FakeShellHost.HostCallBeginThread(Assert.Single(Notices()).RequestId);
+            int renderThread = HostSession.EnsureSession().RenderThreadId;
+            Assert.True(dispatchThread > 0 && noticeThread > 0,
+                $"anchor: a thread was not recorded: dispatch {dispatchThread}, notice {noticeThread}.");
+            Assert.True(noticeThread != dispatchThread,
+                $"the FaultNotice was begun on thread {noticeThread}, the thread that called DispatchEventCore: "
+                + "the shell was re-entered from its own dispatch lane.");
+            // The notice must also be off the render thread: a notice sent synchronously from the
+            // classification, which runs on the render thread, is not on the dispatch thread
+            // either, so the check above alone would pass it.
+            Assert.True(renderThread > 0 && noticeThread != renderThread,
+                $"the FaultNotice was begun on thread {noticeThread}, the render thread {renderThread}: "
+                + "it was sent synchronously from the classification instead of from the pool.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultAfterAnInlineAnsweredFetch_IsAFaultNotice_AndRc0()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("fetch-throw", autoCompleteFetch: true);
+        try
+        {
+            Assert.True(FakeShellHost.FetchesCompletedInsideBegin == 1,
+                $"anchor: the fake must answer the fetch inside fetchBegin, but it answered "
+                + $"{FakeShellHost.FetchesCompletedInsideBegin} that way; without it this fact tests nothing.");
+            Assert.True(rc == 0, $"rc was {rc}: a fault after the handler began a fetch the shell answered inside "
+                + "begin came back as the dispatch's rc.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for a fault after a begun fetch.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal("click", args["event"]);
+            Assert.Equal(typeof(InvalidOperationException).FullName, args["type"]);
+            Assert.Equal("after-fetch", args["message"]);
+            Assert.False(string.IsNullOrEmpty(args["handlerId"]), "the notice carries no handler id");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    // ── 16.7 regression guards: no scheduling change after begin ──
+    //
+    // 16.7 classifies a fault after a begun shell call and changes no scheduling. The first
+    // 16.7 design added a yield after begin, and that broke exactly the two things below. Each
+    // guard passes today and goes red if a later change puts a yield back after begin.
+    //
+    // DOES NOT COVER:
+    //   - a yield after a FETCH begin. The mount guard's page awaits a host call only, so a
+    //     yield added after BeginFetch alone leaves it green;
+    //   - a held host call other than the camera call. The hold guard drives BackHoldProbe,
+    //     which blocks on a camera capture; another op with its own path would need its own
+    //     probe. Both rest on what the two probes call, read from their code.
+
+    [Fact]
+    public void AComponentAwaitingAnInlineAnsweredHostCall_InOnInitializedAsync_MountsSynchronously()
+    {
+        // Guards against any future scheduling change after begin. A page whose
+        // OnInitializedAsync awaits a host call the shell answers inside begin must still render
+        // synchronously, because Mount<T> refuses a first render that is not complete. The first
+        // 16.7 design yielded after begin and broke exactly this mount.
+        var frames = new List<RenderFrame>();
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            Assert.True(FakeShellHost.AutoCompleteHostCall, "the fake must answer host calls inside begin.");
+
+            renderer.Mount<InitAwaitMountProbe>(); // 1: Mount does not throw
+
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1, // 2: the counter anchor
+                $"anchor: the fake must answer the page's geolocation call INSIDE hostCallBegin, but it answered "
+                + $"{FakeShellHost.HostCallsCompletedInsideBegin} that way; without it this fact tests nothing.");
+
+            // 3: the mount frame, the first frame, already carries the continuation's text.
+            RenderFrame first;
+            lock (frames)
+            {
+                Assert.True(frames.Count > 0, "Mount returned but no frame was delivered.");
+                first = frames[0];
+            }
+            Assert.True(first.Patches.OfType<ReplaceTextPatch>().Any(p => p.Text.StartsWith("init:", StringComparison.Ordinal)),
+                "the first frame lacks the text set after the awaited host call: the first render was not synchronous.");
+        }
+        finally
+        {
+            HostSession.ResetForTests();
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void TheBackHoldProbe_HoldsTheRenderThread_AndTheShellsAnswerReleasesIt()
+    {
+        // Guards that blocking the render thread on an asynchronously answered host call still
+        // releases when the shell answers. Any captured-context yield after begin posts the
+        // call's continuation to the render thread, which is blocked waiting for it, and
+        // deadlocks. The first 16.7 design did exactly that. The JVM BackNoticeTest and both
+        // device back tests drive this probe; this fact is the bounded .NET pin. Under such a
+        // regression it reds within its budget, and its finally abandons the deadlocked session
+        // through HostSession.AbandonForTests instead of disposing it, so the next fact gets a
+        // fresh session and the rest of the run completes. Only the deadlocked render thread
+        // stays blocked, a background thread left until the test process exits. The dispatch
+        // worker is released: AbandonForTests shuts the dispatcher down with a zero join
+        // budget, the join fails, and CancelPending cancels the post the worker waits on, so
+        // DispatchEventCore takes its catch and returns rc 2. The 16.7 record's M7 row
+        // measured this with the CI test command.
+        var frames = new List<RenderFrame>();
+        int rc = -1;
+        bool started = false;
+        using var returned = new ManualResetEventSlim(false);
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            FakeShellHost.AutoCompleteHostCall = false; // the shell holds the capture
+            renderer.Mount<BlazorNative.SampleApp.BackHoldProbe>();
+            int hold = HandlerFor(frames, "click");
+
+            var worker = new Thread(() =>
+            {
+                rc = Exports.DispatchEventCore((ulong)hold, """{"name":"click"}""");
+                returned.Set();
+            })
+            { IsBackground = true, Name = "back-hold-probe" };
+            worker.Start();
+            started = true;
+
+            // Anchor: the capture really began and the handler really is held on it.
+            Assert.True(WaitUntil(() => FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Camera), Budget),
+                "the Hold handler never began its camera call.");
+            Assert.False(returned.Wait(TimeSpan.FromMilliseconds(200)),
+                "the Hold dispatch returned while its camera call was still held: the probe no longer holds the render thread.");
+
+            long capture = FakeShellHost.HostCalls().Single(c => c.Op == (int)HostCallOp.Camera).RequestId;
+            Assert.Equal(0, NativeShellBridge.CompleteHostCall(capture, 1, null)); // 1 = Cancelled
+
+            Assert.True(returned.Wait(Budget),
+                $"the Hold dispatch did not return within {Budget.TotalSeconds:0}s of the shell answering its camera "
+                + "call. The render thread is blocked on a call whose continuation was posted back to the render "
+                + "thread itself: something now yields after begin.");
+            Assert.Equal(0, rc);
+            Assert.True(WaitUntil(() =>
+            {
+                lock (frames)
+                    return frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>())
+                        .Any(p => p.Text == BlazorNative.SampleApp.BackHoldProbe.ReleasedPrefix + "Cancelled");
+            }, Budget), "the released Hold handler never rendered its echo.");
+        }
+        finally
+        {
+            // An assertion that failed before the answer leaves the camera call held, and the
+            // Hold handler blocking the render thread on it. Until the dispatch returns, within
+            // the budget, answer every camera call seen so far, as the shell would. The log is
+            // read again on each pass, so a begin that lands late is answered too. Each call is
+            // answered once; one the body already answered gives rc 1, which is benign here.
+            // Skipped when the worker never started: then nothing is held.
+            if (started)
+            {
+                var answered = new HashSet<long>();
+                var sw = Stopwatch.StartNew();
+                do
+                {
+                    foreach (var call in FakeShellHost.HostCalls().Where(c => c.Op == (int)HostCallOp.Camera))
+                    {
+                        if (answered.Add(call.RequestId))
+                            NativeShellBridge.CompleteHostCall(call.RequestId, 1, null);
+                    }
+                }
+                while (!returned.Wait(TimeSpan.FromMilliseconds(50)) && sw.Elapsed < Budget);
+            }
+            // A released handler, or one never dispatched, lets the session go normally. A
+            // deadlocked one would hang ResetForTests, whose dispose waits on the blocked render
+            // thread with no bound, and with it every later fact. So it is abandoned instead:
+            // detached without a dispose, its render thread left blocked while the cancelled
+            // post releases the dispatch worker with rc 2. The fact has already failed.
+            if (!started || returned.IsSet)
+                HostSession.ResetForTests();
+            else
+                HostSession.AbandonForTests();
+            NativeShellBridge.ResetForTests();
+        }
+    }
+
+    private sealed class InitAwaitMountProbe : ComponentBase
+    {
+        private string _status = "pending";
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override async Task OnInitializedAsync()
+        {
+            var s = await Bridge.CheckGeolocationPermissionAsync();
+            _status = "init:" + s;
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "text");
+            b.AddContent(1, _status);
+            b.CloseElement();
+        }
+    }
+
+    [Fact]
+    public void AHostCallTheShellRefusesToBegin_FaultsTheHandlerWithRc2_AndSendsNoNotice()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("refused-begin", hostCallBeginReturnCode: -1);
+        try
+        {
+            // The log, not LastHostCallOp: a FaultNotice sent from the pool under a mutation would
+            // overwrite LastHostCallOp and red this anchor instead of the rc. The log keeps refused begins.
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                "anchor: the begin was never attempted, so this fact tests nothing.");
+            Assert.True(rc == 2, $"rc was {rc}: a begin the shell refused throws into the handler before any shell "
+                + "call is begun, so that fault must stay the dispatch's rc 2.");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFetchTheShellRefusesToBegin_FaultsTheHandlerWithRc2_AndSendsNoNotice()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("refused-fetch", fetchBeginReturnCode: -1);
+        try
+        {
+            // FetchBeginFn records the url before it checks its return code, so this proves the
+            // begin was attempted, and refused.
+            Assert.True(FakeShellHost.LastFetchUrl == "https://refused.test/",
+                $"anchor: the fetch begin was never attempted, the last fetch url was '{FakeShellHost.LastFetchUrl}', "
+                + "so this fact tests nothing.");
+            Assert.True(rc == 2, $"rc was {rc}: a fetch begin the shell refused throws into the handler before any shell "
+                + "call is begun, so that fault must stay the dispatch's rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultAfterBeginningAHostCall_WithoutAwaitingIt_IsAFaultNotice_AndRc0()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("begin-then-throw");
+        try
+        {
+            Assert.True(rc == 0, $"rc was {rc}: a fault after the handler BEGAN a host call must be a FaultNotice, "
+                + "even when it never awaited the call. The contract's boundary is the begin, not the await.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for a fault after a begun call.");
+            Assert.Equal("after-begin", NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args)["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void ACancellationAfterABegunHostCall_IsRc0_AndSendsNothing()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("begin-then-cancel");
+        try
+        {
+            Assert.True(ShellCallProbe.ReachedThrow, "anchor: the handler body never reached its throw, so rc 0 "
+                + "and no notice would prove nothing.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
+                + "call must match a late cancellation: rc 0 and nothing sent.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
+            // rc 0 and an empty pending list exclude every notice source, so no wait is needed.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void ACancellationWithNoShellCallBegun_IsAlsoRc0_AndSendsNothing()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("cancel-only");
+        try
+        {
+            Assert.True(ShellCallProbe.ReachedThrow, "anchor: the handler body never reached its throw, so rc 0 "
+                + "and no notice would prove nothing.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
+            Assert.True(rc == 0, $"rc was {rc}: a cancelled handler is not a fault, so it is rc 0 and sends nothing.");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultWithNoShellCallBegun_IsStillRc2_Control()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("completed-throw");
+        try
+        {
+            Assert.True(rc == 2, $"rc was {rc}: a handler that began no shell call and faulted in its synchronous "
+                + "part must still return rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // No wait is needed. rc 2 and an empty pending list exclude every notice source:
+            // the FaultedAfterShellCall arm returns rc 0, and DeliverLateFault attaches only
+            // to a Pending dispatch. So the check below is immediate by construction.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice()
+    {
+        // The classification is ordered, not window-wide: a fault captured BEFORE any shell
+        // call was begun stays rc 2, even when a later part of the same synchronous part
+        // begins one. Here the handler's re-render mounts two siblings: the first throws in
+        // OnInitialized, then the second begins a host call in OnInitialized.
+        var (rc, _, pending, previous) = DispatchProbe("child-throw-then-sibling-begin");
+        try
+        {
+            // Anchors: the first child really threw, the sibling really began its call, and
+            // in that order. Without them rc 2 would only show that nothing was begun.
+            Assert.True(ShellCallProbe.ChildThrowSeq > 0,
+                "anchor: the first child never reached its throw, so this fact tests nothing.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the sibling's begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(ShellCallProbe.SiblingBeginSeq > ShellCallProbe.ChildThrowSeq,
+                $"anchor: the fault must come before the begin, but the child threw at {ShellCallProbe.ChildThrowSeq} "
+                + $"and the sibling began at {ShellCallProbe.SiblingBeginSeq}.");
+            Assert.True(rc == 2, $"rc was {rc}: the fault was captured before any shell call was begun, so it is the "
+                + "dispatch's rc 2. A begin later in the same synchronous part must not reclassify an earlier fault.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every FaultNotice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void ANoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
+    {
+        var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
+        try
+        {
+            // Rule 2 anchor: the probe's own notice really was begun inside the synchronous
+            // part, so the rc below is about a dispatch that went through the notice path.
+            var messages = Notices()
+                .Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)["message"])
+                .ToList();
+            Assert.True(messages.Contains("notice"),
+                $"anchor: the probe's FaultNotice was not begun; notices seen: [{string.Join(", ", messages)}]");
+            Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends is not a shell call the handler began, so a "
+                + "fault after it must stay rc 2.");
+            Assert.DoesNotContain("after-notice", messages);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Theory]
+    [InlineData("back-state-then-throw")]
+    [InlineData("back-unhandled-then-throw")]
+    public void ABackNoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2(string label)
+    {
+        // The other two notices .NET sends itself. Each reaches InvokeHostCallAsync through
+        // SendNotice, which passes markDispatch false. Before that parameter the exclusion was
+        // an op list with one arm per notice, and dropping either arm alone left every other
+        // fact green; each notice keeps its own case so a notice that bypasses SendNotice reds.
+        int op = label == "back-state-then-throw" ? (int)HostCallOp.BackState : (int)HostCallOp.BackUnhandled;
+        var (rc, _, pending, previous) = DispatchProbe(label);
+        try
+        {
+            // Anchor: the probe's notice really was begun inside the synchronous part.
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == op),
+                $"anchor: the probe's notice, op {op}, was not begun; ops seen: "
+                + $"[{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}]");
+            Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends, op {op}, is not a shell call the handler began, "
+                + "so a fault after it must stay rc 2.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every FaultNotice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
+    {
+        // The mark is thread-bound to the synchronous part, never the flowing AsyncLocal scope.
+        // A call begun inside Task.Run carries the flowing scope but runs on a pool thread, so
+        // it must not mark the dispatch, and the synchronous fault after it stays rc 2.
+        var (rc, _, pending, previous) = DispatchProbe("pool-begin-then-throw");
+        try
+        {
+            // Anchors: the call really was begun, answered inside begin, on a thread other than
+            // the handler's. Without them rc 2 would only show that no call was begun.
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
+                $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
+            Assert.True(ShellCallProbe.PoolBeginThread > 0 && ShellCallProbe.PoolBeginThread != ShellCallProbe.HandlerThread,
+                $"anchor: the call was begun on thread {ShellCallProbe.PoolBeginThread}, the handler ran on "
+                + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
+            Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
+                + "after it stays rc 2. rc 0 means the dispatch was marked although no call was begun on its synchronous "
+                + "part's thread, for example because the mark followed the flowing scope.");
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            // rc 2 and an empty pending list exclude every notice source, as in the control.
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void DispatchUiEventAsync_FaultsWithAFaultAfterABegunHostCall()
+    {
+        // DispatchUiEventAsync is the direct caller's path, BnTestHost's and the Renderer
+        // tests'. It has no FaultNotice, so the classification must not swallow the fault:
+        // its Task faults with it, exactly as for a plain synchronous fault.
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            renderer.Mount<ShellCallProbe>();
+            int handlerId = HandlerFor(frames, "click", "begin-then-throw");
+
+            Task dispatch = renderer.DispatchUiEventAsync(new NativeUiEvent(0, handlerId, "click", null));
+
+            Assert.True(WaitUntil(() => dispatch.IsCompleted, Budget), "DispatchUiEventAsync did not complete");
+            // Anchor: the bridge really began the geolocation call, so the dispatch was marked.
+            Assert.Contains(FakeShellHost.HostCalls(), c => c.Op == (int)HostCallOp.Geolocation);
+            Assert.True(dispatch.IsFaulted,
+                $"DispatchUiEventAsync ended {dispatch.Status}: a fault after a begun host call was swallowed "
+                + "on the direct path, which has no FaultNotice to carry it.");
+            var fault = Assert.IsType<InvalidOperationException>(dispatch.Exception!.InnerException);
+            Assert.Equal("after-begin", fault.Message);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
+    private sealed class ShellCallProbe : ComponentBase
+    {
+        /// <summary>Set immediately before a cancellation probe throws: proves the handler body ran.
+        /// DispatchProbe resets it.</summary>
+        public static volatile bool ReachedThrow;
+
+        /// <summary>The threads pool-begin-then-throw ran its handler and its begin on.
+        /// DispatchProbe resets both.</summary>
+        public static volatile int HandlerThread, PoolBeginThread;
+
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            Button(b, 0, "host-throw", async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("after-host");
+            });
+            Button(b, 10, "begin-then-throw", () =>
+            {
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("after-begin");
+            });
+            Button(b, 20, "completed-throw", async () =>
+            {
+                await Task.CompletedTask;
+                throw new InvalidOperationException("no-shell-call");
+            });
+            Button(b, 30, "notice-then-throw", () =>
+            {
+                // A notice .NET sends is not a shell call the handler began: it must not mark.
+                NativeShellBridge.SendFaultNotice(0, "probe", new InvalidOperationException("notice"));
+                throw new InvalidOperationException("after-notice");
+            });
+            Button(b, 60, "begin-then-cancel", async () =>
+            {
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                await Task.CompletedTask;
+                ReachedThrow = true;
+                throw new OperationCanceledException();
+            });
+            Button(b, 70, "cancel-only", async () =>
+            {
+                await Task.CompletedTask;
+                ReachedThrow = true;
+                throw new OperationCanceledException();
+            });
+            Button(b, 50, "refused-begin", async () =>
+            {
+                await Bridge.CheckGeolocationPermissionAsync();
+            });
+            Button(b, 80, "pool-begin-then-throw", () =>
+            {
+                HandlerThread = Environment.CurrentManagedThreadId;
+                // The fake answers inside begin, so this wait never blocks on the shell.
+                Task.Run(() =>
+                {
+                    PoolBeginThread = Environment.CurrentManagedThreadId;
+                    return Bridge.CheckGeolocationPermissionAsync().AsTask();
+                }).Wait();
+                throw new InvalidOperationException("after-pool-begin");
+            });
+            Button(b, 90, "back-state-then-throw", () =>
+            {
+                NativeShellBridge.SendBackState(true);
+                throw new InvalidOperationException("after-back-state");
+            });
+            Button(b, 100, "back-unhandled-then-throw", () =>
+            {
+                NativeShellBridge.SendBackUnhandled();
+                throw new InvalidOperationException("after-back-unhandled");
+            });
+            Button(b, 110, "refused-fetch", async () =>
+            {
+                await Bridge.FetchAsync(new BridgeHttpRequest("https://refused.test/"));
+            });
+            Button(b, 40, "fetch-throw", async () =>
+            {
+                await Bridge.FetchAsync(new BridgeHttpRequest("https://inline.test/"));
+                throw new InvalidOperationException("after-fetch");
+            });
+            Button(b, 120, "child-throw-then-sibling-begin", () => { _showChildren = true; });
+            Button(b, 130, "next-ok", () => { _okCount++; });
+            if (_okCount > 0)
+            {
+                b.OpenElement(140, "text");
+                b.AddContent(141, "ok:" + _okCount.ToString(CultureInfo.InvariantCulture));
+                b.CloseElement();
+            }
+            if (_showChildren)
+            {
+                // Siblings, rendered in this order by the handler's own re-render: the first
+                // faults, then the second begins a host call. Both run in the synchronous part.
+                b.OpenComponent<ThrowOnInitChild>(150);
+                b.CloseComponent();
+                b.OpenComponent<BeginOnInitChild>(151);
+                b.CloseComponent();
+            }
+        }
+
+        private bool _showChildren;
+        private int _okCount;
+
+        /// <summary>Order stamps for child-throw-then-sibling-begin: each child takes the next
+        /// value of <see cref="Sequence"/>. DispatchProbe resets all three.</summary>
+        public static int Sequence, ChildThrowSeq, SiblingBeginSeq;
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Func<Task> onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Action onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+    }
+
+    /// <summary>Faults in its synchronous OnInitialized, before its sibling begins a call.</summary>
+    private sealed class ThrowOnInitChild : ComponentBase
+    {
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            throw new InvalidOperationException("child-before-begin");
+        }
+    }
+
+    /// <summary>Begins a host call in its synchronous OnInitialized, after its sibling faulted.</summary>
+    private sealed class BeginOnInitChild : ComponentBase
+    {
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.SiblingBeginSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            _ = Bridge.CheckGeolocationPermissionAsync();
+        }
+    }
+
+    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+        DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
+            int fetchBeginReturnCode = 0)
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        NativeRenderer renderer = StartSession(strict: false, frames);
+        renderer.Mount<ShellCallProbe>();
+        int handlerId = HandlerFor(frames, "click", label);
+        ShellCallProbe.ReachedThrow = false;
+        ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
+        ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
+        FakeShellHost.AutoCompleteHostCall = true;
+        FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
+        FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
+        FakeShellHost.FetchBeginReturnCode = fetchBeginReturnCode;
+        int rc = DispatchBounded(handlerId, """{"name":"click"}""");
+        return (rc, frames, pending, previous);
     }
 
     /// <summary>"click" awaits a held geolocation check, then throws; "change" does the

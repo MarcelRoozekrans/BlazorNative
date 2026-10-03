@@ -138,7 +138,7 @@ final class BnRuntime {
     ///
     /// THREAD: called on ANY thread, never guaranteed main — the dispatch lane, the frame
     /// callback's thread, and since Phase 16.1 a .NET thread-pool thread: a handler fault
-    /// after its first await arrives as a FaultNotice that AppleShellBridge hands here on
+    /// after it began a host call or a fetch arrives as a FaultNotice that AppleShellBridge hands here on
     /// whatever .NET thread sent it. An override that touches UI must hop to
     /// `DispatchQueue.main` first.
     var onError: ((String, Error) -> Void) = { msg, err in
@@ -370,7 +370,7 @@ final class BnRuntime {
     /// Safe from any thread EXCEPT the dispatch lane itself — a call FROM the lane
     /// would self-deadlock, exactly as Kotlin's KDoc warns of its twin. Since Phase
     /// 16.1 an async handler suspended on a host call no longer holds the lane (the
-    /// export returns at its first await), so this no longer blocks behind one;
+    /// export returns at its first await that suspends), so this no longer blocks behind one;
     /// BnDispatchLaneTests pins the lane half of that on the simulator.
     @discardableResult
     internal func dispatchHostEventAndWait(_ event: BnHostEvent, payload: String?) -> Int32 {

@@ -43,7 +43,7 @@ struct BnFaultNotice: Error, CustomStringConvertible {
     let type: String
     let message: String
     var description: String {
-        "handler \(handlerId) '\(eventName)' faulted after its first await: \(type): \(message)"
+        "handler \(handlerId) '\(eventName)' faulted after it began a shell call or yielded: \(type): \(message)"
     }
 }
 
@@ -251,8 +251,8 @@ final class AppleShellBridge {
         return 0
     }
 
-    /// Phase 16.1 (#8): a .NET handler faulted AFTER its first await, too late to be its
-    /// dispatch rc 2. The Kotlin `BridgeRegistrar.deliverFaultNotice` twin: routed to the
+    /// Phase 16.1 (#8): a .NET handler faulted AFTER it began a host call or a fetch,
+    /// or after it yielded: never its dispatch rc. The Kotlin `BridgeRegistrar.deliverFaultNotice` twin: routed to the
     /// live runtime's `onError`, whose default logs through `BnLog.error`, or straight to
     /// `BnLog.error` when no runtime is booted; then completed OK with no payload. The args
     /// are flat JSON: handlerId (0 for a reserved host event), event, type and message. They
@@ -264,7 +264,7 @@ final class AppleShellBridge {
             eventName: args["event"] ?? "?",
             type: args["type"] ?? "?",
             message: args["message"] ?? "")
-        let msg = "handler fault after await: \(fault.type): \(fault.message) (handler \(fault.handlerId), event '\(fault.eventName)')"
+        let msg = "handler faulted after it began a shell call or yielded: \(fault.type): \(fault.message) (handler \(fault.handlerId), event '\(fault.eventName)')"
         if let runtime = BnRuntime.shared {
             runtime.onError(msg, fault)
         } else {

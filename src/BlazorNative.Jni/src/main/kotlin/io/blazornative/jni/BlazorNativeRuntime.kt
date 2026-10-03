@@ -43,8 +43,8 @@ class BlazorNativeRuntime(
     // the pluggable sink stays, and the Activity still passes Log.e.)
     //
     // THREAD SET: ANY thread — the start() caller, the BlazorNative-Dispatch lane, and
-    // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after its first await
-    // arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
+    // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after it began a host call
+    // or a fetch arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
     // thread sent it. A sink that touches UI must post to the main thread first.
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
     // Phase 16.2 (#346): .NET's BackState notice — whether a back would be handled now.
@@ -164,7 +164,7 @@ class BlazorNativeRuntime(
      * key maps to null EventArgs payload). Since Phase 16.1 the export returns
      * once the handler's SYNCHRONOUS part has run: a re-render from that part
      * has been delivered by then, on .NET's render thread, but a handler that
-     * awaits frees the lane at its first await, and its later re-renders
+     * awaits frees the lane at its first await that suspends, and its later re-renders
      * arrive afterwards, from a continuation, with no call in progress.
      *
      * Non-zero return codes are routed to [onError] (the tap is dropped):
