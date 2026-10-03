@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.2...v0.18.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **16.7:** blazornative_dispatch_event rc reports only the synchronous part of a handler. Since 0.17.0 rc 0 means the handler did not fault in its synchronous part, not that it finished. Since this release a fault after the handler began a host call or a fetch arrives as a FaultNotice host-call op with rc 0, where a call the shell answered inside begin used to give rc 2. Shells must route FaultNotice to their error handler, as both shipped shells do.
+
+### Bug Fixes
+
+* **16.7:** a fault after a handler began a shell call is a FaultNotice ([#465](https://github.com/MarcelRoozekrans/BlazorNative/issues/465)) ([dc5b737](https://github.com/MarcelRoozekrans/BlazorNative/commit/dc5b73743d6ace2203d9446d4bc53c3b6ac17f6a))
+
 ## [0.17.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.1...v0.17.2) (2026-10-02)
 
 
