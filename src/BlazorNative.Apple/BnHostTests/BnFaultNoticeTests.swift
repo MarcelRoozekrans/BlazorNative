@@ -101,7 +101,7 @@ final class BnFaultNoticeTests: BnHostTestCase {
         XCTAssertEqual(rc, 0, "hostCallBegin must return 0 for a FaultNotice")
         XCTAssertEqual(errors.count, 1, "the notice must reach onError exactly once")
         XCTAssertTrue(errors.first?.message.hasPrefix(
-            "handler fault after await: System.InvalidOperationException: late") == true,
+            "handler faulted after it began a shell call or yielded: System.InvalidOperationException: late") == true,
             "onError message was: \(errors.first?.message ?? "<none>")")
         let fault = errors.first?.error as? BnFaultNotice
         XCTAssertEqual(fault?.handlerId, "7")
@@ -152,6 +152,6 @@ final class BnFaultNoticeTests: BnHostTestCase {
         let lines = logged.filter { $0.category == "AppleShellBridge" && $0.level == BnLogLevel.error }
         XCTAssertEqual(lines.count, 1, "the no-runtime FaultNotice must be logged exactly once")
         XCTAssertEqual(lines.first?.message,
-            "handler fault after await: System.InvalidOperationException: late (handler 7, event 'click')")
+            "handler faulted after it began a shell call or yielded: System.InvalidOperationException: late (handler 7, event 'click')")
     }
 }
