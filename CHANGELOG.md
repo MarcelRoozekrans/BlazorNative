@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.19.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.18.0...v0.19.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** apps built on BlazorNative now require iOS 15.0 or later. iOS 13 and iOS 14 devices are no longer supported.
+
+### Bug Fixes
+
+* **deps:** update dependency kingfisher to v8.13.0 and raise the iOS floor to 15.0 ([#376](https://github.com/MarcelRoozekrans/BlazorNative/issues/376)) ([3308aed](https://github.com/MarcelRoozekrans/BlazorNative/commit/3308aed3d3e8f20acd2919e094e4f6fa16238128))
+
 ## [0.18.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.17.2...v0.18.0) (2026-10-03)
 
 
