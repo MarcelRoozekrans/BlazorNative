@@ -169,16 +169,13 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
 
     // ── The CLLocationManagerDelegate callbacks (the REAL delegate code) ──────────
 
-    /// iOS 14+ authorization-change entry.
-    @available(iOS 14.0, *)
+    /// The authorization-change entry. The status-carrying
+    /// `locationManager(_:didChangeAuthorization:)` it replaced is deprecated since iOS 14
+    /// and is not delivered when this one exists; the floor is iOS 15 since #462, so only
+    /// this entry is implemented. The status is read through the same override-aware
+    /// accessor as the Check, so the hand-rolled fire drives THIS method.
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        handleAuthChange(manager.authorizationStatus)
-    }
-
-    /// iOS 13 authorization-change entry (deprecated on 14+ but still the drive point the
-    /// hand-rolled fire uses, so both routes funnel to `handleAuthChange`).
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        handleAuthChange(status)
+        handleAuthChange(authorizationStatus(of: manager))
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -193,8 +190,11 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
 
     // ── Test-only fires (hand-rolled — synthesize the trigger, run the REAL delegate) ──
 
+    /// The user answered the prompt: from now on the status READS `status`, exactly as
+    /// it would on a device, and the system calls the delegate. `resetForTest` clears it.
     func fireAuthorizationChangeForTest(_ status: CLAuthorizationStatus) {
-        self.locationManager(ensureManager(), didChangeAuthorization: status)
+        Self.authorizationStatusOverrideForTest = { status }
+        self.locationManagerDidChangeAuthorization(ensureManager())
     }
 
     func fireLocationFixForTest(_ location: CLLocation) {
@@ -233,15 +233,17 @@ final class BnGeolocation: NSObject, CLLocationManagerDelegate {
 
     private func beginAuthorization(_ requestId: Int64) {
         let m = ensureManager()
-        if Self.suppressSystemLocationCallsForTest { return } // owner-device territory; the test drives didChangeAuthorization
+        if Self.suppressSystemLocationCallsForTest { return } // owner-device territory; the test drives locationManagerDidChangeAuthorization
         m.requestWhenInUseAuthorization() // pops the system alert; the delegate resumes later
     }
 
     private func currentAuthorizationStatus() -> CLAuthorizationStatus {
+        authorizationStatus(of: ensureManager())
+    }
+
+    private func authorizationStatus(of m: CLLocationManager) -> CLAuthorizationStatus {
         if let override = Self.authorizationStatusOverrideForTest { return override() }
-        let m = ensureManager()
-        if #available(iOS 14.0, *) { return m.authorizationStatus }
-        return CLLocationManager.authorizationStatus()
+        return m.authorizationStatus
     }
 
     /// GRANTED/DENIED/… for the read-only Check (never prompts).

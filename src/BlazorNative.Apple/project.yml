@@ -22,7 +22,7 @@ name: BnHost
 options:
   bundleIdPrefix: io.blazornative
   deploymentTarget:
-    iOS: "13.0"
+    iOS: "15.0"
   createIntermediateGroups: true
 
 # ── Phase 6.3 Gate 3: KINGFISHER, via SPM ────────────────────────────────────
@@ -68,9 +68,14 @@ options:
 # CI still tests it, and a floor-raising release now arrives as a red PR check
 # instead of a red main.
 #
-# Raising this project's own deploymentTarget to iOS 15 is a separate and real
-# decision — `BnLog.swift` and `BnGeolocation.swift` both carry code written for
-# the iOS 13 floor — and it is not made here.
+# Raising this project's own deploymentTarget to iOS 15 was a separate and real
+# decision, so the PR that pinned the version did not make it. It has since been
+# made: #462 raised the floor from iOS 13.0 to iOS 15.0 to take Kingfisher 8.13,
+# which drops iOS 13 and 14 for every app built on BlazorNative. The floor lives
+# in deploymentTarget above AND in both `min_flag` values of the iOS matrices in
+# ci.yml and ios.yml, which compile Yoga; IosSliceMatrixDriftTests holds them
+# equal. The iOS 13/14 `#available` fallbacks in BnLog.swift, BnGeolocation.swift
+# and BnNotifications.swift went with it.
 #
 # (This comment read "Pinned to 7.x" until Phase 8.4. It was true when written at
 # 6.3, then Renovate bumped the dependency and the prose did not follow — so the
@@ -79,7 +84,7 @@ options:
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git
-    exactVersion: 8.12.0
+    exactVersion: 8.13.0
 
 settings:
   base:

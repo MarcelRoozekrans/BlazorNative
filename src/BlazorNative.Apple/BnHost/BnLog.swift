@@ -40,15 +40,11 @@
 // shown in full when a debugger is attached, which is where these lines are
 // actually read.
 //
-// ⚠ DEPLOYMENT-TARGET GOTCHA, FOUND WHILE WRITING THIS. `os.Logger` — the
-// struct whose *interpolation* carries the privacy specifiers — is iOS 14+, and
-// project.yml's deploymentTarget is **iOS 13.0**. Rather than raise the floor
-// (a shipping-policy change that has no business riding in a logging PR), this
-// file uses `Logger` where available and falls back to `os_log` on the same
-// `OSLog` object below it. The fallback is NOT a privacy downgrade: `os_log`'s
-// `%{private}@` / `%{public}@` specifiers are the same mechanism `Logger`'s
-// interpolation compiles down to, and they have been available since iOS 10.
-// One `OSLog` per category is cached and shared by both paths.
+// `os.Logger` — the struct whose *interpolation* carries the privacy specifiers
+// — is iOS 14+. When this file was written project.yml's deploymentTarget was
+// iOS 13.0, so it carried an `os_log` fallback behind `#available`. #462 raised
+// the floor to iOS 15.0 and the fallback was removed as dead code: `Logger` is
+// now used unconditionally. One `OSLog` per category is cached and wrapped.
 //
 // THE LEVELS AND THE THRESHOLD MIRROR `BlazorNative.Core.BnLogLevel` exactly —
 // same five names, same ordinals, same "ordinal 0 = unset → the runtime default"
@@ -116,7 +112,7 @@ enum BnLogLevel {
 ///
 /// The default everywhere is [redacted]; [safe] is opt-in per call site and the
 /// rule for granting it is in the file header. This exists because the privacy
-/// specifier `os_log` accepts must be a COMPILE-TIME constant at the
+/// option `Logger`'s interpolation accepts must be a COMPILE-TIME constant at the
 /// interpolation site — it cannot be a variable — so the choice is expressed as
 /// two literal call sites inside [BnLog.emit] rather than a value passed through.
 enum BnLogPrivacy {
@@ -130,7 +126,7 @@ enum BnLogPrivacy {
 }
 
 /// The iOS shell's one logging seam: a level threshold and five level methods
-/// over `os.Logger` / `os_log`.
+/// over `os.Logger`.
 enum BnLog {
 
     /// The unified-log subsystem every category hangs off. Filter the whole shell
@@ -328,10 +324,10 @@ enum BnLog {
         }
     }
 
-    /// The write itself. FOUR literal call sites, and they have to be literal:
-    /// `os_log`'s privacy specifier is part of the format string / interpolation
-    /// and must be a compile-time constant, so "private or public" cannot be a
-    /// variable threaded through one call.
+    /// The write itself. TWO literal call sites, and they have to be literal:
+    /// `Logger`'s privacy option is part of the interpolation and must be a
+    /// compile-time constant, so "private or public" cannot be a variable
+    /// threaded through one call.
     private static func emit(_ level: Int32,
                              _ category: String,
                              _ message: String,
@@ -344,19 +340,10 @@ enum BnLog {
         let osLog = log(for: category)
         let type = osLogType(for: level)
 
-        if #available(iOS 14.0, *) {
-            let logger = Logger(osLog)
-            switch privacy {
-            case .redacted: logger.log(level: type, "\(message, privacy: .private)")
-            case .safe: logger.log(level: type, "\(message, privacy: .public)")
-            }
-        } else {
-            // iOS 13 (project.yml's deploymentTarget). Same unified log, same
-            // privacy mechanism, older spelling — see the file header.
-            switch privacy {
-            case .redacted: os_log("%{private}@", log: osLog, type: type, message as NSString)
-            case .safe: os_log("%{public}@", log: osLog, type: type, message as NSString)
-            }
+        let logger = Logger(osLog)
+        switch privacy {
+        case .redacted: logger.log(level: type, "\(message, privacy: .private)")
+        case .safe: logger.log(level: type, "\(message, privacy: .public)")
         }
     }
 }
