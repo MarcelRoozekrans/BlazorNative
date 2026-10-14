@@ -891,6 +891,229 @@ public sealed class FaultNoticeTests
         finally { TearDown(pending, previous); }
     }
 
+    // ── 17.1 (#464): a fault belongs to the dispatch whose own code raised it ──
+    //
+    // Dispatch A awaits a TaskCompletionSource the app made WITHOUT RunContinuationsAsynchronously.
+    // Dispatch B's handler completes it, so A's continuation runs inline inside B's synchronous
+    // part, on the render thread, inside B's window. Its execution context still flows A's scope,
+    // and that is what tells the two apart: a fault A's own code raises is A's, a late FaultNotice
+    // under A's handler id, and B keeps its own rc. A call A's continuation begins never marks B.
+    // Code that flows no dispatch scope is still the window's, and a fault from a dispatch that has
+    // already finished goes to the no-window path, never to the window. Each fact's anchor,
+    // InlineContinuationProbe.RanInsideB, proves the continuation really ran inside B's window.
+
+    [Fact]
+    public void AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows()
+    {
+        var run = DispatchTwo("a-await-then-throw", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB,
+                "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(run.RcA == 0, $"A returned rc {run.RcA}; it suspended on the gate, so its synchronous part was clean.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: B's own synchronous part did not fault. A's fault was charged to "
+                + "B's window, which is #464.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice: A's fault was lost instead of reaching A as a late fault.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
+            Assert.Equal("a-late", args["message"]);
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AnInlineContinuationsFault_LeavesTheWindowsOwnFault_Rc2()
+    {
+        var run = DispatchTwo("a-await-then-throw", "b-complete-then-throw");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: B faulted in its own synchronous part after completing the gate, "
+                + "and that fault must be its rc 2, not lost behind A's.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's fault.");
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            var single = Assert.Single(notices);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), single["handlerId"]);
+            Assert.Equal("a-late", single["message"]);
+            Assert.DoesNotContain(notices, n => n["message"] == "b-own");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void ACallBegunByAnInlineContinuation_DoesNotMarkTheWindow()
+    {
+        var run = DispatchTwo("a-await-then-begin-and-throw", "b-complete-then-throw");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                "anchor: A's continuation never began its geolocation call.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: the call A's continuation began marked B, so B's own "
+                + "synchronous fault became rc 0. Only B's own synchronous part may mark B.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's fault.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AFaultWithNoDispatchFlow_InsideAWindow_IsTheWindows()
+    {
+        var run = DispatchTwo("a-register-no-flow", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: the no-flow continuation did not run inside B's window.");
+            Assert.True(InlineContinuationProbe.SawNoFlow,
+                "anchor: the continuation was meant to flow no dispatch scope, but the renderer saw one.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: a fault from code that flows no dispatch is the window's, "
+                + "so nothing that is B's today becomes unreported.");
+            lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows()
+    {
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+        try
+        {
+            var run = DispatchTwo("a-register-flowing", "b-complete");
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(run.RcA == 0, $"A returned rc {run.RcA}; it finished cleanly, so its scope is Done.");
+                Assert.True(run.RcB == 0, $"rc was {run.RcB}: A's code raised the fault after A finished. It is A's, and "
+                    + "A can no longer report it, so it is logged and never charged to B's window.");
+                lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
+                Assert.Empty(Notices());
+                lock (log) Assert.Contains(log, l => l.Contains("a-orphan", StringComparison.Ordinal));
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Sink = sink; }
+    }
+
+    /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
+    private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
+        DispatchTwo(string labelA, string labelB)
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        NativeRenderer renderer = StartSession(strict: false, frames);
+        InlineContinuationProbe.Reset();
+        InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
+        renderer.Mount<InlineContinuationProbe>();
+        int a = HandlerFor(frames, "click", labelA);
+        int b = HandlerFor(frames, "click", labelB);
+        FakeShellHost.AutoCompleteHostCall = true;
+        int rcA = DispatchBounded(a, """{"name":"click"}""");
+        int rcB = DispatchBounded(b, """{"name":"click"}""");
+        return (rcA, rcB, a, b, pending, previous);
+    }
+
+    /// <summary>17.1 (#464): A's handlers wait on an app-made gate; B's handlers complete it inline.</summary>
+    private sealed class InlineContinuationProbe : ComponentBase
+    {
+        /// <summary>Made WITHOUT RunContinuationsAsynchronously, as the app code in #464 does.</summary>
+        public static TaskCompletionSource Gate = new();
+        private static volatile bool s_inB;
+        /// <summary>The anchor: a continuation of A ran while B's handler was completing the gate.</summary>
+        public static volatile bool RanInsideB;
+        /// <summary>The no-flow anchor: that continuation saw no execution context.</summary>
+        public static volatile bool SawNoFlow;
+
+        /// <summary>Reads the renderer's flowing scope for the no-flow anchor. DispatchTwo sets it.</summary>
+        public static Func<bool> FlowingScopeIsSet = () => true;
+        private static ExecutionContext? s_mountContext;
+
+        protected override void OnInitialized() => s_mountContext = ExecutionContext.Capture();
+
+        public static void Reset()
+        {
+            Gate = new TaskCompletionSource();
+            s_inB = false;
+            RanInsideB = false;
+            SawNoFlow = false;
+        }
+
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            Button(b, 0, "a-await-then-throw", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                throw new InvalidOperationException("a-late");
+            });
+            Button(b, 10, "a-await-then-begin-and-throw", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("a-late");
+            });
+            Button(b, 20, "a-register-no-flow", () =>
+            {
+                // Code that flows no dispatch scope: it runs in the execution context captured at
+                // mount, when no dispatch was open, not in whatever context completes the gate.
+                ExecutionContext mountContext = s_mountContext!;
+                _ = Gate.Task.ContinueWith(_ => ExecutionContext.Run(mountContext.CreateCopy(), _ =>
+                {
+                    RanInsideB = s_inB;
+                    SawNoFlow = !FlowingScopeIsSet();
+                    _ = DispatchExceptionAsync(new InvalidOperationException("no-flow"));
+                }, null), TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 30, "a-register-flowing", () =>
+            {
+                _ = Gate.Task.ContinueWith(_ =>
+                {
+                    RanInsideB = s_inB;
+                    _ = DispatchExceptionAsync(new InvalidOperationException("a-orphan"));
+                }, TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 40, "b-complete", () => CompleteGate());
+            Button(b, 50, "b-complete-then-throw", () =>
+            {
+                CompleteGate();
+                throw new InvalidOperationException("b-own");
+            });
+        }
+
+        private static void CompleteGate()
+        {
+            s_inB = true;
+            try { Gate.SetResult(); }
+            finally { s_inB = false; }
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Func<Task> onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Action onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+    }
+
     /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
     private sealed class ShellCallProbe : ComponentBase
     {
