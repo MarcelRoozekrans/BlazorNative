@@ -595,11 +595,27 @@ public sealed class NativeRenderer : BlazorRenderer
         // call or a fetch before it (16.7) — never from this stack. A handler suspended on
         // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
         // is that dispatch's, never the suspended one's (16.0 requirement 1).
+        //
+        // 17.1 (#464): the window owns only its own flow. A continuation of another
+        // dispatch can run inline inside this window, when app code completes a
+        // TaskCompletionSource made without RunContinuationsAsynchronously. Its execution
+        // context still flows that other dispatch's scope, so a fault its own code raises
+        // is that dispatch's late fault, or the no-window path's once that dispatch is Done,
+        // and never this window's. Code that flows no dispatch scope, or another renderer's,
+        // stays the window's; so does a parameter-binding fault, which #164 must see.
         if (_currentScope is { } scope)
         {
-            scope.Fault ??= exception;
-            BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
-            return;
+            DispatchScope? owner = s_flowingScope.Value;
+            bool anotherDispatchs = owner is not null
+                && !ReferenceEquals(owner, scope)
+                && ReferenceEquals(owner.Owner, this)
+                && !BlazorInterop.IsParameterBindingFault(exception);
+            if (!anotherDispatchs)
+            {
+                scope.Fault ??= exception;
+                BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
+                return;
+            }
         }
 
         // After a handler's first await: no scope is open, but the continuation still
@@ -1587,7 +1603,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice.</summary>
     internal static void NoteShellCallBegun()
     {
-        if (t_syncScope is { Fault: null } scope)
+        // Both conditions are needed (17.1, #464). Thread-bound alone marks this dispatch for a
+        // call that another dispatch's continuation, running inline in this synchronous part,
+        // began; flowing alone would mark it for a call begun on another thread, such as inside
+        // Task.Run, which the 16.7 record's M4 showed.
+        if (t_syncScope is { Fault: null } scope && ReferenceEquals(s_flowingScope.Value, scope))
             scope.ShellCallBegun = true;
     }
 
