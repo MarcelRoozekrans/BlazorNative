@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1314 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1316 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -130,7 +130,7 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
+      - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -2335,7 +2335,11 @@ jobs:
       # to 15.0, and IosSliceMatrixDriftTests gains
       # EverySliceMinFlag_MatchesProjectYmlsDeploymentTarget, which holds both legs'
       # min_flag to project.yml's deploymentTarget.iOS so the floor cannot half-move.
-      - name: .NET tests (assert 1314 passed / 0 skipped)
+      # 1314 -> 1316 (+2): Runtime 1140 -> 1142. PowerShellScriptEncodingTests pins a
+      # UTF-8 BOM on every .ps1, without which Windows PowerShell 5.1 cannot parse them.
+      # JdkVersionDriftTests holds every java-version, Setup JDK step name and both
+      # setup scripts to one JDK (#404).
+      - name: .NET tests (assert 1316 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2353,8 +2357,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1314 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1314 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1316 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1316 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
@@ -2966,7 +2970,7 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Setup JDK 21 (Temurin — Gradle daemon + sdkmanager)
+      - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
         with:
           distribution: temurin

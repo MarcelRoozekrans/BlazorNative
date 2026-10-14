@@ -1,16 +1,20 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     BlazorNative — full prerequisite installer for Windows 11
 .DESCRIPTION
     Installs and configures everything needed to build and run BlazorNative:
-      • .NET 10 SDK
-      • Temurin JDK 21 (Android toolchain + Gradle daemon)
+      • the .NET 10 SDK band pinned in global.json
+      • PowerShell 7 (pwsh) — the .NET suite's reference-drift fixtures run
+        scripts/generate-reference.ps1 through it
+      • Temurin JDK 25, the version CI builds on (Android toolchain + Gradle daemon)
       • Android SDK + NDK 26.3 + AVD
       • Bionic NativeAOT toolchain verification (linux-bionic publishes)
 
-    Run from the repo root:
+    Run from the repo root, in Windows PowerShell 5.1 or PowerShell 7:
         powershell -ExecutionPolicy Bypass -File setup.ps1
+
+    On Linux and macOS, use setup.sh instead.
 
     Flags:
         -SkipAndroid     Skip Android SDK + NDK installation
@@ -33,6 +37,9 @@ $script:passed  = 0
 $script:skipped = 0
 $script:failed  = 0
 $script:envChanged = $false
+
+# The Temurin JDK installed for Gradle and sdkmanager — the one CI provisions (#404).
+$jdkMajor = 25
 
 function Write-Header([string]$text) {
     Write-Host ""
@@ -129,58 +136,86 @@ if (Command-Exists "winget") {
 # 2. .NET 10 SDK
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "2 · .NET 10 SDK"
+Write-Header "2 · .NET SDK (the band global.json pins)"
 
-$dotnetOk = $false
-if (Command-Exists "dotnet") {
-    $sdks = dotnet --list-sdks 2>&1
-    if ($sdks -match "^10\.") {
-        Write-OK ".NET 10 SDK already installed"
-        $dotnetOk = $true
+# global.json pins an exact version with rollForward latestPatch, so any SDK in
+# the same feature band at or above it satisfies it: 10.0.401 → 10.0.4xx >= 401.
+# Any other 10.x SDK installs fine and then fails every build on global.json.
+$sdkPin = [version](Get-Content (Join-Path $PSScriptRoot "global.json") -Raw | ConvertFrom-Json).sdk.version
+function Find-PinnedSdk {
+    if (-not (Command-Exists "dotnet")) { return $null }
+    foreach ($line in (dotnet --list-sdks 2>$null)) {
+        if ($line -notmatch '^(\d+)\.(\d+)\.(\d+)\s') { continue }
+        $v = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+        if ($v.Major -eq $sdkPin.Major -and $v.Minor -eq $sdkPin.Minor -and
+            [math]::Floor($v.Build / 100) -eq [math]::Floor($sdkPin.Build / 100) -and
+            $v.Build -ge $sdkPin.Build) { return $v }
+    }
+    return $null
+}
+
+$foundSdk = Find-PinnedSdk
+if ($foundSdk) {
+    Write-OK ".NET SDK $foundSdk satisfies global.json ($sdkPin, latestPatch)"
+} else {
+    Invoke-Winget "Microsoft.DotNet.SDK.$($sdkPin.Major)" ".NET $($sdkPin.Major) SDK"
+    Refresh-Path
+    $foundSdk = Find-PinnedSdk
+    if ($foundSdk) {
+        Write-OK ".NET SDK $foundSdk satisfies global.json ($sdkPin, latestPatch)"
+    } elseif (Command-Exists "dotnet") {
+        Write-Fail "no SDK in the $($sdkPin.Major).$($sdkPin.Minor).$([math]::Floor($sdkPin.Build / 100))xx band >= $sdkPin after install — install it from https://dotnet.microsoft.com/download/dotnet/$($sdkPin.Major).$($sdkPin.Minor)"
+        exit 1
+    } else {
+        Write-Fail "dotnet command not found after install — restart terminal and re-run"
+        exit 1
     }
 }
 
-if (-not $dotnetOk) {
-    Invoke-Winget "Microsoft.DotNet.SDK.10" ".NET 10 SDK"
-    Refresh-Path
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# 2b. PowerShell 7 — tests/BlazorNative.Runtime.Tests' reference-drift fixtures
+#     start `pwsh` by name; Windows PowerShell 5.1 is `powershell` and does not count.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Verify
-if (Command-Exists "dotnet") {
-    $ver = (dotnet --version 2>&1).Trim()
-    Write-Step "Active SDK: $ver"
+Write-Header "2b · PowerShell 7 (pwsh)"
+
+if (Command-Exists "pwsh") {
+    Write-OK "pwsh is available"
 } else {
-    Write-Fail "dotnet command not found after install — restart terminal and re-run"
-    exit 1
+    Invoke-Winget "Microsoft.PowerShell" "PowerShell 7"
+    Refresh-Path
+    if (-not (Command-Exists "pwsh")) {
+        Write-Warn "pwsh not on PATH yet — open a fresh terminal before running the .NET suite"
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Java 21 (required for Android)
+# 3. Java (required for Android)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipAndroid) {
-    Write-Header "3 · Java 21 (Android toolchain + Gradle 8.x daemon)"
+    Write-Header "3 · Java $jdkMajor (Android toolchain + Gradle daemon)"
 
-    # Phase 2.1 found: Gradle 8.11.1 daemon supports JDK 8-23. JDK 25 is too new
-    # (Gradle 9.0+ required). JDK 21 is the LTS sweet spot — works for Gradle
-    # 8.x AND for Android (which needs 17+). Marcel's box may have JDK 25 from
-    # other tooling; we additionally ensure JDK 21 is available for Gradle.
-    $jdk21Found = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
-                   Where-Object { $_.Name -match "^jdk-21" } | Select-Object -First 1)
-    if ($jdk21Found) {
-        Write-OK "Temurin JDK 21 already installed at $($jdk21Found.FullName)"
+    # The same JDK CI provisions (#404): ci.yml and android-instrumented.yml set
+    # java-version to it, and JdkVersionDriftTests holds them, this and setup.sh
+    # together. The wrapper's Gradle 9.8 runs on 17-25; Android needs 17+.
+    $jdkFound = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -match "^jdk-$jdkMajor\." } | Select-Object -First 1)
+    if ($jdkFound) {
+        Write-OK "Temurin JDK $jdkMajor already installed at $($jdkFound.FullName)"
     } else {
-        Invoke-Winget "EclipseAdoptium.Temurin.21.JDK" "Temurin JDK 21"
+        Invoke-Winget "EclipseAdoptium.Temurin.$jdkMajor.JDK" "Temurin JDK $jdkMajor"
         Refresh-Path
     }
 
     # Verify SOME compatible JDK is on PATH
     if (Command-Exists "java") {
         $jver = java -version 2>&1 | Select-Object -First 1
-        if ($jver -match "1[7-9]\.|2[0-3]\.") {
+        $jmajor = if ($jver -match 'version "(?:1\.)?(\d+)') { [int]$Matches[1] } else { 0 }
+        if ($jmajor -ge 17 -and $jmajor -le 25) {
             Write-OK "Gradle-compatible JDK on PATH ($($jver.ToString().Trim()))"
-        } elseif ($jver -match "2[5-9]\.|[3-9]\d\.") {
-            Write-Warn "Active JDK on PATH is $($jver.ToString().Trim()) — too new for Gradle 8.x. Gradle daemon may need JAVA_HOME pointing at JDK 21."
+        } else {
+            Write-Warn "Active JDK on PATH is $($jver.ToString().Trim()) — Gradle 9.8 needs 17-25. Point JAVA_HOME at the Temurin JDK $jdkMajor install."
         }
     }
 }
@@ -192,7 +227,9 @@ if (-not $SkipAndroid) {
 if (-not $SkipAndroid) {
     Write-Header "4 · Android SDK + NDK + AVD"
 
-    $androidHome = $env:ANDROID_HOME ?? "$env:USERPROFILE\AppData\Local\Android\Sdk"
+    # No `??` here: it is PowerShell 7 syntax, and Windows PowerShell 5.1 then
+    # fails to parse the whole script.
+    $androidHome = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:USERPROFILE\AppData\Local\Android\Sdk" }
     $cmdToolsDest = "$androidHome\cmdline-tools"
     $sdkmanager = "$cmdToolsDest\latest\bin\sdkmanager.bat"
     $avdmanager = "$cmdToolsDest\latest\bin\avdmanager.bat"
@@ -229,13 +266,13 @@ if (-not $SkipAndroid) {
     if (Test-Path $sdkmanager) {
         # sdkmanager + avdmanager need Java 17+ (class file 61.0). Marcel's PATH
         # may put Oracle's java8path first; force JAVA_HOME for these invocations.
-        $jdk21Found = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Name -match "^jdk-21" } | Select-Object -First 1)
-        if ($jdk21Found) {
-            $env:JAVA_HOME = $jdk21Found.FullName
-            Write-Step "Using JAVA_HOME=$($jdk21Found.FullName) for sdkmanager (needs Java 17+)"
+        $jdkFound = (Get-ChildItem -Path "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
+                     Where-Object { $_.Name -match "^jdk-$jdkMajor\." } | Select-Object -First 1)
+        if ($jdkFound) {
+            $env:JAVA_HOME = $jdkFound.FullName
+            Write-Step "Using JAVA_HOME=$($jdkFound.FullName) for sdkmanager (needs Java 17+)"
         } else {
-            Write-Warn "JDK 21 not found at Adoptium default location — sdkmanager may fail with Java version mismatch"
+            Write-Warn "JDK $jdkMajor not found at Adoptium default location — sdkmanager may fail with Java version mismatch"
         }
 
         Write-Step "Installing Android SDK packages (platform-tools, build-tools, platforms-37, NDK 26.3, x86_64 system image)..."
@@ -290,14 +327,15 @@ if (-not $SkipAndroid) {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Bionic NativeAOT toolchain (Phase 3.0c) — verify + document, no installs
-#    BlazorNative.Runtime cross-compiles to linux-bionic-{x64,arm64} .so
-#    files directly on Windows via the runtime-pack bypass (the RID-specific
-#    ILCompiler packages don't exist for .NET 10 — 3.0b Gate 4 RED).
-#    Pinned working combo (Gate 2 GREEN):
-#      • .NET SDK 10.0.301 (section 2)
+#    samples/BlazorNative.SampleApp, the publish head since Phase 8.0,
+#    cross-compiles to linux-bionic-{x64,arm64} .so files directly on Windows
+#    via the runtime-pack bypass (the RID-specific ILCompiler packages don't
+#    exist for .NET 10 — 3.0b Gate 4 RED).
+#    Pinned working combo:
+#      • the .NET SDK band in global.json (section 2)
 #      • ILCompiler + Microsoft.NETCore.App.Runtime.NativeAOT.linux-bionic-*
 #        runtime packs 10.0.9 (pinned via RuntimeFrameworkVersion in
-#        BlazorNative.Runtime.csproj)
+#        BlazorNative.SampleApp.csproj)
 #      • Android NDK 26.3.11579264 (installed by section 4)
 #      • vendored build/BionicNativeAot.targets (NDK shim + linker args)
 #    The targets read ANDROID_NDK_ROOT (not ANDROID_NDK_HOME) — this section
@@ -348,12 +386,12 @@ if (-not $SkipAndroid) {
     }
 
     Write-Host ""
-    Write-Host "  Pinned toolchain combo (Phase 3.0c Gate 2):" -ForegroundColor DarkGray
-    Write-Host "    .NET SDK 10.0.3xx band (floor 10.0.301) · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK $bionicNdkPin" -ForegroundColor Cyan
+    Write-Host "  Pinned toolchain combo:" -ForegroundColor DarkGray
+    Write-Host "    .NET SDK $sdkPin band (global.json) · ILCompiler/NativeAOT runtime packs 10.0.9 · NDK $bionicNdkPin" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Publish the Android native host (from repo root):" -ForegroundColor DarkGray
-    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish samples\BlazorNative.SampleApp -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish samples\BlazorNative.SampleApp -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -377,7 +415,7 @@ if (Test-Path "BlazorNative.sln") {
 # 7. Verify the dev build (fast — no AOT publish)
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Header "7 · Smoke test — Debug build + fast tests"
+Write-Header "7 · Smoke test — Debug build + the .NET suite"
 
 if (Test-Path "BlazorNative.sln") {
     Write-Step "Building BlazorNative.sln (Debug)..."
@@ -385,10 +423,12 @@ if (Test-Path "BlazorNative.sln") {
     if ($LASTEXITCODE -eq 0) { Write-OK "BlazorNative.sln builds successfully (Debug)" }
     else { Write-Fail "Debug build failed — check output above" }
 
-    Write-Step "Running fast tests (skipping integration)..."
-    dotnet test BlazorNative.sln --no-build -c Debug --filter "Category!=Integration" --nologo -v q
-    if ($LASTEXITCODE -eq 0) { Write-OK "Fast tests passed" }
-    else { Write-Warn "Fast tests reported failures — review above" }
+    # --blame-hang-timeout turns #454, a local hang in the reference-drift
+    # fixture, into a named failure with dumps instead of a silent wait.
+    Write-Step "Running the .NET suite (about a minute)..."
+    dotnet test BlazorNative.sln --no-build -c Debug --nologo -v q --blame-hang --blame-hang-timeout 10m
+    if ($LASTEXITCODE -eq 0) { Write-OK ".NET suite passed" }
+    else { Write-Fail ".NET suite reported failures — review above" }
 } else {
     Write-Warn "BlazorNative.sln not found — skipping smoke test"
 }
@@ -399,7 +439,7 @@ if (Test-Path "BlazorNative.sln") {
 
 Write-Host ""
 Write-Host "  ────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  Setup complete (.NET 10 · JDK 21 · Android SDK/NDK 26.3 · bionic NativeAOT)" -ForegroundColor White
+Write-Host "  Setup complete (.NET 10 · JDK $jdkMajor · Android SDK/NDK 26.3 · bionic NativeAOT)" -ForegroundColor White
 Write-Host ""
 Write-Host "    ✓ Passed  : $script:passed" -ForegroundColor Green
 if ($script:skipped -gt 0) {
@@ -426,9 +466,9 @@ if ($script:failed -eq 0) {
     Write-Host "    dotnet test BlazorNative.sln" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Publish the native runtime (pinned combo — see section 5):" -ForegroundColor DarkGray
-    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r win-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-x64" -ForegroundColor Cyan
-    Write-Host "    dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish samples\BlazorNative.SampleApp -c Release -r win-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish samples\BlazorNative.SampleApp -c Release -r linux-bionic-x64" -ForegroundColor Cyan
+    Write-Host "    dotnet publish samples\BlazorNative.SampleApp -c Release -r linux-bionic-arm64" -ForegroundColor Cyan
 } else {
     Write-Host "  Some steps failed. Review the ✗ items above and re-run." -ForegroundColor Yellow
     Write-Host "  You can re-run safely — already-installed items are skipped." -ForegroundColor DarkGray

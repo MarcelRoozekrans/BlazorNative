@@ -51,12 +51,13 @@ for the tier table, the compatibility statement, and the full 1.0 checklist.
 ## Quick start
 
 ```powershell
-# Windows — installs/verifies prerequisites (.NET 10 SDK, JDK 21, Android SDK + NDK)
-powershell -ExecutionPolicy Bypass -File setup.ps1
+# Installs/verifies prerequisites (.NET SDK, PowerShell 7, JDK 25, Android SDK + NDK)
+powershell -ExecutionPolicy Bypass -File setup.ps1   # Windows
+./setup.sh                                           # Linux / macOS
 
-# Publish the runtime for the target you want
-dotnet publish src\BlazorNative.Runtime -c Release -r win-x64            # JVM dev loop (.dll)
-dotnet publish src\BlazorNative.Runtime -c Release -r linux-bionic-arm64 # Android device (.so)
+# Publish the runtime for the target you want (the sample app is the publish head)
+dotnet publish samples\BlazorNative.SampleApp -c Release -r win-x64            # JVM dev loop (.dll)
+dotnet publish samples\BlazorNative.SampleApp -c Release -r linux-bionic-arm64 # Android device (.so)
 
 # Fast inner loop: watches .NET source, re-publishes → previews the widget tree on each save
 powershell -ExecutionPolicy Bypass -File scripts\devloop.ps1             # JVM fast lane (~10 s/save)
@@ -184,7 +185,7 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 1314 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| .NET | `dotnet test` | 1316 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 192 | `ci.yml` → `build-test` — **required, gates the PR** |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 233 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 288 | `ios.yml` — advisory (on-merge/dispatch) |
@@ -194,7 +195,8 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 | Tool | Purpose | Required |
 |---|---|---|
 | .NET 10 SDK (see `global.json`) | build + NativeAOT publish | ✅ |
-| Temurin JDK 21 | Gradle / Kotlin shell | ✅ |
+| PowerShell 7 (`pwsh`) | the .NET suite's reference-drift tests | ✅ |
+| Temurin JDK 25 (the CI version) | Gradle / Kotlin shell | ✅ |
 | Android SDK + NDK 26.3 | bionic cross-compile + emulator | for Android |
 | Xcode (macOS) | iOS-simulator shell + XCTest | for iOS |
 

@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     BlazorNative — release preflight (Phase 8.2 Gate 1, M8 DoD #3: the release

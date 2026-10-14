@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     THE FOOTER CHECK — a commit BODY can declare a breaking change, or pick the

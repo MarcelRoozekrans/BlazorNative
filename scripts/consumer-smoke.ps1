@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     BlazorNative — consumer smoke (Phase 4.5 Gate 2, M4 DoD #7; extended by

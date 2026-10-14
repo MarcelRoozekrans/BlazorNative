@@ -95,7 +95,7 @@ Installing the SDKs is not quite enough — three environment steps trip up a fr
   which it locates with `vswhere`. Run your builds from a **Developer Command Prompt for
   Visual Studio**, or make sure the VS Installer directory is on `PATH` so `vswhere` is
   reachable.
-- **Gradle / Android:** point `JAVA_HOME` at a full **JDK** — the one `setup.ps1` installs,
+- **Gradle / Android:** point `JAVA_HOME` at a full **JDK** — the one the setup script installs,
   not an old JRE. Gradle reads `JAVA_HOME`, and an older or JRE-only Java fails the shell
   build.
 - **bionic / Android publish:** set `ANDROID_NDK_ROOT` to your installed NDK
@@ -109,6 +109,21 @@ expects:
 ```powershell
 powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
+
+### Linux and macOS: `setup.sh`
+
+The same installer for Linux and macOS. It needs no root: the .NET SDK, PowerShell 7, the JDK
+and the Android SDK all go under your home directory, and your shell profile is left alone. It
+prints the `export` lines to add yourself:
+
+```bash
+./setup.sh                  # everything
+./setup.sh --skip-android   # .NET only
+```
+
+The win-x64 JVM dev loop is Windows-only. Everything else works on Linux and macOS: the .NET
+suite, and the `linux-bionic` publishes that produce the Android `.so`. On an arm64 Linux host
+the bionic publish does not run, because the NDK ships no linux-aarch64 toolchain.
 
 ## Verify
 

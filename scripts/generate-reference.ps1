@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     BlazorNative — generate the API reference (Phase 8.4 Gate 2 / M11 #173).
