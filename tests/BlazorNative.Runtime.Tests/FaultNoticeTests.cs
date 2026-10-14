@@ -720,6 +720,9 @@ public sealed class FaultNoticeTests
                 + "and no notice would prove nothing.");
             Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            // Rule 7 limit, named in 17.1 from #494: no probe-side change can red this rc assertion,
+            // because turning the cancellation into a fault after the begun call is rc 0 too. The
+            // 16.8 re-audit's X2 reds the Assert.Empty below instead.
             Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
                 + "call must match a late cancellation: rc 0 and nothing sent.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
@@ -790,6 +793,30 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0()
+    {
+        // 17.1, from #494: the re-render is part of the handler's synchronous part and flows its
+        // scope, so a call a CHILD begins there marks the dispatch, and a render fault after it
+        // in the same synchronous part is a FaultNotice with rc 0. The mirror of the sibling-order
+        // fact above, and a guard on 17.1's flowing check in NoteShellCallBegun: a child's render
+        // must still mark.
+        var (rc, _, pending, previous) = DispatchProbe("child-begin-then-sibling-throw");
+        try
+        {
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the child's begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(ShellCallProbe.ChildThrowSeq > ShellCallProbe.SiblingBeginSeq && ShellCallProbe.SiblingBeginSeq > 0,
+                $"anchor: the begin must come before the fault, but the child began at {ShellCallProbe.SiblingBeginSeq} "
+                + $"and the sibling threw at {ShellCallProbe.ChildThrowSeq}.");
+            Assert.True(rc == 0, $"rc was {rc}: the child's begun call marks the dispatch, so the later render fault "
+                + "is a FaultNotice with rc 0, not the dispatch's rc 2.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for the render fault after the begun call.");
+            Assert.Equal("child-after-begin", NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args)["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void ANoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
         var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
@@ -804,7 +831,12 @@ public sealed class FaultNoticeTests
                 $"anchor: the probe's FaultNotice was not begun; notices seen: [{string.Join(", ", messages)}]");
             Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends is not a shell call the handler began, so a "
                 + "fault after it must stay rc 2.");
-            Assert.DoesNotContain("after-notice", messages);
+            // 17.1, from #494: read the notices again after the rc, with nothing pending. rc 2 and an
+            // empty pending list exclude every notice source, as in the control, so this check is
+            // immediate by construction; reading the list taken before the rc checked nothing.
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            Assert.DoesNotContain("after-notice",
+                Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)["message"]));
         }
         finally { TearDown(pending, previous); }
     }
@@ -1212,6 +1244,7 @@ public sealed class FaultNoticeTests
             });
             Button(b, 120, "child-throw-then-sibling-begin", () => { _showChildren = true; });
             Button(b, 130, "next-ok", () => { _okCount++; });
+            Button(b, 160, "child-begin-then-sibling-throw", () => { _showBeginFirst = true; });
             if (_okCount > 0)
             {
                 b.OpenElement(140, "text");
@@ -1227,9 +1260,18 @@ public sealed class FaultNoticeTests
                 b.OpenComponent<BeginOnInitChild>(151);
                 b.CloseComponent();
             }
+            if (_showBeginFirst)
+            {
+                // The mirror: the first child begins a host call, then its sibling faults.
+                b.OpenComponent<BeginOnInitChild>(170);
+                b.CloseComponent();
+                b.OpenComponent<ThrowAfterSiblingBeganChild>(171);
+                b.CloseComponent();
+            }
         }
 
         private bool _showChildren;
+        private bool _showBeginFirst;
         private int _okCount;
 
         /// <summary>Order stamps for child-throw-then-sibling-begin: each child takes the next
@@ -1260,6 +1302,16 @@ public sealed class FaultNoticeTests
         {
             ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
             throw new InvalidOperationException("child-before-begin");
+        }
+    }
+
+    /// <summary>Faults in its synchronous OnInitialized, after its sibling began a call (17.1).</summary>
+    private sealed class ThrowAfterSiblingBeganChild : ComponentBase
+    {
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            throw new InvalidOperationException("child-after-begin");
         }
     }
 
