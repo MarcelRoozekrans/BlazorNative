@@ -71,7 +71,7 @@ and the back gesture always answers.**
 6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
 7. Phase 16.6 — prove the unreddened pins [complete] — 38 distinct pins, each with a recorded red on current code and partials named; about 25 pin defects found by mutation fixed in test code; production only a BnLog test hook; #458 filed (#459)
 8. Phase 16.7 — make the rc contract true (#455) [complete] — a fault after a begun host call or fetch is a FaultNotice with rc 0, classified in the dispatch scope with scheduling unchanged; the yield-based first design was abandoned; 0.18.0 BREAKING; #464 filed (#465)
-9. Phase 16.8 — re-audit and close [pending]
+9. Phase 16.8 — re-audit and close [active]
 
 > **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
 > so no merged state exists in which a fault after the first await is only logged. That window is
@@ -113,3 +113,4 @@ after both.
 | Date | Verdict | Gaps |
 |---|---|---|
 | 2026-10-01 | **FAIL** — [audit](../plans/2026-10-01-milestone-16-audit.md); 7 MET, 2 MET NARROWLY, 1 NOT MET | Pin standard NOT MET: 16 new pins have no recorded mutation, among them the iOS twin `BnDispatchLaneTests`, `BnFaultNoticeTests`, `BnBackOffMainTests`, two `BackAndroidTest` tests and the JVM visibility pin. A further 23 were never assessed on Rules 2–5, the 16.3 slow-handler pins, three 16.1 tree-reading facts and the 16.2 caller scan; they are carried into the gap plan, not counted as failing. MET NARROWLY: tests, by #454, a local hang; #8, by #455, the rc contract's "never as an rc" is false for an inline-completed host call. Routed to `plan-milestone-gaps` |
+| 2026-10-14 | **PASS WITH FINDINGS**: [re-audit](../plans/2026-10-14-milestone-16-reaudit.md); 8 MET, 2 MET NARROWLY | Item 7 is narrowed by #464, an inline-continuation fault misattribution from 16.1; the owner chose to grade it, not block on it. Item 10 is narrowed by named partials: all 56 M16 pins have a red on `5dde7d3`, 16.6's re-checked and 17 recorded mutations re-run; 16.7's 18 were assessed by the audit, two cancellation facts first redded by its X1 and X2, and the gaps are filed as #494. The auditor's own call: those partials are named by the audit, not by their record. #455 and the pin-standard NOT MET from 2026-10-01 are closed. Routed to `complete-milestone`, no tag |
