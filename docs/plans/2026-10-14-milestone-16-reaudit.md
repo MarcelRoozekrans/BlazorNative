@@ -10,7 +10,7 @@
 for its method and its findings, never as evidence. Every number below was measured today, with the
 command beside it.
 
-**Verdict:** **PASS WITH FINDINGS**: 8 MET, 2 MET NARROWLY (items 7 and 10). See [the verdict](#verdict).
+**Verdict:** **PASS WITH FINDINGS**: 8 MET, 2 MET NARROWLY (items 7 and 10; item 10's grade is the auditor's call, which the owner may overrule). See [the verdict](#verdict).
 
 ## Scorecard
 
@@ -25,7 +25,7 @@ command beside it.
 | 7 | #8 is fixed | **MET NARROWLY**: #464. #455, the 16.5 narrowing, is fixed |
 | 8 | #9 is re-assessed on measurement | **MET** |
 | 9 | No ABI change | **MET**: 16.7's rc change recorded, not an ABI change |
-| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **MET NARROWLY**: 56 pins with a red on `5dde7d3`; partials named, those 16.7 left unnamed in #494 |
+| 10 | Every new pin conforms to the pin standard on Rules 2–5 and 7, mutations recorded | **MET NARROWLY, the auditor's call (§10c)**: 56 pins with a red on `5dde7d3`; partials named, those 16.7 left unnamed in #494 |
 
 **Compared with 16.5:**
 - Item 2 moves from MET NARROWLY to MET.
@@ -228,7 +228,9 @@ the begin.
   `a_fault_after_an_inline_answered_host_call_is_a_fault_notice_not_rc_2` (`:91`). Both are green
   in CI's 192.
 - XCTest: `BnFaultNoticeTests.testAFaultNoticeRoutesToOnErrorAndCompletesOk`
-  (`BnFaultNoticeTests.swift:95`). It is green in the 288, and was re-redded today by A17.
+  (`BnFaultNoticeTests.swift:95`). It is green in the 288. Its onError assertion was re-redded today
+  by A3, which drops the `runtime.onError` call. A17 reds the same test earlier, at its
+  `hostCallBegin` rc assertion (`:101`), so A17 alone says nothing about onError.
 - .NET, the sending half: `FaultNoticeTests.AFaultAfterTheFirstAwait_SendsAFaultNotice`
   (`FaultNoticeTests.cs:206`).
 
@@ -248,7 +250,17 @@ It strips each file's own comment prefix first. The copy at `Exports.cs:471-478`
 > synchronous part are delivered before the export returns; frames from a continuation are
 > delivered later, from the render thread.
 
-The return-code table under it (`:480-492`) agrees. `--filter
+The return-code table under it (`:480-492`) agrees.
+
+**Every export's rc table, read against it** (`grep -n "Return codes\|rc 0\|rc 1\|rc 2" src/BlazorNative.Runtime/Exports.cs`):
+- `dispatch_event` (`:480-492`) agrees, as above.
+- `fetch_complete` (`:683`) and `host_call_complete` (`:748`) describe delivery, not handler
+  faults, and do not touch the contract.
+- `host_event`'s tables for back (`:888-894`) and navigate (`:951-956`) say *"if it ever yields,
+  this reports rc 0 and a later fault is sent to the shell as a FaultNotice, the dispatch_event
+  contract."* That is still true of what the code does: neither handler begins a shell call, and a
+  fault after a yield is a FaultNotice. But the wording keys on yielding, where the contract since
+  16.7 keys on a begun call. They agree in substance; the wording drift is filed with #494. `--filter
 "FullyQualifiedName~RcContractCopiesTests|FullyQualifiedName~FaultNoticeTests"` gives 28/28 on
 `5dde7d3`.
 
@@ -270,9 +282,15 @@ inside dispatch B's synchronous part, because app code completed a `TaskCompleti
   B's handler id.
 - B's own synchronous fault is never reported.
 
-That contradicts the contract's "2 = it faulted before beginning one" for B. The pattern needs app
-code that completes its own completion source synchronously; the runtime's own sources all use
-`RunContinuationsAsynchronously`. `FaultNoticeTests`' DOES NOT COVER block discloses it and cites
+#464 in its own words: *"A's fault is attributed to **B's** window, and reported as B's fault. B's own
+later synchronous fault is **lost**: the scope keeps only the first fault."* Judged against the
+item's first clause, "a fault after the first await reaches `onError`": A's late fault reaches
+`onError` under the wrong handler id. If A's continuation begins no shell call, A's fault becomes
+B's rc 2 instead of a FaultNotice, so it reaches the shell as an rc. Either way B's own fault is
+not reported, which also contradicts the contract's "2 = it faulted before beginning one" for B. The pattern needs app
+code that completes its own completion source synchronously. The runtime's own sources, all 7 of
+them, use `RunContinuationsAsynchronously`
+(`git grep -n -A1 "new TaskCompletionSource" 5dde7d3 -- 'src/*.cs'`). `FaultNoticeTests`' DOES NOT COVER block discloses it and cites
 #464 (`FaultNoticeTests.cs:396-402`). **MET NARROWLY**, citing #464.
 
 **#440: adjacent, not contradicting.** #440 holds the render thread inside `hostCallBegin`. It does
@@ -362,8 +380,12 @@ awk 'NR>=396 && NR<=600 && /^\|/{last=NR} END{print last}' docs/pin-standard.md 
 
 ### 10a. The 16.6 population: 38 pins, each re-checked against `5dde7d3`
 
-A 16.6 red stands only if neither the pin's test file nor the files its recorded mutations edited
-changed between `a301c9c`, the 16.6 squash, and `5dde7d3`. Where one changed, a recorded mutation
+A 16.6 red stands only if neither the pin's test file nor its subject changed between `a301c9c`, the
+16.6 squash, and `5dde7d3`. **How "subject" was measured, disclosed after review:** first as the
+files the pin's recorded mutations edited. The reviewer showed that this misses code on the pin's
+path that no mutation edited. 16.7 changed `NativeRenderer.cs`'s dispatch classification, and every
+device pin that dispatches runs through it. Those pins were added to the re-red set: 31 and 32 on
+iOS, and 37 and 38 on Android. Where one changed, a recorded mutation
 was re-run on `5dde7d3`, alone, and reverted. A diff that touches only comments leaves a red standing
 for a pin that runs compiled code, but not for a pin that reads source text, pins 1 to 5. The
 per-pin table was generated from the 16.6 record's mutation rows and pin-to-red maps:
@@ -387,11 +409,13 @@ git diff -U0 a301c9c 5dde7d3 -- <file> | grep -E '^[-+][^-+]' | grep -v -E '^[-+
 | 17 | the same | **E9**, the call-site removal dropped | red: `TheCallSiteMap_StaysFlat_…` alone |
 | 25 | the same | **E23**, on `scratch/16.8-mut-E23` through throwaway draft PR #493 (closed). `ci.yml` has no `workflow_dispatch`. The scratch commit also set the .NET step `continue-on-error`, because E23 reds one .NET fact too and the JVM step would otherwise never run. Run 38541286405, `headSha` `fb522bee`, attempt 1 | red: `three_bnbuttons_…`, "no single warning named the capturing lambda's generated method", 1 of 192 |
 | 26, 33 | `BnWireVocabulary.g.swift`, comments only; their own test lines are unchanged | — | the 16.6 reds A1 and A2 stand |
-| 27, 28, 29, 34, 35, 36 | `AppleShellBridge.swift`, two message strings, and `BnFaultNoticeTests.swift`, the expected text for 27 and 29 | **A17**, `hostCallBegin`'s shared return made `op <= camera ? 0 : 1`. Run 38541334324, `headSha` `46f7b1a7`, attempt 1 | all six red at their rc assertion, `("1") is not equal to ("0")`; 8 failures of 288 |
+| 27, 28, 29, 34, 35, 36 | `AppleShellBridge.swift`, two message strings, and `BnFaultNoticeTests.swift`, the expected text for 27 and 29 | **A17**, `hostCallBegin`'s shared return made `op <= camera ? 0 : 1`. Run 38541334324, `headSha` `46f7b1a7`, attempt 1 | all six red at their rc assertion, `("1") is not equal to ("0")`: 7 tests and 8 assertion failures of 288, since BackState fails twice |
 | 29 | the log-message string | **A18**, the no-runtime `BnLog.error` deleted. Run 38541337756, `1351e51f`, attempt 1 | red at `:153` "must be logged exactly once" and `:154`; 287/1 |
 | 30 | `Exports.cs`, 16.7 | **A10**, `outcome.Pending!.GetAwaiter().GetResult()` after `ObservePendingDispatch`. Run 38541340864, `2fee2cec`, attempt 1 | red at `:86` "did NOT return within 2 s … This is #345" and `:95`; 287/1 |
-| 31 | `BnRuntime.swift`, comments only | — | the 16.6 reds stand |
-| 32, 37, 38 | nothing | — | the 16.6 reds stand |
+| 27 | the onError message string, which this pin's onError assertion reads | **A3**, `runtime.onError(msg, fault)` replaced by `_ = runtime`. Run 38544554633, `3314638f`, attempt 1 | red at its onError assertions, `:102` "the notice must reach onError exactly once" through `:110` |
+| 31, 32 | `BnRuntime.swift`, comments only; but both dispatch through 16.7's changed classification (added after review) | **A14b**, `BackHoldProbe.Hold` made async with a `Task.Yield`, so nothing holds the lane. Run 38544462750, `d9a9035d`, attempt 1 | red: pin 31 at `:113` "the navigation cannot precede the release"; pin 32 at `:158`, the release `Date` nil; 286/2 |
+| 37 | nothing it mutates; back dispatches through 16.7's changed code (added after review) | **B1**, `backEnabled = canGoBack`. `android-instrumented.yml` run 38544465434, `728ab1bd`, attempt 1 | red: `back_with_a_modal_open_dismisses_the_modal`, "an open modal must enable back, or back finishes the app from under it", plus the recorded off-target modal-demo test. 2 of 233 |
+| 38 | the same (added after review) | **B4**, `backEnabled = true`. Run 38544469351, `027bebba`, attempt 1 | 4 of 233 at the harness anchor, "back stayed enabled at the root after the draining back", `back_at_root_finishes_the_activity` among them |
 
 Every local mutation was run alone on a detached checkout of `5dde7d3`. `git status` was clean before
 each next one. Each iOS mutation ran on its own scratch ref with `ios.yml` dispatched. Every scratch
@@ -400,7 +424,7 @@ record §8, including the four pins that cell names *partial*: 2, 3, 25 and 38.
 
 ### 10b. The 18 pins 16.7 added
 
-- 16 facts and 1 theory in `FaultNoticeTests.cs`.
+- 15 facts and 1 theory in `FaultNoticeTests.cs`.
 - `RcContractCopiesTests.TheRcContract_IsTheSameInAllThreeCopies`, a tree reader.
 - The JVM `FaultNoticeTest.a_fault_after_an_inline_answered_host_call_is_a_fault_notice_not_rc_2`.
 
@@ -470,7 +494,8 @@ Every one of the 56 pins has a red on `5dde7d3`, either standing, re-run today, 
 
 By the 16.5 precedent, a named partial makes the item **MET NARROWLY**.
 
-**This audit's own call.** The plan's rule says a partial named by its record is MET NARROWLY and an
+**This audit's own call.** The spec's rule (design, Approach 5) says a partial that *its record
+names* is MET NARROWLY and an
 unnamed one is NOT MET. The 10b partials were named by no record before today. This audit names them
 in the report, and in the register row where the standard keeps cells, and grades them MET NARROWLY.
 The rule's purpose is disclosure, and the cells now exist where the standard says they live. Read
@@ -531,8 +556,10 @@ Adjacent and filed during this audit, not M16 debt:
 - **A pass is a snapshot, so the gap phases needed re-checking.** 16.6 left 38 pins red on its own
   tree. Two weeks later, 16.7 had changed a file that 33 of them test or mutate. Most of those changes
   were comment rewordings, but two message strings and the dispatch classification were real. A
-  file-level diff per pin, plus the comment-only rule for compiled pins, found the 13 mutations
-  worth re-running. Every one went red as recorded.
+  file-level diff per pin, plus the comment-only rule for compiled pins, found 13 mutations worth
+  re-running. Review then showed that the files a mutation edits are not the whole subject: four
+  device pins dispatch through 16.7's changed classification. 17 mutations in all, and every one went
+  red as recorded.
 - **A record of reds is not an assessment.** 16.7 recorded thorough mutations and wrote no Rules 2–5
   cell for any of its 18 pins, and the register kept describing 16.1. The standard's own warning
   came true: the register grows only when someone remembers to add to it. A phase that adds pins
