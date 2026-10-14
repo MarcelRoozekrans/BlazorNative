@@ -3750,7 +3750,7 @@ on the handler's queue, though never the render thread.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 16.7: Make the rc contract true (#455) [status: active]
+#### Phase 16.7: Make the rc contract true (#455) [status: complete]
 **Goal:** A fault after the first await reaches the shell as a FaultNotice and never as an rc,
 including when the awaited host call completed inside `hostCallBegin`. The owner chose on
 2026-10-01 to change the code, not the words. The rc change on that path is called out in the
@@ -3762,6 +3762,8 @@ blocked render thread, raced, and broke a mount, and it was abandoned on branch
 `feat/16.7-rc-contract`.
 **Design:** [`docs/superpowers/specs/2026-10-02-phase-16.7-design.md`](../superpowers/specs/2026-10-02-phase-16.7-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-02-phase-16.7-classify-fault.md`](../superpowers/plans/2026-10-02-phase-16.7-classify-fault.md)
+**Record:** [`docs/plans/2026-10-02-phase-16.7-record.md`](../plans/2026-10-02-phase-16.7-record.md)
+**Completed:** 2026-10-03 · [PR #465](https://github.com/MarcelRoozekrans/BlazorNative/pull/465), released as 0.18.0 with a BREAKING note. A fault after a handler began a host call or a fetch is a FaultNotice with rc 0, whether the shell answered inside begin or not; scheduling is unchanged. The direct path `DispatchUiEventAsync` rethrows the same fault. The record holds each new pin's red and its mutation, including the notice being sent off both the dispatching and the render thread. .NET 1313, JVM 192, iOS 288, Android 233. #455 closed; #464 filed for the 16.1 window-attribution defect the phase measured but did not pin.
 **Surface:** Backend
 **HelpWanted:** no
 
