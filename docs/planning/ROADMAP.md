@@ -3772,6 +3772,7 @@ blocked render thread, raced, and broke a mount, and it was abandoned on branch
 item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 **Design:** [`docs/superpowers/specs/2026-10-14-phase-16.8-design.md`](../superpowers/specs/2026-10-14-phase-16.8-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-14-phase-16.8-reaudit.md`](../superpowers/plans/2026-10-14-phase-16.8-reaudit.md)
+**Audit:** [`docs/plans/2026-10-14-milestone-16-reaudit.md`](../plans/2026-10-14-milestone-16-reaudit.md)
 **Surface:** Docs
 **HelpWanted:** no
 
