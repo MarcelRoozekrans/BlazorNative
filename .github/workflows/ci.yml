@@ -2340,6 +2340,7 @@ jobs:
       # JdkVersionDriftTests holds every java-version, Setup JDK step name and both
       # setup scripts to one JDK (#404).
       - name: .NET tests (assert 1316 passed / 0 skipped)
+        continue-on-error: true  # SCRATCH ONLY: E23 also reds a .NET fact; the JVM step must still run
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log

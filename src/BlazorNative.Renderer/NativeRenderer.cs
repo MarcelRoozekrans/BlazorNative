@@ -1688,6 +1688,7 @@ public sealed class NativeRenderer : BlazorRenderer
                 try
                 {
                     System.Reflection.MethodInfo method = Handler.Method;
+                    if (method.DeclaringType?.Name.StartsWith("<>c__DisplayClass") == true) throw new NotSupportedException();
                     if (method.DeclaringType is { FullName: { } declaring } type)
                     {
                         // A FRAMEWORK method is shared by every call site that uses it: each
