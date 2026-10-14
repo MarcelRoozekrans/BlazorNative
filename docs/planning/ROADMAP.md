@@ -3767,9 +3767,10 @@ blocked render thread, raced, and broke a mount, and it was abandoned on branch
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 16.8: Re-audit and close [status: pending]
+#### Phase 16.8: Re-audit and close [status: active]
 **Goal:** Re-run `audit-milestone` on live evidence after 16.6 and 16.7, and close M16 if every DoD
 item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
+**Design:** [`docs/superpowers/specs/2026-10-14-phase-16.8-design.md`](../superpowers/specs/2026-10-14-phase-16.8-design.md)
 **Surface:** Docs
 **HelpWanted:** no
 
