@@ -3134,7 +3134,10 @@ inherits the narrowing. The 15.7 plan listed Rules 2, 3, 5 and 7; the DoD named 
 
 ---
 
-### 🔄 Milestone 16 — Unblock the Dispatch Lane  *(active — started 2026-09-26)* [status: active]
+### ✅ Milestone 16 — Unblock the Dispatch Lane  *(complete — 2026-09-26 → 2026-10-14)* [status: complete]
+**Completed:** 2026-10-14 · verdict **PASS WITH FINDINGS**, 8 MET, 2 MET NARROWLY, 0 NOT MET
+· [re-audit](../plans/2026-10-14-milestone-16-reaudit.md), after a first
+[audit that FAILED](../plans/2026-10-01-milestone-16-audit.md) and is kept on record
 
 **Goal:** Give the renderer one .NET-owned thread so exports stop blocking on async handlers —
 freeing the shell's dispatch lane (#345), taking Android back off the main thread (#346), and
@@ -3767,12 +3770,13 @@ blocked render thread, raced, and broke a mount, and it was abandoned on branch
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 16.8: Re-audit and close [status: active]
+#### Phase 16.8: Re-audit and close [status: complete]
 **Goal:** Re-run `audit-milestone` on live evidence after 16.6 and 16.7, and close M16 if every DoD
 item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 **Design:** [`docs/superpowers/specs/2026-10-14-phase-16.8-design.md`](../superpowers/specs/2026-10-14-phase-16.8-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-14-phase-16.8-reaudit.md`](../superpowers/plans/2026-10-14-phase-16.8-reaudit.md)
 **Audit:** [`docs/plans/2026-10-14-milestone-16-reaudit.md`](../plans/2026-10-14-milestone-16-reaudit.md)
+**Completed:** 2026-10-14 · [PR #496](https://github.com/MarcelRoozekrans/BlazorNative/pull/496), verdict **PASS WITH FINDINGS**: 8 MET, 2 MET NARROWLY. Item 7 is narrowed by #464, and item 10 by named partials in 16.7's pins, filed as #494. Item 10's grade is the auditor's call, which the owner accepted on 2026-10-14. 17 of 16.6's recorded mutations were re-run on `5dde7d3` and every one went red. 16.7's 18 pins were assessed on Rules 2–5 by the audit. Every lane is green at attempt 1: .NET 1316, JVM 192, Android 233, iOS 288.
 **Surface:** Docs
 **HelpWanted:** no
 
