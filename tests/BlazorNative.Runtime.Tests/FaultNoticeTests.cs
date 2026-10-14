@@ -943,9 +943,8 @@ public sealed class FaultNoticeTests
     //     runs when B's window closes, and a fault in it is B's. Also #500;
     //   - a flowing scope that another renderer owns: treated as no flow, so the window's. That
     //     rests on reading HandleException; a second renderer in one process has no test here;
-    //   - a fault from A's continuation in STRICT mode once A is Done: the no-window path
-    //     throws, from inside B's synchronous part. Only production mode is pinned, as everywhere
-    //     in this file.
+    //   - a nested dispatch: B's own fire-and-forget continuation running inline inside a window C
+    //     opened while B's synchronous part was still open. Not built here; it rests on reading.
 
     [Fact]
     public void AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows()
@@ -1038,7 +1037,37 @@ public sealed class FaultNoticeTests
                     + "A can no longer report it, so it is logged and never charged to B's window.");
                 lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
                 Assert.Empty(Notices());
-                lock (log) Assert.Contains(log, l => l.Contains("a-orphan", StringComparison.Ordinal));
+                lock (log)
+                {
+                    string line = Assert.Single(log, l => l.Contains("a-orphan", StringComparison.Ordinal));
+                    Assert.True(line.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal),
+                        $"the fault was logged, but not as a finished dispatch's fault inside another window: {line}");
+                }
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Sink = sink; }
+    }
+
+    [Fact]
+    public void AFinishedDispatchsFault_InsideAWindow_IsLoggedInStrictModeToo()
+    {
+        // From the 17.1 final review: in strict mode the no-window path rethrows, and inside B's
+        // window that throw lands in a Task nobody observes, so the fault vanished with no log.
+        // Strict mode exists to make faults loud; a finished dispatch's fault must still be logged.
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+        try
+        {
+            var run = DispatchTwo("a-register-flowing", "b-complete", strict: true);
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(run.RcB == 0, $"rc was {run.RcB}: a finished dispatch's fault is never charged to B's window.");
+                lock (log) Assert.True(log.Any(l => l.Contains("a-orphan", StringComparison.Ordinal)
+                        && l.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal)),
+                    "the finished dispatch's fault vanished in strict mode: nothing logged it, nothing reported it.");
             }
             finally { TearDown(run.Pending, run.Previous); }
         }
@@ -1047,13 +1076,13 @@ public sealed class FaultNoticeTests
 
     /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
     private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchTwo(string labelA, string labelB)
+        DispatchTwo(string labelA, string labelB, bool strict = false)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
         Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
-        NativeRenderer renderer = StartSession(strict: false, frames);
+        NativeRenderer renderer = StartSession(strict, frames);
         InlineContinuationProbe.Reset();
         InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
         renderer.Mount<InlineContinuationProbe>();

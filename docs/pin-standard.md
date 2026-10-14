@@ -477,14 +477,14 @@ facts' unenterable rc assertion, and an unpinned rc claim in the DOES NOT COVER 
 holds a red for every .NET anchor #494 listed, and pins the child-begin claim. The cancellation
 fact's rc assertion stays a named partial, explained in its own comment.
 
-**17.1 added 6 facts to `FaultNoticeTests`, with these cells.** Their reds are in
+**17.1 added 7 facts to `FaultNoticeTests`, with these cells.** Their reds are in
 [the 17.1 record](plans/2026-10-14-phase-17.1-record.md) §2 to §4. Rule 2 means an anchor here, as
-for the 16.1 rows. The five #464 facts share one anchor, `InlineContinuationProbe.RanInsideB`,
+for the 16.1 rows. The six #464 facts share one anchor, `InlineContinuationProbe.RanInsideB`,
 which proves A's continuation ran inside B's window. Rule 4 is the same for all six:
 `DispatchTwo` and `DispatchProbe` find each button by label through `HandlerFor`, which throws for
 a missing one, and ops are generated symbols. Rule 5 is the 17.1 DOES NOT COVER block: the
 re-render and `RunAfterDispatch` paths (#500), another renderer's scope, which rests on reading,
-and strict mode once A is `Done`.
+and a nested dispatch inside a window, which rests on reading.
 
 | 17.1 fact | Rule 2, anchor | Rule 3 | Rule 7 |
 |---|---|---|---|
@@ -492,11 +492,12 @@ and strict mode once A is `Done`.
 | `AnInlineContinuationsFault_LeavesTheWindowsOwnFault_Rc2` | `RanInsideB` | positive: B's own rc 2 and A's notice | §2 red; M1; A1 and A4 |
 | `ACallBegunByAnInlineContinuation_DoesNotMarkTheWindow` | `RanInsideB`, plus the geolocation begin | `AShellCallBegunOnAnotherThread_…` is the other half of the mark's two conditions; M3 reds it | §2 red; M1, M2; A1, A3 and A4 |
 | `AFaultWithNoDispatchFlow_InsideAWindow_IsTheWindows` | `RanInsideB`, plus `SawNoFlow` read from the renderer | the control for the four facts that move a fault out | M5; A1, A2 and A4 |
-| `AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows` | `RanInsideB` | positive, with the log capture showing the fault reached the no-window path | §2 red; M1, M4; A1 and A4 |
+| `AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows` | `RanInsideB` | positive, with the log line asserted to carry `FinishedDispatchFaultLogLabel` | §2 red; M1, M4; §7 R1 and R2; A1 and A4 |
+| `AFinishedDispatchsFault_InsideAWindow_IsLoggedInStrictModeToo` | `RanInsideB` | the strict-mode twin of the row above | §7 red before its fix, R1 and R2 |
 | `AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0` | the geolocation begin, and the begin-before-throw order | mirror of `AFaultBeforeASiblingBeginsAShellCall_…` | §4 M6 at the anchor, M7 at the rc |
 
-Rule 3 conforms for all six. Each cell names its contrast fact, and every fact's main assertion and
-anchor has a red. No partial is left in these six.
+Rule 3 conforms for all seven. Each cell names its contrast fact, and every fact's main assertion and
+anchor has a red. No partial is left in these seven.
 
 | Pin | What it compares | Verdict (Rules 2–5, 7) |
 |---|---|---|

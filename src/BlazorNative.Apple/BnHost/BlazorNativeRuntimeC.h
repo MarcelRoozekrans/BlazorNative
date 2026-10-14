@@ -138,8 +138,9 @@ void blazornative_shutdown(void);
 // later. Frames from the synchronous part are delivered before the export returns; frames from a
 // continuation are delivered later, from the render thread.
 // A fault belongs to the dispatch whose own code raised it, even when that code runs inline
-// inside another dispatch's synchronous part; a render or post-dispatch work that such code
-// queues belongs to the dispatch that runs it.
+// inside another dispatch's synchronous part; if that dispatch has already finished, the fault is
+// only logged. Code that flows no dispatch, and a render or a post-dispatch action that any code
+// queues, belong to the dispatch whose window runs them.
 // END rc-contract
 //
 // Return: 0 dispatched, and the synchronous part did not fault, or faulted only after a host

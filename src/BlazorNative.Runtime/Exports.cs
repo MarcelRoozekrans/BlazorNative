@@ -476,8 +476,9 @@ public static class Exports
     /// later. Frames from the synchronous part are delivered before the export returns; frames from a
     /// continuation are delivered later, from the render thread.
     /// A fault belongs to the dispatch whose own code raised it, even when that code runs inline
-    /// inside another dispatch's synchronous part; a render or post-dispatch work that such code
-    /// queues belongs to the dispatch that runs it.
+    /// inside another dispatch's synchronous part; if that dispatch has already finished, the fault is
+    /// only logged. Code that flows no dispatch, and a render or a post-dispatch action that any code
+    /// queues, belong to the dispatch whose window runs them.
     /// END rc-contract
     ///
     /// Return codes:
@@ -491,7 +492,9 @@ public static class Exports
     ///   2 = the synchronous part faulted before a host call or a fetch was begun
     ///       in it — the handler, the resulting re-render, frame delivery, or a navigation swap it
     ///       queued (anything routed to HandleException inside this dispatch's
-    ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
+    ///       window and raised by its own code or by code that flows no dispatch; since
+    ///       17.1 a fault another dispatch's inline continuation raises there is that
+    ///       dispatch's, never this rc; detail ex.ToString() on stderr — Kotlin logs loudly);
     ///   3 = malformed or NULL args, including a handlerId outside the int
     ///       range of the renderer's handler table.
     ///
