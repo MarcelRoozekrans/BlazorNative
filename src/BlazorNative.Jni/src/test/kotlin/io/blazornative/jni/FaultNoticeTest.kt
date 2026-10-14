@@ -87,7 +87,7 @@ class FaultNoticeTest {
                 val bad = Memory(6).apply { setString(0, "{bad", "UTF-8") }
                 completeRc = NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad)
                 java.lang.ref.Reference.reachabilityFence(bad)
-                answeredInsideBegin++
+                // answeredInsideBegin++ removed: scratch J1
             } else {
                 BridgeHostCallCompleter.complete(requestId, HostCallStatus.ERROR, null)
             }
