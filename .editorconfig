@@ -1,0 +1,5 @@
+# PowerShell scripts carry a UTF-8 BOM. Windows PowerShell 5.1 reads a BOM-less
+# script as Windows-1252, where the em dash's last byte decodes to a curly quote
+# that ends a string, and the script stops parsing.
+[*.ps1]
+charset = utf-8-bom

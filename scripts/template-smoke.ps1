@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     BlazorNative — template smoke (Phase 8.3 Gate 2, M8 DoD #4: `dotnet new

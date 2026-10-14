@@ -36,13 +36,15 @@ shell and an iOS-simulator (Swift) shell. A full build needs:
 | Tool | For |
 |---|---|
 | **.NET 10 SDK** (the exact band is pinned in [`global.json`](global.json)) | build + NativeAOT publish + the .NET test suite |
-| **JDK 21** | the JVM/JNA dev loop and the Android shell |
+| **PowerShell 7** (`pwsh`) | the .NET suite's reference-drift tests run `scripts/generate-reference.ps1` |
+| **JDK 25** (what CI uses) | the JVM/JNA dev loop and the Android shell |
 | **Android SDK + NDK** (NDK 26.3) | the Android shell + instrumented tests |
 | **Xcode** (macOS only) | the iOS-simulator shell + XCTest lane |
 | **Node.js** | the docs site (`website/`) |
 
-On Windows, [`setup.ps1`](setup.ps1) installs and verifies the .NET / JDK / Android
-prerequisites for you. You do **not** need all four toolchains to make a useful
+On Windows, [`setup.ps1`](setup.ps1) installs and verifies the .NET / PowerShell / JDK /
+Android prerequisites for you; on Linux and macOS, [`setup.sh`](setup.sh) does the same. The
+JVM dev loop loads the win-x64 native library, so it runs on Windows only. You do **not** need all four toolchains to make a useful
 change — a .NET-only change only needs the .NET SDK; a Kotlin change needs the JVM
 side; and the iOS lane requires macOS.
 

@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     BlazorNative — the dev inner loop (Phase 4.3): watch → publish → preview.
@@ -72,14 +72,15 @@ $ErrorActionPreference = "Stop"
 $repoRoot  = Resolve-Path (Join-Path $PSScriptRoot "..")
 $jniModule = Join-Path $repoRoot "src\BlazorNative.Jni"
 
-# JAVA_HOME — Gradle 8.x daemon needs JDK 8-23. Pin to Temurin JDK 21 if present.
-$jdk21 = (Get-ChildItem "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
-          Where-Object { $_.Name -match "^jdk-21" } | Select-Object -First 1)
-if ($jdk21) {
-    $env:JAVA_HOME = $jdk21.FullName
+# JAVA_HOME — Gradle 9.8 runs on JDK 17-25. Prefer Temurin 25, what CI and setup.ps1
+# use (#404), then a Temurin 21 from before that change.
+$jdk = (Get-ChildItem "C:\Program Files\Eclipse Adoptium\" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "^jdk-(25|21)\." } | Sort-Object Name -Descending | Select-Object -First 1)
+if ($jdk) {
+    $env:JAVA_HOME = $jdk.FullName
 } elseif (-not $env:JAVA_HOME) {
-    Write-Host "  ✗  No Temurin JDK 21 found at default Adoptium location and JAVA_HOME not set." -ForegroundColor Red
-    Write-Host "     Run setup.ps1 to install JDK 21." -ForegroundColor DarkGray
+    Write-Host "  ✗  No Temurin JDK 25 or 21 found at the default Adoptium location, and JAVA_HOME is not set." -ForegroundColor Red
+    Write-Host "     Run setup.ps1 to install JDK 25." -ForegroundColor DarkGray
     exit 1
 }
 
@@ -172,7 +173,7 @@ function Invoke-JvmCycle {
 
 function Invoke-AndroidCycle {
     if (-not (Test-Path $adb)) {
-        Write-Fail "adb not found at $adb. Run setup.ps1 section 7."
+        Write-Fail "adb not found at $adb. Run setup.ps1 (section 4)."
         return 1
     }
     $device = Get-ConnectedDevice
