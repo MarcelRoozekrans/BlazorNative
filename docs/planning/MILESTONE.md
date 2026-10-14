@@ -1,129 +1,117 @@
-# Milestone 16: Unblock the Dispatch Lane
+# Milestone 17: Close the Dispatch Lane's Debt
 
-**Status:** complete
-**Started:** 2026-09-26
-**Completed:** 2026-10-14 — verdict **PASS WITH FINDINGS**
-([re-audit](../plans/2026-10-14-milestone-16-reaudit.md); the first
-[audit](../plans/2026-10-01-milestone-16-audit.md) FAILED and stays on record)
+**Status:** active
+**Started:** 2026-10-14
 
-**Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
-**Predecessor:** Milestone 15 — A Standard for Pins (complete 2026-09-26, verdict **PASS WITH
-FINDINGS**, [re-audit](../plans/2026-09-26-milestone-15-reaudit.md)).
-**Closes:** [#345][i345], [#346][i346], [#8][i8]. **Re-assesses on measurement:** [#9][i9].
-
-[i8]: https://github.com/MarcelRoozekrans/BlazorNative/issues/8
-[i9]: https://github.com/MarcelRoozekrans/BlazorNative/issues/9
-[i464]: https://github.com/MarcelRoozekrans/BlazorNative/issues/464
-[i494]: https://github.com/MarcelRoozekrans/BlazorNative/issues/494
-[i345]: https://github.com/MarcelRoozekrans/BlazorNative/issues/345
-[i346]: https://github.com/MarcelRoozekrans/BlazorNative/issues/346
+**Design:** [`docs/superpowers/specs/2026-10-14-milestone-17-design.md`](../superpowers/specs/2026-10-14-milestone-17-design.md)
+**Predecessor:** Milestone 16 — Unblock the Dispatch Lane (complete 2026-10-14, verdict **PASS WITH
+FINDINGS**, [re-audit](../plans/2026-10-14-milestone-16-reaudit.md)).
+**Closes:** #464, #494, #440, #425, #426, #435, #454, #424, #458.
 
 ## Goal
 
-Every export that runs handler code runs it inline, then blocks on `GetAwaiter().GetResult()`. When
-a handler awaits the host, that blocking freezes the shell's dispatch lane (#345), and Android
-predictive back, which asks .NET for its verdict from the main thread, waits behind it (#346).
-**The same blocking is, by accident, the only thing serialising renderer work** — after an awaited
-host call the continuation renders on a thread-pool thread while the lane thread waits. The
-deadlock and the serialisation are one mechanism today, so "return early" alone would trade a
-deadlock for a data race.
+M16 freed the shell's dispatch lane and closed with PASS WITH FINDINGS. It left carried defects in
+and around that lane:
+- a fault from an inline continuation is attributed to the wrong dispatch (#464);
+- Android does host-call work on the render thread (#440);
+- a late frame can arrive after `retire()` (#425);
+- the two shells treat the FaultNotice message differently (#426);
+- the slow-handler warning names the wrapper, not the app's handler (#435);
+- the local test infrastructure can hang or report a false green (#454, #424, #458).
 
-M16 separates them: the renderer gets **one .NET-owned thread**; exports post work to it and wait
-only for the synchronous part, so the shell lane is freed the moment a handler yields. A fault after
-the first await reaches the shell through the existing `hostCallBegin` slot. .NET pushes
-`canGoBack` and Android's back callback is toggled to match. **No ABI change.**
+The 16.8 re-audit also named gaps in 16.7's pins (#494). M17 closes all of it, so the dispatch
+lane, its fault path and its Android host calls enter 1.0 with no known defect. **No new
+features.** The user-visible outcomes:
+- an app author's fault is reported under the handler that raised it;
+- an Android biometric or secure-storage call never stalls rendering;
+- a recreated Activity never shows a frame from the session it replaced;
+- a Release build never prints an exception message to logcat;
+- a slow-handler warning names the app's method.
 
-The user-visible outcome: **an app cannot freeze because a handler waited for a permission sheet,
-and the back gesture always answers.**
+**Chosen 2026-10-14, by owner decision,** over P3 (needs hardware), cross-platform dev parity
+(#491, #495) and feature work.
 
 ## Definition of Done
 
-- [x] All planned phases complete
-- [x] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
+- [ ] All planned phases complete
+- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
       `headSha` compared against the PR head
-- [x] **[#345][i345] is fixed.** `DispatchLaneBlockingTests` is **flipped, not deleted** — the
-      export returns while a host call is still open — and the false comment at
-      `Exports.cs:504-506` is corrected **as the first commit** of the fix.
-- [x] **[#346][i346] is fixed.** The JVM `..._still_deadlocks_...` test is flipped. **No main-thread
-      caller blocks on .NET** — back, `onNewIntent`, and iOS's `navigateDispatcher` included. An
-      **iOS XCTest twin** of the lane-blocking pin exists.
-- [x] **One thread owns the renderer, and a pin proves it.** Every frame emission and every
-      renderer mutation happens on the render thread; `ReportIfNotTheRenderOwnerThread` fails under
-      test instead of only logging.
-- [x] **The sync-mount contract survives.** `MountSyncTests` pins the *behaviour*, not the type
-      name `InlineDispatcher`, and 13.2's `Dispose → InvokeAsync` recursion is kept as a named
-      regression test.
-- [x] **[#8][i8] is fixed.** A fault after the first await reaches `onError` on both shells, proven
-      on the JVM and on XCTest. The rc contract — "rc reports the synchronous part" — is written
-      once, and every export's rc table agrees with it.
-      **MET NARROWLY — [#464][i464].** A fault from a continuation that runs inline inside another
-      dispatch is attributed to that dispatch, and that dispatch's own fault is lost. It needs app
-      code that completes its own `TaskCompletionSource` synchronously. The owner chose to grade it,
-      not block on it. The first audit's narrowing, #455, was fixed by 16.7.
-- [x] **[#9][i9] is re-assessed on measurement** after the async offload lands: fixed, or
-      re-ledgered with a new trigger. Never silently closed.
-- [x] **No ABI change**, verified by diffing — 80-byte bridge struct, 10 exports. The new notice
-      ops live in `src/wire-vocabulary.json` and are generated like the others.
-- [x] **Every new pin conforms to [`docs/pin-standard.md`](../pin-standard.md)** on Rules 2–5 and 7,
-      with its mutations recorded.
-      **MET NARROWLY — the auditor's call, accepted by the owner.** All 56 M16 pins have a red on
-      `5dde7d3`. 16.7's 18 pins were assessed on Rules 2–5 by the re-audit, not by their record. Their
-      named partials, mostly anchors no mutation enters, are filed as [#494][i494]. The first audit
-      scored this item **NOT MET**; 16.6 closed it.
+- [ ] **#464 is fixed as decided:** a fault from a continuation of dispatch A that runs inline inside
+      dispatch B's synchronous part is A's, delivered as A's late FaultNotice under A's handler id,
+      and B keeps its own synchronous fault, rc 2. Capture and the begun-call mark both check that
+      the flowing scope matches the dispatch's scope. **Both** outcomes are pinned and
+      mutation-proven: A's fault reaching A, and B's own fault surviving.
+- [ ] **#494 is closed:** every anchor it lists has a recorded red, the unpinned rc claim at
+      `FaultNoticeTests.cs:407-410` is pinned or rewritten as resting on reading, and both stale
+      headers and the two `host_event` rc tables match the contract.
+- [ ] **#440 is fixed:** Android's biometrics `check` and every secure-storage path return from
+      `hostCallBegin` at once and complete through `host_call_complete` from a background executor,
+      as iOS has since 16.4. A pin shows `hostCallBegin` returns before the work runs.
+- [ ] **#425 is fixed, by session generation, or by the fallback if no carrier exists.**
+  - A frame from a retired session never reaches the new one. A pin delivers a late frame after
+    `retire()` and asserts this.
+  - **Fallback, owner decision 2026-10-14:** if 17.3's design proves that no existing carrier can
+    hold a generation without breaking the frozen ABI, `retire()` closes .NET's frame gate for the
+    old session instead, as `shutdown()` already does.
+  - **Recreation is wired:** the reference shell and the template retire the old runtime and start
+    a new one on Activity recreation, proven on the Android device lane by a rotation test.
+  - **Navigation history resets with the session,** per #425's comment: after recreation, Back at
+    the root finishes and does not navigate to the old sub-page. This is pinned on the same path.
+- [ ] **#426 is fixed:** Android redacts the FaultNotice message the way iOS does, and a twin pin
+      holds the two shells' redaction together. *Builder's call:* iOS's `privacy: .redacted` is not
+      tied to a build configuration, so 17.4's design measures what iOS actually redacts, and when,
+      before it settles where Android's redaction lives, the library or the template's `onError`.
+- [ ] **#435 is fixed by a forwarding hook:** the slow-handler warning names the app's handler for
+      `BnInput`, `BnCheckbox`, `BnPicker`, `BnSlider`, `BnSwitch` and `BnModal`. The KnownLimit test
+      `TwoBnInputs_…_KnownLimit` is flipped as its doc says.
+- [ ] **#454, #424 and #458 are fixed:**
+  - `ReferenceFixtureBase` waits on its child with a bound and fails naming the stalled command;
+  - the JVM test task declares the native library as an input;
+  - the androidTest `pollUntil` copies are one helper with named failure messages.
+- [ ] **No ABI change**, verified by diffing: the 80-byte bridge struct and the 10 exports. Any wire
+      addition, such as the frame generation, lives in `src/wire-vocabulary.json` or the existing
+      frame format, and is generated like the rest.
+- [ ] **Every new pin conforms to [`docs/pin-standard.md`](../../pin-standard.md)** on Rules 2–5
+      and 7. Its mutations are recorded, **including its anchors**, and its register row or census
+      cell is written **in the phase that adds it**. Both are lessons from the 16.8 re-audit.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
-> completion tags a release: no`** — release-please owns the `v<semver>` namespace.
+> completion tags a release: no`**. release-please owns the `v<semver>` namespace.
 
 ## Phases
 
-1. Phase 16.0 — the render-thread spike [complete] — PROCEED, not a clean GO: 5 of 7, G1 and G6 fail as written with every failure fixable; 11 named 16.1 requirements; spike unmerged at 9df59f0 (#422)
-2. Phase 16.1 — the render thread, with async faults folded in from the former 16.2 [complete] — render thread in place of InlineDispatcher; exports wait for the sync part only; late faults delivered as a generated FaultNotice op; shutdown quiesces; #345 and #8 closed; .NET 1201 → 1255, JVM 162 → 170, iOS 271 → 276; #424–#427 filed (#428)
-3. Phase 16.2 — back and navigation off the main thread [complete] — BackState/BackUnhandled notices; AndroidX OnBackPressedCallback toggled in the page batch; unhandled back handed to the platform; navigators fire-and-forget; blocking dispatch test-only by caller scan; #346 closed; .NET 1255 → 1278, JVM 170 → 190, Android 228 → 233, iOS 276 → 282 (#431)
-4. Phase 16.3 — starvation, measured [complete] — one-for-one cost measured; slow-handler Warn once per call site, capped, never the payload, proven under NativeAOT; app-author threading page; #9 closed; #435 and #438 filed; .NET 1278 → 1295, JVM 190 → 191 (#437)
-5. Phase 16.4 — the lost first tap (#438) [complete] — two causes, neither an M16 regression: a boot-harness race on the in-flight flag, and a cold LAContext created in hostCallBegin on the render thread; biometrics and secure storage now work on their own queues; six pins, mutations one per run, vacuity contrast observed; 10/10 iOS runs green; #438 closed; #440 and #444 filed; iOS 282 → 288 (#449)
-6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
-7. Phase 16.6 — prove the unreddened pins [complete] — 38 distinct pins, each with a recorded red on current code and partials named; about 25 pin defects found by mutation fixed in test code; production only a BnLog test hook; #458 filed (#459)
-8. Phase 16.7 — make the rc contract true (#455) [complete] — a fault after a begun host call or fetch is a FaultNotice with rc 0, classified in the dispatch scope with scheduling unchanged; the yield-based first design was abandoned; 0.18.0 BREAKING; #464 filed (#465)
-9. Phase 16.8 — re-audit and close [complete] — PASS WITH FINDINGS on `5dde7d3`, items 7 (#464) and 10 MET NARROWLY; 17 recorded mutations re-run, 16.7's 18 pins assessed, #494 and #495 filed (#496)
+1. Phase 17.1 — fault attribution (#464, #494) [pending]
+2. Phase 17.2 — Android host-call contract (#440) [pending]
+3. Phase 17.3 — Activity recreation (#425) [pending]
+4. Phase 17.4 — fault-path parity (#426, #435) [pending]
+5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [pending]
+6. Phase 17.6 — audit and close [pending]
 
-> **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
-> so no merged state exists in which a fault after the first await is only logged. That window is
-> what a separate 16.2 would have opened, and only a manual rule against merging a release PR would
-> have guarded it. Old 16.3–16.5 are now 16.2–16.4.
-
-**Ordering rationale.** 16.0 first because it is the only phase that can end the milestone: **a
-measured no-go stops M16 and goes to the owner.** 16.1 next. 16.2 depends on 16.1. 16.3 needs
-16.1's offload in place, or there is nothing new to measure. 16.4 fixes #438, inserted 2026-09-28 before the audit. 16.5 audits. 16.6–16.8 were added
-2026-10-01 after 16.5's FAIL. 16.6 closes the NOT MET. 16.7 lifts #8's narrowing; it is independent
-of 16.6, but it adds a pin that 16.6's standard then applies to, so it goes second. 16.8 re-audits
-after both.
+> 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
+> 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.
 
 ## Risk areas
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **13.2's door is shut for a reason not yet found** | M16's core does not work | 16.0 is a spike with an explicit no-go that stops the milestone — not a phase that must succeed |
-| **Frames arriving after the export returns break shell assumptions** | Device-only glitches | The render thread is the only frame emitter, so frames stay serial; 16.1 audits Android's `pending` list and the iOS trampoline; both device lanes run every phase |
-| **The rc meaning changes quietly** | A third-party shell reads rc 0 as "handler finished" | The contract is written in the C header and `Exports.cs`, and called out in the changelog as a behaviour change |
-| **The `canGoBack` stale window** | A back press swallowed at root, or the app finishing one step early | 16.2 writes down which side wins and tests each direction |
-| **A threading bug only a device exposes** | Green CI, a hung phone | Both device lanes, `headSha` compared; the iOS twin pin makes iOS measurable |
-| **New pins that pass while checking nothing** | M15's lesson repeats inside M16 | The DoD applies the standard; every pin mutation-proven |
+| #425's generation cannot ride the frozen ABI or the existing frame format without a breaking change | 17.3 needs a version bump or a different fix | 17.3's design proves the carrier first, before any code: the frame header, a patch field, or the `register_frame_callback` context. If none works, stop and bring the owner the trade-off rather than breaking the ABI |
+| #464's flowing-scope check changes which rc a dispatch returns: B goes from rc 0 to rc 2 in #464's scenario | An app that relied on today's misattribution sees a different rc | Ship as `fix!` with a BREAKING note, as 16.7 did; RcContractCopiesTests keeps the three contract copies in step |
+| Moving Android KeyStore work off the render thread (#440) introduces ordering races between `hostCallBegin` and completion | A completion before its begin returns, as 16.4 saw on iOS | Reuse iOS 16.4's design and its pins as the template, and keep `hostCallBegin`'s record-then-enqueue order |
+| The forwarding hook (#435) widens the components' internal surface | A new seam that the NOT-API tiering must cover | Keep it `internal`/EditorBrowsable(Never), and check it against `api-tiers` and `PublicAPI` baselines |
+| Pins added without register cells, again | The next audit repeats 16.8's finding | DoD item: cells are written in the phase that adds the pin |
 
 ## Out of scope
 
-- **1.0 and the remaining iPhone items** — APNs, universal links, thermal.
-- **The feature backlog** — #284, #285.
-- **M15's carried debt** — #395–#418, except where a 16.x phase edits the same file.
-- **#12 and #13** — the hardening ledger's perf items.
+- **P3, iOS on a real device:** the last 1.0 blocker, waiting on hardware and an Apple account.
+- **#491 and #495:** cross-platform dev parity.
+- **Feature work:** #284, #285, #24.
+- **The iOS flakes #444 and #453:** carried. They narrow a test item only if they fire.
 
 ## Open questions
 
-- **16.2:** which side wins in the `canGoBack` stale window.
-- **16.3:** whether #9 is fixed or re-ledgered — decided on measurement.
+None. Every decision was taken on 2026-10-14; see the design.
 
 ## Audit History
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| 2026-10-01 | **FAIL** — [audit](../plans/2026-10-01-milestone-16-audit.md); 7 MET, 2 MET NARROWLY, 1 NOT MET | Pin standard NOT MET: 16 new pins have no recorded mutation, among them the iOS twin `BnDispatchLaneTests`, `BnFaultNoticeTests`, `BnBackOffMainTests`, two `BackAndroidTest` tests and the JVM visibility pin. A further 23 were never assessed on Rules 2–5, the 16.3 slow-handler pins, three 16.1 tree-reading facts and the 16.2 caller scan; they are carried into the gap plan, not counted as failing. MET NARROWLY: tests, by #454, a local hang; #8, by #455, the rc contract's "never as an rc" is false for an inline-completed host call. Routed to `plan-milestone-gaps` |
-| 2026-10-14 | **PASS WITH FINDINGS**: [re-audit](../plans/2026-10-14-milestone-16-reaudit.md); 8 MET, 2 MET NARROWLY | Item 7 is narrowed by #464, an inline-continuation fault misattribution from 16.1; the owner chose to grade it, not block on it. Item 10 is narrowed by named partials: all 56 M16 pins have a red on `5dde7d3`, 16.6's re-checked and 17 recorded mutations re-run; 16.7's 18 were assessed by the audit, two cancellation facts first redded by its X1 and X2, and the gaps are filed as #494. The auditor's own call: those partials are named by the audit, not by their record. #455 and the pin-standard NOT MET from 2026-10-01 are closed. Routed to `complete-milestone`, no tag |
