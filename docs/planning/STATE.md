@@ -17,10 +17,11 @@
     Android 233 (run 37050704542), both at attempt 1.
 - **Filed:** #464, the 16.1 window-attribution defect the phase measured but did not pin.
 - 0.18.0 and 0.19.0 are both on nuget.org (`.nupkg` HEAD 200).
+- The v0.17.0 GitHub release now carries the "Behaviour changes" rc note from `CHANGELOG.md`,
+  added 2026-10-14 with the owner's approval.
 
 ## Open Decisions (owner)
 
-- Whether to edit the v0.17.0 GitHub release notes, which describe the rc contract 16.7 changed.
 - #406: tier the 9 untiered public types in api-tiers §8.
 - The fenced-code-block advice in the global CLAUDE.md is wrong, because a fenced block does not
   protect a line from release-please's parser.
