@@ -27,7 +27,13 @@ namespace BlazorNative.Runtime.Tests;
 // The fault is driven through the real exports and the real FakeShellHost
 // hostCallBegin, so the notice is read back as the shell would receive it.
 //
-// DOES NOT COVER:
+// Later phases added sections below, each with its own limits:
+//   - 16.7 (#455): a fault after the handler BEGAN a host call or a fetch is a FaultNotice with
+//     rc 0, whether the shell answered inside hostCallBegin or later;
+//   - 17.1 (#464): a fault belongs to the dispatch whose own code raised it, even when that code
+//     is another dispatch's continuation running inline inside this dispatch's window.
+//
+// DOES NOT COVER, for the 16.1 facts:
 //   - what a shell DOES with the notice: FaultNoticeTest.kt pins that Kotlin's
 //     BridgeRegistrar hands it to BlazorNativeRuntime's onError, and
 //     BnFaultNoticeTests.swift the iOS arm;
@@ -393,13 +399,8 @@ public sealed class FaultNoticeTests
     //     synchronous fault after it stays rc 2. The contract does not promise this, but
     //     AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2 pins it,
     //     and with it the thread-bound choice: the 16.7 record's M4-after is its red under M4;
-    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline,
-    //     for example by completing a TaskCompletionSource that continuation awaits. Measured
-    //     on 2026-10-02, the 16.7 record's M4-explore: a call that continuation begins marks
-    //     THIS dispatch, because the mark is thread-bound, so this dispatch returns rc 0; the
-    //     continuation's fault is captured in this dispatch's window and sent under this
-    //     handler's id; and this dispatch's own synchronous fault is never reported. Not
-    //     pinned: that is the known 16.1 window-attribution defect, filed as #464;
+    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline.
+    //     That was #464; the 17.1 section pins it now;
     //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
     //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
     //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
@@ -901,6 +902,18 @@ public sealed class FaultNoticeTests
     // Code that flows no dispatch scope is still the window's, and a fault from a dispatch that has
     // already finished goes to the no-window path, never to the window. Each fact's anchor,
     // InlineContinuationProbe.RanInsideB, proves the continuation really ran inside B's window.
+    //
+    // DOES NOT COVER:
+    //   - a RE-RENDER that A's continuation queues inside B's window, by StateHasChanged. Blazor
+    //     renders it in B's batch, under B's scope, so a render fault from it is B's. Render
+    //     faults belong to the batch that renders them; per-render attribution is #500;
+    //   - work A's continuation queues through RunAfterDispatch, a navigation for example. It
+    //     runs when B's window closes, and a fault in it is B's. Also #500;
+    //   - a flowing scope that another renderer owns: treated as no flow, so the window's. That
+    //     rests on reading HandleException; a second renderer in one process has no test here;
+    //   - a fault from A's continuation in STRICT mode once A is Done: the no-window path
+    //     throws, from inside B's synchronous part. Only production mode is pinned, as everywhere
+    //     in this file.
 
     [Fact]
     public void AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows()

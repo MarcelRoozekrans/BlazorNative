@@ -45,6 +45,9 @@ beginning one. A fault after the handler has begun a host call or a fetch arrive
 FaultNotice host-call op, never as an rc, whether the shell answers inside `hostCallBegin` or
 later. Frames from the synchronous part are delivered before the export returns; frames from a
 continuation are delivered later, from the render thread.
+A fault belongs to the dispatch whose own code raised it, even when that code runs inline
+inside another dispatch's synchronous part; a render or post-dispatch work that such code
+queues belongs to the dispatch that runs it.
 ```
 <!-- END rc-contract -->
 
