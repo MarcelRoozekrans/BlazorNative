@@ -3802,6 +3802,7 @@ scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7'
 **Surface:** Backend
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-14-phase-17.1-design.md`](../superpowers/specs/2026-10-14-phase-17.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md`](../superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md)
 
 #### Phase 17.2: Android host-call contract (#440) [status: pending]
 **Goal:** Android's biometrics and KeyStore work leaves `hostCallBegin` for a background executor,
