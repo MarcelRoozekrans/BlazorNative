@@ -1,7 +1,10 @@
 # Milestone 16: Unblock the Dispatch Lane
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-09-26
+**Completed:** 2026-10-14 — verdict **PASS WITH FINDINGS**
+([re-audit](../plans/2026-10-14-milestone-16-reaudit.md); the first
+[audit](../plans/2026-10-01-milestone-16-audit.md) FAILED and stays on record)
 
 **Design:** [`docs/superpowers/specs/2026-09-26-milestone-16-design.md`](../superpowers/specs/2026-09-26-milestone-16-design.md)
 **Predecessor:** Milestone 15 — A Standard for Pins (complete 2026-09-26, verdict **PASS WITH
@@ -10,6 +13,8 @@ FINDINGS**, [re-audit](../plans/2026-09-26-milestone-15-reaudit.md)).
 
 [i8]: https://github.com/MarcelRoozekrans/BlazorNative/issues/8
 [i9]: https://github.com/MarcelRoozekrans/BlazorNative/issues/9
+[i464]: https://github.com/MarcelRoozekrans/BlazorNative/issues/464
+[i494]: https://github.com/MarcelRoozekrans/BlazorNative/issues/494
 [i345]: https://github.com/MarcelRoozekrans/BlazorNative/issues/345
 [i346]: https://github.com/MarcelRoozekrans/BlazorNative/issues/346
 
@@ -33,30 +38,38 @@ and the back gesture always answers.**
 
 ## Definition of Done
 
-- [ ] All planned phases complete
-- [ ] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
+- [x] All planned phases complete
+- [x] All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's
       `headSha` compared against the PR head
-- [ ] **[#345][i345] is fixed.** `DispatchLaneBlockingTests` is **flipped, not deleted** — the
+- [x] **[#345][i345] is fixed.** `DispatchLaneBlockingTests` is **flipped, not deleted** — the
       export returns while a host call is still open — and the false comment at
       `Exports.cs:504-506` is corrected **as the first commit** of the fix.
-- [ ] **[#346][i346] is fixed.** The JVM `..._still_deadlocks_...` test is flipped. **No main-thread
+- [x] **[#346][i346] is fixed.** The JVM `..._still_deadlocks_...` test is flipped. **No main-thread
       caller blocks on .NET** — back, `onNewIntent`, and iOS's `navigateDispatcher` included. An
       **iOS XCTest twin** of the lane-blocking pin exists.
-- [ ] **One thread owns the renderer, and a pin proves it.** Every frame emission and every
+- [x] **One thread owns the renderer, and a pin proves it.** Every frame emission and every
       renderer mutation happens on the render thread; `ReportIfNotTheRenderOwnerThread` fails under
       test instead of only logging.
-- [ ] **The sync-mount contract survives.** `MountSyncTests` pins the *behaviour*, not the type
+- [x] **The sync-mount contract survives.** `MountSyncTests` pins the *behaviour*, not the type
       name `InlineDispatcher`, and 13.2's `Dispose → InvokeAsync` recursion is kept as a named
       regression test.
-- [ ] **[#8][i8] is fixed.** A fault after the first await reaches `onError` on both shells, proven
+- [x] **[#8][i8] is fixed.** A fault after the first await reaches `onError` on both shells, proven
       on the JVM and on XCTest. The rc contract — "rc reports the synchronous part" — is written
       once, and every export's rc table agrees with it.
-- [ ] **[#9][i9] is re-assessed on measurement** after the async offload lands: fixed, or
+      **MET NARROWLY — [#464][i464].** A fault from a continuation that runs inline inside another
+      dispatch is attributed to that dispatch, and that dispatch's own fault is lost. It needs app
+      code that completes its own `TaskCompletionSource` synchronously. The owner chose to grade it,
+      not block on it. The first audit's narrowing, #455, was fixed by 16.7.
+- [x] **[#9][i9] is re-assessed on measurement** after the async offload lands: fixed, or
       re-ledgered with a new trigger. Never silently closed.
-- [ ] **No ABI change**, verified by diffing — 80-byte bridge struct, 10 exports. The new notice
+- [x] **No ABI change**, verified by diffing — 80-byte bridge struct, 10 exports. The new notice
       ops live in `src/wire-vocabulary.json` and are generated like the others.
-- [ ] **Every new pin conforms to [`docs/pin-standard.md`](../pin-standard.md)** on Rules 2–5 and 7,
+- [x] **Every new pin conforms to [`docs/pin-standard.md`](../pin-standard.md)** on Rules 2–5 and 7,
       with its mutations recorded.
+      **MET NARROWLY — the auditor's call, accepted by the owner.** All 56 M16 pins have a red on
+      `5dde7d3`. 16.7's 18 pins were assessed on Rules 2–5 by the re-audit, not by their record. Their
+      named partials, mostly anchors no mutation enters, are filed as [#494][i494]. The first audit
+      scored this item **NOT MET**; 16.6 closed it.
 
 > **No "release tagged in git" criterion.** `docs/planning/CONVENTIONS.md` records **`Milestone
 > completion tags a release: no`** — release-please owns the `v<semver>` namespace.

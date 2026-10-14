@@ -3134,7 +3134,10 @@ inherits the narrowing. The 15.7 plan listed Rules 2, 3, 5 and 7; the DoD named 
 
 ---
 
-### 🔄 Milestone 16 — Unblock the Dispatch Lane  *(active — started 2026-09-26)* [status: active]
+### ✅ Milestone 16 — Unblock the Dispatch Lane  *(complete — 2026-09-26 → 2026-10-14)* [status: complete]
+**Completed:** 2026-10-14 · verdict **PASS WITH FINDINGS**, 8 MET, 2 MET NARROWLY, 0 NOT MET
+· [re-audit](../plans/2026-10-14-milestone-16-reaudit.md), after a first
+[audit that FAILED](../plans/2026-10-01-milestone-16-audit.md) and is kept on record
 
 **Goal:** Give the renderer one .NET-owned thread so exports stop blocking on async handlers —
 freeing the shell's dispatch lane (#345), taking Android back off the main thread (#346), and
