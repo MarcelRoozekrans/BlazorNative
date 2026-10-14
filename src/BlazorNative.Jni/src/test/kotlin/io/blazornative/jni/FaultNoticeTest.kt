@@ -85,7 +85,7 @@ class FaultNoticeTest {
         override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
             if (op == HostCallOp.CAMERA) {
                 val bad = Memory(6).apply { setString(0, "{bad", "UTF-8") }
-                completeRc = NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad)
+                completeRc = NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, CameraStatus.CAPTURED, bad) + 1
                 java.lang.ref.Reference.reachabilityFence(bad)
                 answeredInsideBegin++
             } else {
