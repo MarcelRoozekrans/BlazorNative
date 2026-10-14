@@ -80,7 +80,7 @@ features.** The user-visible outcomes:
 
 ## Phases
 
-1. Phase 17.1 — fault attribution (#464, #494) [pending]
+1. Phase 17.1 — fault attribution (#464, #494) [active]
 2. Phase 17.2 — Android host-call contract (#440) [pending]
 3. Phase 17.3 — Activity recreation (#425) [pending]
 4. Phase 17.4 — fault-path parity (#426, #435) [pending]
