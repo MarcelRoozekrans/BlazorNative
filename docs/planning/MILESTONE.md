@@ -71,7 +71,7 @@ and the back gesture always answers.**
 6. Phase 16.5 — audit and close [complete] — verdict FAIL: 7 MET, 2 MET NARROWLY, 1 NOT MET. The pin standard is not met: 16 new pins never seen red, 23 not assessed on Rules 2–5. #453, #454 and #455 filed (#456)
 7. Phase 16.6 — prove the unreddened pins [complete] — 38 distinct pins, each with a recorded red on current code and partials named; about 25 pin defects found by mutation fixed in test code; production only a BnLog test hook; #458 filed (#459)
 8. Phase 16.7 — make the rc contract true (#455) [complete] — a fault after a begun host call or fetch is a FaultNotice with rc 0, classified in the dispatch scope with scheduling unchanged; the yield-based first design was abandoned; 0.18.0 BREAKING; #464 filed (#465)
-9. Phase 16.8 — re-audit and close [active]
+9. Phase 16.8 — re-audit and close [complete] — PASS WITH FINDINGS on `5dde7d3`, items 7 (#464) and 10 MET NARROWLY; 17 recorded mutations re-run, 16.7's 18 pins assessed, #494 and #495 filed (#496)
 
 > **Phases renumbered 2026-09-26, by owner decision.** Async fault delivery was folded into 16.1,
 > so no merged state exists in which a fault after the first await is only logged. That window is
