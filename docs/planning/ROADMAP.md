@@ -3786,6 +3786,53 @@ item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 
 ---
 
+### 🔄 Milestone 17 — Close the Dispatch Lane's Debt  *(active — started 2026-10-14)* [status: active]
+
+**Goal:** Close the defects M16 carried in and around the dispatch lane, so the lane, its fault
+path and its Android host calls enter 1.0 with no known defect. No new features.
+**Started:** 2026-10-14
+**Design:** [`docs/superpowers/specs/2026-10-14-milestone-17-design.md`](../superpowers/specs/2026-10-14-milestone-17-design.md)
+· full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Closes:** #464, #494, #440, #425, #426, #435, #454, #424, #458.
+
+#### Phase 17.1: Fault attribution (#464, #494) [status: pending]
+**Goal:** A fault belongs to the dispatch whose continuation raised it, checked through the flowing
+scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7's
+`FaultNoticeTests` partials are proven.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 17.2: Android host-call contract (#440) [status: pending]
+**Goal:** Android's biometrics and KeyStore work leaves `hostCallBegin` for a background executor,
+mirroring iOS 16.4.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 17.3: Activity recreation (#425) [status: pending]
+**Goal:** A recreated Activity retires the old runtime and starts a fresh one. It sees no frame from
+the old session, carried by a session generation or, failing that, by `retire()` closing .NET's
+gate. Its navigation history starts empty.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 17.4: Fault-path parity (#426, #435) [status: pending]
+**Goal:** Android redacts the FaultNotice message the way iOS does. The slow-handler warning names
+the app's handler through a forwarding hook.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: pending]
+**Goal:** No local run can hang silently, test a stale native library, or fail with a bare message.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 17.6: Audit and close [status: pending]
+**Goal:** Run `audit-milestone` against the DoD on live evidence. **No tag**, per `CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG

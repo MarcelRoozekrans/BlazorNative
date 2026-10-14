@@ -1,10 +1,10 @@
 # Session State
 
 **Last session:** 2026-10-14
-**Milestone:** 16 — Unblock the Dispatch Lane `[status: complete]`, closed 2026-10-14, verdict
-**PASS WITH FINDINGS**. No Milestone 17 is defined yet.
-**Phase:** none active. 16.8 — Re-audit and close `[status: complete]`, PR #496.
-**Branch:** `chore/16.8-complete-m16` → complete 16.8 and M16
+**Milestone:** 17 — Close the Dispatch Lane's Debt `[status: active]`, started 2026-10-14.
+M16 closed the same day, PASS WITH FINDINGS.
+**Phase:** 17.1 — Fault attribution (#464, #494) `[status: pending]`, next.
+**Branch:** `docs/m17-design` → start M17
 
 ## Current Position
 
@@ -20,26 +20,19 @@
 
 ## Open Decisions (owner)
 
-- **What Milestone 17 is.** The candidates on the tracker:
-  - #464 needs an attribution decision;
-  - #494, the 16.7 pin partials;
-  - #454, the local hang, still needs its bounded wait;
-  - #440 and #425, Android lifecycle and host-call debt;
-  - #491, the Linux and macOS JVM loop;
-  - #495, `gradlew` not executable in git, including the template's copy.
 - #406: tier the 9 untiered public types in api-tiers §8.
 - The fenced-code-block advice in the global CLAUDE.md is wrong, because a fenced block does not
   protect a line from release-please's parser.
 
 ## Blockers
 
-- None. The only wait is the owner's merge of the M16 completion PR.
+- None. The only wait is the owner's merge of the M17 start PR.
 
 ## Recommended Next Step
 
-1. Merge the completion PR. Read state from `origin/main` afterwards.
-2. Run `new-milestone` for M17. It starts with a milestone-scope brainstorm.
-3. Housekeeping:
-   - delete `.superpowers/sdd/2026-10-14-phase-16.8-reaudit`;
-   - decide what happens to `feat/16.7-rc-contract@5847d1d`. The 16.7 record cites it, so do not
-     delete it without keeping that citation alive.
+1. Merge the M17 start PR. Read state from `origin/main` afterwards.
+2. Run `start-next-phase` for **17.1**. It routes to brainstorming, since there is no phase spec
+   yet. The decision is already taken: the flowing scope must match the dispatch's scope at capture
+   and at the begun-call mark. A's fault goes to A as a late FaultNotice, and B keeps rc 2. That is
+   `fix!`, with a BREAKING note.
+3. Housekeeping: decide what happens to `feat/16.7-rc-contract@5847d1d`. The 16.7 record cites it.
