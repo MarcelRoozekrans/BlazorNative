@@ -3816,12 +3816,14 @@ mirroring iOS 16.4.
 **Record:** [`docs/plans/2026-10-15-phase-17.2-record.md`](../plans/2026-10-15-phase-17.2-record.md)
 **Completed:** 2026-10-15 · [PR #507](https://github.com/MarcelRoozekrans/BlazorNative/pull/507). Android's biometrics and secure-storage work leaves `hostCallBegin` for one serial daemon executor per handler, as iOS since 16.4; a throw completes Error; after-auth KeyStore work goes through one `afterAuth` hop, never main. `AndroidHostCallContractTest`, 5 pins, 7 recorded mutations on scratch refs; Android 233 → 238. #440 closed; #506 filed. The baseline reproduced #454 on Linux, reported there.
 
-#### Phase 17.3: Activity recreation (#425) [status: pending]
-**Goal:** A recreated Activity retires the old runtime and starts a fresh one. It sees no frame from
-the old session, carried by a session generation or, failing that, by `retire()` closing .NET's
-gate. Its navigation history starts empty.
+#### Phase 17.3: Activity recreation (#425) [status: active]
+**Goal:** A recreated Activity never shows a frame from the page it replaced: a mount replaces the
+root, so the old page's late continuation renders nothing; a retired runtime drops frames; the
+shell retires the old runtime; and navigation history resets. *Revised 2026-10-15, by owner
+decision: the session generation rested on a premise the code does not match.*
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-15-phase-17.3-design.md`](../superpowers/specs/2026-10-15-phase-17.3-design.md)
 
 #### Phase 17.4: Fault-path parity (#426, #435) [status: pending]
 **Goal:** Android redacts the FaultNotice message the way iOS does. The slow-handler warning names
