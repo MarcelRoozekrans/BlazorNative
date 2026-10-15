@@ -426,6 +426,13 @@ class MainActivity : FragmentActivity() {
         // recreated Activity expects. shutdown() is reserved for genuine
         // process-exit paths, which Android does not give an Activity.
         if (booted) runtime.dispatchHostEvent(BnHostEvent.OnDestroy)
+        // 17.3 (#425): retire this runtime, so a frame that still reaches it, before the
+        // recreated Activity's start() re-registers the callback, is dropped instead of
+        // rendered into this Activity's views. retire() waits, bounded at 5 s, only for a
+        // dispatch's synchronous part, since 16.1 returns at its first yield; the OnDestroy
+        // event above is queued ahead of it and still runs. NOT COVERED: a recreation during
+        // boot, while `booted` is false and the boot thread may still be inside start().
+        if (booted) runtime.retire()
         // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
         // mapper is reachable from the runtime's frame callback (process-global
         // session), so without this every recreation would leak a complete view

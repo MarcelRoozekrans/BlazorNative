@@ -3,54 +3,40 @@ package io.blazornative.jni
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.Collections
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Phase 16.1 — what [BlazorNativeRuntime.retire] actually does, pinned as it stands.
+ * Phase 16.1, flipped in 17.3 (#425) — a retired runtime drops a frame from a late continuation.
  *
- * A KNOWN HAZARD, PINNED ON PURPOSE. `retire()` drains only the Kotlin dispatch lane: it
- * never calls into .NET. Since 16.1 a handler that awaited a host call re-renders from a
- * continuation on .NET's render thread when that call completes, with no export in
- * progress, so a retired runtime still receives that frame. On Activity recreation
- * (retire the old runtime, start a replacement) the frame reaches the retired runtime's
- * onFrame until the replacement re-registers the callback, and the replacement's
- * afterwards. Before 16.1 the export held the lane until the handler finished, so
- * `retire()` waited for it; the old "a retired runtime is fully quiescent" claim was true
- * then and is not now. [BlazorNativeRuntime.shutdown] IS quiescent (ShutdownQuiescenceTest).
+ * Until 17.3 this pinned a KNOWN HAZARD: `retire()` drained only the Kotlin dispatch lane, so a
+ * handler that awaited a host call re-rendered from a continuation on .NET's render thread after
+ * retire(), and the retired runtime's onFrame received that frame. On Activity recreation it
+ * reached a destroyed Activity's views. Since 17.3 `retire()` marks the runtime retired, and its
+ * frame callback drops every frame that still reaches it. [BlazorNativeRuntime.shutdown] is
+ * quiescent too (ShutdownQuiescenceTest), by closing .NET's frame gate.
  *
- * This test PASSES on today's behaviour and FAILS the day `retire()` is made to quiesce
- * .NET's frames for its runtime. That is intentional: when that lands, invert the
- * assertion, do not delete the test, and correct the recreation contract on
- * [BlazorNativeRuntime.start].
+ * Anchors: `retire()` returned true, so the lane drained while the call was still held; and the
+ * runtime COUNTED a dropped frame after the release, so the late continuation really rendered
+ * and the empty onFrame is the drop, not silence.
  *
- * Anchors: `retire()` returned true (the lane drained, so the export returned while the
- * call was still held), and no frame had arrived between retire and release, so the
- * frame this test observes is the continuation's, caused by the release.
- *
- * DOES NOT COVER: the replacement-runtime half of the hazard (the frame reaching a NEW
- * runtime's onFrame after its start() re-registers), or Android's MainActivity, which does
- * not call retire() today.
+ * DOES NOT COVER: the replacement runtime. A replacing mount disposes the old root, so the late
+ * continuation renders nothing there; RecreationTests pins that on .NET, and
+ * RecreationAndroidTest on a device. MainActivity calls retire() in onDestroy since 17.3.
  */
 class RetireLateContinuationTest {
 
     @Test
-    fun retired_runtime_still_receives_a_frame_from_a_late_continuation() {
+    fun a_retired_runtime_drops_a_frame_from_a_late_continuation() {
         val host = HeldCameraHost()
         val retired = AtomicBoolean(false)
         val framesAfterRetire = Collections.synchronizedList(mutableListOf<RenderFrame>())
-        val echoedAfterRetire = CountDownLatch(1)
         val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
         val runtime = BlazorNativeRuntime(onFrame = { f ->
             frames.add(f)
-            if (retired.get()) {
-                framesAfterRetire.add(f)
-                if (f.hasText(CANCELLED_ECHO)) echoedAfterRetire.countDown()
-            }
+            if (retired.get()) framesAfterRetire.add(f)
         })
         runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
-        val takePhoto = takePhotoHandler(frames.first())
+        val takePhoto = takePhotoHandler(frames.first { it.patches.any { p -> p is RenderPatch.CreateNode } })
 
         var released = false
         try {
@@ -60,24 +46,18 @@ class RetireLateContinuationTest {
             awaitHeldCall(host)
             assertTrue(runtime.retire(), "the lane must drain while the handler is suspended on the held call")
             retired.set(true)
-            assertTrue(
-                framesAfterRetire.isEmpty(),
-                "a frame arrived between retire() and the release, so the frame below could not be " +
-                    "attributed to the late continuation; got $framesAfterRetire"
-            )
 
             host.release()
             released = true
 
-            // KNOWN HAZARD, PINNED ON PURPOSE: a retired runtime still receives the frame.
-            assertTrue(
-                echoedAfterRetire.await(5, TimeUnit.SECONDS),
-                "the retired runtime received NO frame from the late continuation within 5 s. " +
-                    "This test pins the known hazard that retire() drains only the Kotlin lane " +
-                    "and does not quiesce .NET. If retire() now quiesces, invert this assertion " +
-                    "instead of deleting the test, and correct the recreation contract on start(). " +
-                    "Frames after retire: $framesAfterRetire"
-            )
+            // Anchor: the late continuation really rendered, and the runtime dropped that frame.
+            val deadline = System.currentTimeMillis() + 5_000
+            while (runtime.framesDroppedAfterRetire.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+            assertTrue(runtime.framesDroppedAfterRetire.get() > 0,
+                "anchor: no frame reached the retired runtime within 5 s, so its drop was never exercised")
+            assertTrue(framesAfterRetire.isEmpty(),
+                "a retired runtime's onFrame received a frame from a late continuation, which on Activity " +
+                    "recreation renders into a destroyed Activity's views (#425): $framesAfterRetire")
         } finally {
             if (!released) host.release()
         }
