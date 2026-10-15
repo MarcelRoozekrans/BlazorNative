@@ -3816,7 +3816,7 @@ mirroring iOS 16.4.
 **Record:** [`docs/plans/2026-10-15-phase-17.2-record.md`](../plans/2026-10-15-phase-17.2-record.md)
 **Completed:** 2026-10-15 · [PR #507](https://github.com/MarcelRoozekrans/BlazorNative/pull/507). Android's biometrics and secure-storage work leaves `hostCallBegin` for one serial daemon executor per handler, as iOS since 16.4; a throw completes Error; after-auth KeyStore work goes through one `afterAuth` hop, never main. `AndroidHostCallContractTest`, 5 pins, 7 recorded mutations on scratch refs; Android 233 → 238. #440 closed; #506 filed. The baseline reproduced #454 on Linux, reported there.
 
-#### Phase 17.3: Activity recreation (#425) [status: active]
+#### Phase 17.3: Activity recreation (#425) [status: complete]
 **Goal:** A recreated Activity never shows a frame from the page it replaced: a mount replaces the
 root, so the old page's late continuation renders nothing; a retired runtime drops frames; the
 shell retires the old runtime. The shell stays on its page with its back stack, and a disposed
@@ -3826,6 +3826,8 @@ decision: the session generation rested on a premise the code does not match.*
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-15-phase-17.3-design.md`](../superpowers/specs/2026-10-15-phase-17.3-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-15-phase-17.3-activity-recreation.md`](../superpowers/plans/2026-10-15-phase-17.3-activity-recreation.md)
+**Record:** [`docs/plans/2026-10-15-phase-17.3-record.md`](../plans/2026-10-15-phase-17.3-record.md)
+**Completed:** 2026-10-15 · [PR #510](https://github.com/MarcelRoozekrans/BlazorNative/pull/510). A second shell mount replaces the root as one render-thread unit, disposing the old page without a removal frame. A recreated shell, whose saved route is the session's, keeps its page and back stack; a fresh launch starts at its own route. Navigation from a replaced root's code is dropped, from its UI events and its lifecycle code alike. A frame-callback registration while a page is mounted holds delivery until that shell's mount, by owner decision; the ABI documentation says so. A retired runtime drops frames and waits out a callback in flight. `RecreationTests` 9 facts, `RecreationAndroidTest` 4, `RetireLateContinuationTest` 2; M1–M11, J1–J2 and L1–L5 recorded, including three pins that were vacuous at first. .NET 1323 → 1332, JVM 192 → 193, Android 238 → 242. #511 filed: recreation during boot.
 
 #### Phase 17.4: Fault-path parity (#426, #435) [status: pending]
 **Goal:** Android redacts the FaultNotice message the way iOS does. The slow-handler warning names
