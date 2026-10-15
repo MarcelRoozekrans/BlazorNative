@@ -55,8 +55,9 @@ features.** The user-visible outcomes:
   - A retired runtime drops any frame it still receives.
   - Recreation is wired: `MainActivity` retires the old runtime, in the reference shell and the
     template, proven on the Android device lane by a rotation test.
-  - **Navigation history resets with the root:** after recreation, Back at the root finishes.
-    This is pinned on the same path.
+  - **A recreated shell stays on its page with its back stack,** owner decision 2026-10-15, which
+    answers #425's comment. Navigation from a disposed root's late code is dropped. Both are pinned
+    on the same path.
 - [ ] **#426 is fixed:** Android redacts the FaultNotice message the way iOS does, and a twin pin
       holds the two shells' redaction together. *Builder's call:* iOS's `privacy: .redacted` is not
       tied to a build configuration, so 17.4's design measures what iOS actually redacts, and when,

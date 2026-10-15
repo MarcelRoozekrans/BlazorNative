@@ -3819,7 +3819,8 @@ mirroring iOS 16.4.
 #### Phase 17.3: Activity recreation (#425) [status: active]
 **Goal:** A recreated Activity never shows a frame from the page it replaced: a mount replaces the
 root, so the old page's late continuation renders nothing; a retired runtime drops frames; the
-shell retires the old runtime; and navigation history resets. *Revised 2026-10-15, by owner
+shell retires the old runtime. The shell stays on its page with its back stack, and a disposed
+root cannot navigate. *Revised 2026-10-15, by owner
 decision: the session generation rested on a premise the code does not match.*
 **Surface:** Backend
 **HelpWanted:** no
