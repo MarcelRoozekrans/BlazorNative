@@ -175,6 +175,12 @@ class MainActivity : FragmentActivity() {
      */
     @Volatile private var booted = false
 
+    /** Test-only: whether host events reach .NET yet. The first frame is on screen BEFORE
+     * this turns true, because the boot thread delivers it from inside start(), so a test
+     * that dispatches a host event as soon as the page appears can have it dropped by the
+     * boot guard. The instrumented tests wait for it through `awaitBooted`. */
+    internal val bootedForTest: Boolean get() = booted
+
     /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
      * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
      * other signal — insets change independently of view size (a rotation, a

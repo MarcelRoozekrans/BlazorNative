@@ -147,7 +147,8 @@ class BnNotificationsAndroidTest {
         // re-route to /notifications is an observable CHANGE, not a no-op.
         val launch = AndroidShellBridge.buildTapIntent(ctx, "/notifications")
             .putExtra(MainActivity.EXTRA_COMPONENT, "BnDemo")
-        ActivityScenario.launch<MainActivity>(launch).use { scenario ->
+        // awaitBooted: onNewIntent drops a warm tap that arrives before boot.
+        ActivityScenario.launch<MainActivity>(launch).awaitBooted().use { scenario ->
             assertTrue(
                 "BnDemo never booted within 60s",
                 NotifHarness.pollTrue(60_000) { NotifHarness.widgetRootChild(scenario) != null }
