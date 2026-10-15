@@ -1,10 +1,10 @@
 # Session State
 
-**Last session:** 2026-10-14
+**Last session:** 2026-10-15
 **Milestone:** 17 — Close the Dispatch Lane's Debt `[status: active]`, started 2026-10-14.
 M16 closed the same day, PASS WITH FINDINGS.
-**Phase:** 17.1 — Fault attribution (#464, #494) `[status: pending]`, next.
-**Branch:** `docs/m17-design` → start M17
+**Phase:** 17.1 — Fault attribution `[status: complete]`, PR #503, released in 0.20.0. Next is 17.2 — Android host-call contract (#440) `[status: pending]`.
+**Branch:** `chore/17.1-complete-phase` → complete 17.1
 
 ## Current Position
 
@@ -30,9 +30,8 @@ M16 closed the same day, PASS WITH FINDINGS.
 
 ## Recommended Next Step
 
-1. Merge the M17 start PR. Read state from `origin/main` afterwards.
-2. Run `start-next-phase` for **17.1**. It routes to brainstorming, since there is no phase spec
-   yet. The decision is already taken: the flowing scope must match the dispatch's scope at capture
-   and at the begun-call mark. A's fault goes to A as a late FaultNotice, and B keeps rc 2. That is
-   `fix!`, with a BREAKING note.
+1. Merge the complete-phase PR, and the release-please PR #504 for 0.20.0 when ready.
+2. Run `start-next-phase` for **17.2**, #440. It routes to brainstorming. The fix shape is in the
+   issue: mirror iOS 16.4. Biometrics `check` and every secure-storage path get a background
+   executor, and `hostCallBegin` parses, records, enqueues and returns.
 3. Housekeeping: decide what happens to `feat/16.7-rc-contract@5847d1d`. The 16.7 record cites it.
