@@ -3,8 +3,8 @@
 **Last session:** 2026-10-15
 **Milestone:** 17 — Close the Dispatch Lane's Debt `[status: active]`, started 2026-10-14.
 M16 closed the same day, PASS WITH FINDINGS.
-**Phase:** 17.1 — Fault attribution `[status: complete]`, PR #503, released in 0.20.0. Next is 17.2 — Android host-call contract (#440) `[status: pending]`.
-**Branch:** `chore/17.1-complete-phase` → complete 17.1
+**Phase:** 17.2 — Android host-call contract `[status: complete]`, PR #507. Next is 17.3 — Activity recreation (#425) `[status: pending]`.
+**Branch:** `chore/17.2-complete-phase` → complete 17.2
 
 ## Current Position
 
@@ -30,8 +30,13 @@ M16 closed the same day, PASS WITH FINDINGS.
 
 ## Recommended Next Step
 
-1. Merge the complete-phase PR, and the release-please PR #504 for 0.20.0 when ready.
-2. Run `start-next-phase` for **17.2**, #440. It routes to brainstorming. The fix shape is in the
-   issue: mirror iOS 16.4. Biometrics `check` and every secure-storage path get a background
-   executor, and `hostCallBegin` parses, records, enqueues and returns.
-3. Housekeeping: decide what happens to `feat/16.7-rc-contract@5847d1d`. The 16.7 record cites it.
+1. Merge the complete-phase PR.
+2. Run `start-next-phase` for **17.3**, #425. Its design must first prove a carrier for the session
+   generation that fits the frozen ABI; the fallback is `retire()` closing .NET's gate. Recreation
+   is wired into the shell and the template, and navigation history resets.
+3. **Owner decisions waiting:**
+   - #506, the order of an auth-bound set's after-auth work;
+   - #500, per-render fault attribution.
+4. **#454 has a lead:** it reproduced on Linux on 2026-10-15. The stalled child is
+   `generate-reference.ps1`'s `dotnet publish`, and the dumps are in `~/bn-454-dumps`. That is
+   for 17.5.
