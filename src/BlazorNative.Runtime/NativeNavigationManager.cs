@@ -147,6 +147,8 @@ public sealed class NativeNavigationManager : INavigationManager
 
     public ValueTask NavigateToAsync(string route)
     {
+        if (FromAReplacedRoot($"navigation to '{route}'"))
+            return ValueTask.CompletedTask;
         Navigate(route, isBack: false);
         return ValueTask.CompletedTask;
     }
@@ -226,6 +228,8 @@ public sealed class NativeNavigationManager : INavigationManager
     /// re-recorded it, so a back from a handler left a re-back trail.</summary>
     public ValueTask<bool> NavigateBackAsync()
     {
+        if (FromAReplacedRoot("a back"))
+            return ValueTask.FromResult(false);
         if (_previousRoute is not { } target)
             return ValueTask.FromResult(false); // at the origin — the shell falls through to finish
 
@@ -318,6 +322,18 @@ public sealed class NativeNavigationManager : INavigationManager
     /// (e.g. an explicit "BnSettingsPage" Intent extra). Deliberately does
     /// NOT raise RouteChanged — mounting is not a navigation.</summary>
     internal void NotifyMounted(string route) => _currentRoute = route;
+
+    /// <summary>17.3 (#425): a disposed page's continuation still runs after its await; only its
+    /// re-render is dropped. A navigation from such code must not move the recreated shell's new
+    /// root, so it is dropped and logged.</summary>
+    private static bool FromAReplacedRoot(string what)
+    {
+        if (!HostSession.IsCodeOfAReplacedRoot(out int code, out int current))
+            return false;
+        BnLog.Warn("NativeNavigationManager",
+            $"{what} dropped: it came from a disposed root's code (root generation {code}, current {current})");
+        return true;
+    }
 
     /// <summary>The startup query (design §1): ask the host's CurrentRoute
     /// buffer callback once; a known route wins, anything else → "/".

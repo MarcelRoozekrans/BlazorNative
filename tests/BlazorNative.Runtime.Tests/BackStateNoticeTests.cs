@@ -266,12 +266,15 @@ public sealed class BackStateNoticeTests
             Assert.Equal(0, HostSession.TryMount("BnDemo")); // the recreated shell's mount
 
             Assert.Equal([false, true, true], BackStates());
-            // And it precedes that mount's frame, like the first mount's does.
+            // And it precedes that mount's frame, like the first mount's does. Since 17.3 (#425)
+            // the recreated shell's mount replaces the root and stays on the page the session is
+            // on, /settings, so the second mount's frame shows the settings page, not BnDemo.
             List<Entry> entries = log.Snapshot();
             int first = FirstFrame(entries, IsBnDemoMount, "BnDemo");
-            int second = entries.FindIndex(first + 1, e => e.Frame is { } f && IsBnDemoMount(f));
+            int settings = FirstFrame(entries, f => HasText(f, "Settings"), "BnSettingsPage");
+            int second = entries.FindIndex(settings + 1, e => e.Frame is { } f && HasText(f, "Settings"));
             Assert.True(second > first,
-                $"no second BnDemo mount frame was logged, so the order cannot be checked. Log: [{Describe(entries)}]");
+                $"no second settings-page mount frame was logged, so the order cannot be checked. Log: [{Describe(entries)}]");
             Assert.True(LastBackStateBeforeIs(entries, true, second),
                 $"the second mount's BackState must precede its frame. Log: [{Describe(entries)}]");
         });

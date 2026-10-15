@@ -1580,6 +1580,8 @@ public sealed class NativeRenderer : BlazorRenderer
     private sealed class DispatchScope(NativeRenderer owner)
     {
         public readonly NativeRenderer Owner = owner;
+        /// <summary>17.3 (#425): the root generation this dispatch began under.</summary>
+        public readonly int RootGeneration = owner.RootGeneration;
         public Exception? Fault;
         public List<Action>? PostDispatchActions;
         /// <summary>The first fault raised after the handler's first await.</summary>
@@ -1842,6 +1844,16 @@ public sealed class NativeRenderer : BlazorRenderer
     /// context. DispatchWindowScopeTests reads it from unrelated render-thread work to
     /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
     internal bool FlowingScopeIsSetForTests => s_flowingScope.Value is not null;
+
+    /// <summary>17.3 (#425): bumped by the host each time the SHELL mounts a root, which replaces
+    /// any root already mounted (a recreated Activity). Navigation swaps do not bump it, so a
+    /// handler that navigates and then navigates again stays current.</summary>
+    internal int RootGeneration { get; set; }
+
+    /// <summary>17.3 (#425): the root generation of the dispatch whose code is running now, flowed
+    /// into its continuations; null outside any dispatch of this renderer.</summary>
+    internal int? FlowingRootGeneration
+        => s_flowingScope.Value is { } scope && ReferenceEquals(scope.Owner, this) ? scope.RootGeneration : null;
 
     /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
     /// incomplete await, its re-render and FrameSink delivery — inside its own

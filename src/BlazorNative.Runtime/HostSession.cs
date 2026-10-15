@@ -272,6 +272,16 @@ internal static unsafe class HostSession
     // internal-type access is deliberate and drift-guarded by VerifyAccessors.
 #pragma warning disable BL0006
     internal static NativeRenderer? CurrentRenderer => Volatile.Read(ref s_renderer);
+
+    /// <summary>17.3 (#425): true when the code running now belongs to a dispatch that began under
+    /// a root the shell has since replaced. Outside any dispatch, false.</summary>
+    internal static bool IsCodeOfAReplacedRoot(out int codeGeneration, out int currentGeneration)
+    {
+        NativeRenderer? renderer = CurrentRenderer;
+        currentGeneration = renderer?.RootGeneration ?? 0;
+        codeGeneration = renderer?.FlowingRootGeneration ?? currentGeneration;
+        return codeGeneration != currentGeneration;
+    }
 #pragma warning restore BL0006
 
     /// <summary>The session's navigation manager, or null before the first
@@ -459,12 +469,14 @@ internal static unsafe class HostSession
             NativeRenderer renderer = EnsureSession();
 
             string effective = name;
-            if (Volatile.Read(ref s_currentRootComponentId) < 0
-                && name == NativeNavigationManager.DefaultComponent
+            bool replacing = Volatile.Read(ref s_currentRootComponentId) >= 0;
+            if (name == NativeNavigationManager.DefaultComponent
                 && Volatile.Read(ref s_navigation) is { } nav)
             {
-                // CurrentRoute lazily queries the host here (startup query);
-                // the table clamps it, so ResolveComponent cannot miss.
+                // The first mount: CurrentRoute lazily queries the host here (startup query);
+                // the table clamps it, so ResolveComponent cannot miss. 17.3 (#425): a
+                // REPLACING mount, a recreated Activity, resolves the route the session is
+                // already on, so the recreated shell stays on its page with its back stack.
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 
@@ -472,7 +484,23 @@ internal static unsafe class HostSession
             // mount's first frame. Sent on EVERY mount, changed or not: a second mount is a
             // new shell, such as a recreated Activity, that has not been told yet.
             Volatile.Read(ref s_navigation)?.PublishBackState();
-            MountRoot(effective, renderer);
+            // 17.3 (#425): every shell mount starts a new root generation. A dispatch records
+            // the generation it began under, so code from a replaced root cannot navigate.
+            renderer.RootGeneration++;
+            if (replacing)
+            {
+                // 17.3 (#425): a second mount replaces the root, as one render-thread unit, the
+                // navigation swap's shape. The old root is disposed, so a late continuation of
+                // its page re-renders nothing: Blazor drops a render request for a disposed
+                // component. Before 17.3 the old root stayed alive and its late frame reached
+                // the recreated Activity.
+                renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() => UnmountAndMount(effective, renderer)))
+                    .GetAwaiter().GetResult();
+            }
+            else
+            {
+                MountRoot(effective, renderer);
+            }
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
             // resolved registry name — a route-aware initial mount may differ from `name`.
             if (BnLog.IsEnabled(BnLogLevel.Debug))
