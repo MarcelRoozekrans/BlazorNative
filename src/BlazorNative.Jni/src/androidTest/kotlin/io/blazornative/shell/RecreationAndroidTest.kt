@@ -100,6 +100,7 @@ class RecreationAndroidTest {
                 pollUntil(scenario, 60_000) { settingsTitle(it) != null && !hasEditText(it) })
             assertTrue("the recreated Activity lost its back stack: back is not enabled on /settings",
                 pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
+            scenario.awaitBooted() // the recreated shell's page shows before its boot guard opens
 
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             assertTrue("back from /settings after recreation did not return to the home page within 10s",
@@ -150,7 +151,7 @@ class RecreationAndroidTest {
     private fun launch(component: String? = null): ActivityScenario<MainActivity> {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         if (component != null) intent.putExtra(MainActivity.EXTRA_COMPONENT, component)
-        return ActivityScenario.launch(intent)
+        return ActivityScenario.launch<MainActivity>(intent).awaitBooted()
     }
 
     private fun widgetRoot(act: MainActivity): FrameLayout? = act.findViewById(R.id.widget_root)
