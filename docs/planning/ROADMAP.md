@@ -3795,7 +3795,7 @@ path and its Android host calls enter 1.0 with no known defect. No new features.
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #464, #494, #440, #425, #426, #435, #454, #424, #458.
 
-#### Phase 17.1: Fault attribution (#464, #494) [status: active]
+#### Phase 17.1: Fault attribution (#464, #494) [status: complete]
 **Goal:** A fault belongs to the dispatch whose continuation raised it, checked through the flowing
 scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7's
 `FaultNoticeTests` partials are proven.
@@ -3803,6 +3803,8 @@ scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7'
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-14-phase-17.1-design.md`](../superpowers/specs/2026-10-14-phase-17.1-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md`](../superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md)
+**Record:** [`docs/plans/2026-10-14-phase-17.1-record.md`](../plans/2026-10-14-phase-17.1-record.md)
+**Completed:** 2026-10-15 · [PR #503](https://github.com/MarcelRoozekrans/BlazorNative/pull/503), released in 0.20.0 with a BREAKING note. A fault that a dispatch's own code raises is that dispatch's, even inline inside another dispatch's window. Capture and the begun-call mark both check the flowing scope; code with no dispatch flow stays the window's; a finished dispatch's fault is logged, in strict mode too. Every .NET and JVM anchor #494 listed has a recorded red, and the child-begin claim is pinned. 23 recorded mutations. .NET 1316 → 1323, Android 233, iOS 288. #464 and #494 closed; #500 filed.
 
 #### Phase 17.2: Android host-call contract (#440) [status: pending]
 **Goal:** Android's biometrics and KeyStore work leaves `hostCallBegin` for a background executor,
