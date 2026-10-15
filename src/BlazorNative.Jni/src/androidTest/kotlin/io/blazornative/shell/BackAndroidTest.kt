@@ -339,7 +339,7 @@ class BackAndroidTest {
         else
             Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         if (component != null) intent.putExtra(MainActivity.EXTRA_COMPONENT, component)
-        return ActivityScenario.launch(intent)
+        return ActivityScenario.launch<MainActivity>(intent).awaitBooted() // a pre-boot back goes to the platform
     }
 
     /** From BnDemo: forward to settings, then back. A forward step from a fresh mount records

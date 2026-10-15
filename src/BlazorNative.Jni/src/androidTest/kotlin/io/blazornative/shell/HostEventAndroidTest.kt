@@ -53,10 +53,11 @@ class HostEventAndroidTest {
     fun lifecycle_onPause_reaches_probe_on_screen() {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_COMPONENT, "HostEventProbe")
-        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+        ActivityScenario.launch<MainActivity>(intent).awaitBooted().use { scenario ->
             // The probe mounted once its echo TextView is on screen (empty at
-            // mount) — which also means start() returned and the boot guard is
-            // open, so the lifecycle event that follows will actually dispatch.
+            // mount). That alone does NOT mean the boot guard is open: the first
+            // frame arrives from inside start(). awaitBooted above does, so the
+            // lifecycle event that follows actually dispatches.
             assertTrue(
                 "HostEventProbe never mounted within 60s",
                 pollUntil(scenario, 60_000) { echoTextView(it) != null }
@@ -105,7 +106,7 @@ class HostEventAndroidTest {
 
     @Test
     fun predictive_back_returns_to_bndemo() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitBooted().use { scenario ->
             assertTrue(
                 "BnDemo never rendered within 60s — boot/mapper failed",
                 pollUntil(scenario, 60_000) { form(it) != null }

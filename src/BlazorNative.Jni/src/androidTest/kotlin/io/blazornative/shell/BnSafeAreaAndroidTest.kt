@@ -77,7 +77,9 @@ class BnSafeAreaAndroidTest {
         val intent = Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_COMPONENT, "BnSafeAreaDemo")
 
-        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+        // awaitBooted: insets sent before boot are dropped, and only the device's real insets
+        // are re-sent, so this test would wait out its 30 s for padding that never comes.
+        ActivityScenario.launch<MainActivity>(intent).awaitBooted().use { scenario ->
             assertTrue("BnSafeAreaDemo never rendered a laid-out tree within 60s",
                 pollForDemo(scenario))
 

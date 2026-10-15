@@ -101,7 +101,7 @@ class BnModalDemoAndroidTest {
     private fun launchByName(): ActivityScenario<MainActivity> {
         val intent = Intent(instr.targetContext, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_COMPONENT, "BnModalDemo")
-        return ActivityScenario.launch(intent)
+        return ActivityScenario.launch<MainActivity>(intent).awaitBooted() // its back tests need the boot guard open
     }
 
     /** Launch-by-name + scoped use, returning Unit (a JUnit @Test must be void
