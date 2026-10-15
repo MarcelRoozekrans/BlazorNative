@@ -69,7 +69,7 @@ class BlazorNativeRuntime(
             // it, before the replacement's start() re-registers the callback, is dropped.
             if (retired) {
                 framesDroppedAfterRetire.incrementAndGet()
-                return
+                // J1: the drop removed, the frame still counts and is delivered
             }
             try {
                 checkFrameProducer()
