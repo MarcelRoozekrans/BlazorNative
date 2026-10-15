@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (192 passed / 0 failed — the assertion is the step near the end of this
+#     (193 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2756,7 +2756,10 @@ jobs:
       #    InlineCameraHost answers the camera call inside hostCallBegin, as Android
       #    does, and the handler's fault after it arrives as a FaultNotice with
       #    completion rc 0, never rc 2.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 192 passed / 0 failed)
+      # 192 -> 193 (17.3, +1): RetireLateContinuationTest gains the review fix's pin — retire()
+      #    waits out a frame callback already inside onFrame, so that frame cannot reach a
+      #    retired runtime's shell after retire() returns (#425).
+      - name: JVM tests (Gradle testDebugUnitTest — assert 193 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2770,8 +2773,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 192 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 192 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 193 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 193 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

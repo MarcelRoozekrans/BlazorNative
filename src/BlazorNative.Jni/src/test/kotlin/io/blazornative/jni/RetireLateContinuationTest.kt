@@ -66,4 +66,54 @@ class RetireLateContinuationTest {
             if (!released) host.release()
         }
     }
+
+    /**
+     * 17.3 review fix: a frame callback can read `retired` just BEFORE retire() sets it, and then
+     * deliver to onFrame after retire() returned. So retire() waits out a callback in flight.
+     * Built deterministically: the late continuation's frame reaches onFrame before retire(), and
+     * onFrame holds it there. Anchor: the frame really is in flight, inside onFrame, when retire()
+     * is called. DOES NOT COVER: a callback held past retire()'s 5 s budget, after which it
+     * returns anyway.
+     */
+    @Test
+    fun retire_waits_out_a_frame_callback_already_in_flight() {
+        val host = HeldCameraHost()
+        val holding = java.util.concurrent.atomic.AtomicBoolean(false)
+        val inOnFrame = java.util.concurrent.CountDownLatch(1)
+        val releaseOnFrame = java.util.concurrent.CountDownLatch(1)
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val runtime = BlazorNativeRuntime(onFrame = { f ->
+            frames.add(f)
+            if (holding.get()) {
+                inOnFrame.countDown()
+                releaseOnFrame.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        })
+        runtime.start(componentName = "BnCameraDemo", platformOs = "test-host", bridge = host)
+        val takePhoto = takePhotoHandler(frames.first { it.patches.any { p -> p is RenderPatch.CreateNode } })
+        var released = false
+        var retirer: Thread? = null
+        try {
+            runtime.dispatchEvent(takePhoto, "click")
+            awaitHeldCall(host)
+            holding.set(true)
+            host.release()
+            released = true
+            assertTrue(inOnFrame.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                "anchor: the late continuation's frame never reached onFrame, so nothing was in flight")
+
+            val returned = java.util.concurrent.CountDownLatch(1)
+            retirer = Thread({ runtime.retire(); returned.countDown() }, "retirer").apply { isDaemon = true; start() }
+            assertTrue(!returned.await(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+                "retire() returned while a frame callback was still inside onFrame, so that frame is " +
+                    "delivered to a retired runtime's shell after retire() (#425)")
+            releaseOnFrame.countDown()
+            assertTrue(returned.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                "retire() never returned after the callback left onFrame")
+        } finally {
+            releaseOnFrame.countDown()
+            if (!released) host.release()
+            retirer?.join(10_000)
+        }
+    }
 }
