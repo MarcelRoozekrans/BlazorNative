@@ -806,10 +806,36 @@ class WidgetMapper(
         }
     }
 
+    /**
+     * Phase 17.3 (#425), test-only: how many patches this mapper received that name a node it
+     * never created, or create a node under such a parent. A replaced page's late frame has
+     * exactly this shape, and every handler ignores it, so it never changes the screen and only
+     * this count shows it reached the new Activity. RecreationAndroidTest reads it.
+     */
+    @Volatile internal var foreignPatchesForTest = 0
+        private set
+
+    private fun countForeign(patch: RenderPatch) {
+        val foreign = when (patch) {
+            is RenderPatch.CreateNode  -> patch.parentId != null && patch.parentId !in nodes
+            is RenderPatch.ReplaceText -> patch.nodeId !in nodes
+            is RenderPatch.RemoveNode  -> patch.nodeId !in nodes
+            is RenderPatch.UpdateProp  -> patch.nodeId !in nodes
+            is RenderPatch.SetStyle    -> patch.nodeId !in nodes
+            is RenderPatch.AttachEvent -> patch.nodeId !in nodes
+            is RenderPatch.DetachEvent -> patch.nodeId !in nodes
+            is RenderPatch.ScrollTo    -> patch.nodeId !in nodes
+            is RenderPatch.CommitFrame -> false
+        }
+        if (foreign) foreignPatchesForTest++
+    }
+
     private fun applyBatchBody(patches: List<RenderPatch>, carriedBackState: Boolean?) {
         applyingBatch = true
         try {
-            for (patch in patches) when (patch) {
+            // Lazily, so each patch is counted just before it applies: a node created earlier in
+            // this batch is a parent the count already knows.
+            for (patch in patches.asSequence().onEach(::countForeign)) when (patch) {
                 is RenderPatch.CreateNode  -> handleCreate(patch)
                 is RenderPatch.ReplaceText -> handleReplaceText(patch)
                 is RenderPatch.RemoveNode  -> handleRemove(patch)

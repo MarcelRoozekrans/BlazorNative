@@ -347,7 +347,9 @@ public static class Exports
     /// Phase 3.0d: stores the host's frame callback — a cdecl
     /// <c>void (*)(BlazorNativeFrame*)</c> function pointer. Returns 0 on
     /// success. Re-registration is allowed (last wins); passing NULL disables
-    /// frame delivery. The frame pointer handed to the callback (and every
+    /// frame delivery. 17.3 (#425): a registration while a page is mounted is a
+    /// new shell, such as a recreated Activity, and frames are held until its
+    /// <c>blazornative_mount</c> replaces that page. The frame pointer handed to the callback (and every
     /// string it references) is valid ONLY for the duration of the callback —
     /// the host must copy synchronously (PatchProtocolNative.cs contract).
     /// </summary>

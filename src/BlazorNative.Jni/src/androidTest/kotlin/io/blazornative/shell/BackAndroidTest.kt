@@ -162,7 +162,10 @@ class BackAndroidTest {
 
         val released = AtomicBoolean(false)
         var releaser: Thread? = null
-        launch(component = "BackHoldProbe").use { scenario ->
+        // The probe has no route of its own, so its launch carries the session's, /settings, as
+        // a deep link: its shell continues that back stack. Since 17.3 (#425) a fresh shell at
+        // another route starts without the earlier shell's history.
+        launch(component = "BackHoldProbe", continuingRoute = "/settings").use { scenario ->
             try {
                 assertTrue("BackHoldProbe never rendered within 60s",
                     pollUntil(scenario, 60_000) { buttonLabelled(it, "Hold") != null })
@@ -327,9 +330,14 @@ class BackAndroidTest {
             "an earlier batch, such as the swap's removal", toggles[0].settingsShown)
     }
 
-    /** An explicit Intent with no action; see the class KDoc for why not launch(Class). */
-    private fun launch(component: String? = null): ActivityScenario<MainActivity> {
-        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+    /** An explicit Intent with no action; see the class KDoc for why not launch(Class). A
+     * [continuingRoute] makes it the deep link to that route instead, so a page with no route of
+     * its own reports it and its shell continues the session's back stack. */
+    private fun launch(component: String? = null, continuingRoute: String? = null): ActivityScenario<MainActivity> {
+        val intent = if (continuingRoute != null)
+            AndroidShellBridge.buildTapIntent(ApplicationProvider.getApplicationContext(), continuingRoute)
+        else
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         if (component != null) intent.putExtra(MainActivity.EXTRA_COMPONENT, component)
         return ActivityScenario.launch(intent)
     }

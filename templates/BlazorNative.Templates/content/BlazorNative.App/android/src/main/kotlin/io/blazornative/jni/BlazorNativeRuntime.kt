@@ -65,7 +65,16 @@ class BlazorNativeRuntime(
 ) {
     private val callback = object : NativeBindings.FrameCallback {
         override fun invoke(frame: Pointer) {
+            callbacksInFlight.incrementAndGet()
+            insideCallback.set(true)
             try {
+                // 17.3 (#425): a retired runtime's shell is going away. A frame that still
+                // reaches it, before the replacement's start() re-registers the callback, is
+                // dropped.
+                if (retired) {
+                    framesDroppedAfterRetire.incrementAndGet()
+                    return
+                }
                 checkFrameProducer()
                 // NativeFrameAdapter.read copies everything (arena memory is
                 // valid only during this invocation), so onFrame receives a
@@ -73,6 +82,9 @@ class BlazorNativeRuntime(
                 onFrame(NativeFrameAdapter.read(frame))
             } catch (t: Throwable) {
                 onError("frame dropped (adapter/consumer threw)", t)
+            } finally {
+                insideCallback.set(false)
+                callbacksInFlight.decrementAndGet()
             }
         }
     }
@@ -149,6 +161,20 @@ class BlazorNativeRuntime(
      * same accumulation posture as the never-disposed component instances
      * (see the recreation contract on [start]).
      */
+    /** 17.3 (#425): set by [retire]; the frame callback drops everything once it is. */
+    @Volatile private var retired = false
+
+    /** 17.3 test seam: how many frames reached this runtime after [retire] and were dropped. */
+    internal val framesDroppedAfterRetire = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 17.3 (#425): frame callbacks running now. [retire] waits for them, so a callback that read
+     * [retired] just before it was set cannot deliver to onFrame after retire() returns. */
+    private val callbacksInFlight = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** True on a thread while it runs this runtime's frame callback; retire() from there must not
+     * wait for itself. */
+    private val insideCallback = ThreadLocal.withInitial { false }
+
     private val dispatchLane: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Dispatch").apply { isDaemon = true }
     }
@@ -395,10 +421,12 @@ class BlazorNativeRuntime(
      * waits in the export (Phase 16.1).
      *
      * ACTIVITY-RECREATION CONTRACT: calling start() a second time in the same
-     * process (e.g. from a recreated Activity) is safe TODAY —
+     * process (e.g. from a recreated Activity) is safe —
      * blazornative_init is idempotent, callback re-registration is last-wins,
-     * and re-mounting adds a NEW component instance on the process-global
-     * session (old instances are never disposed and accumulate natively).
+     * and since 17.3 (#425) a second mount REPLACES the root: .NET disposes the
+     * old page (without sending its removal frame, which described the old
+     * shell's views), stays on the route the session is on, with its back
+     * stack, and drops a navigation from the old page's late code.
      * The PRIMARY recreation hazard (Phase 3.2) is CONCURRENT .NET ENTRY: a
      * dispatch queued on the OLD runtime's lane can still be executing —
      * inside the dll — while the NEW runtime's start() runs init/register/
@@ -414,11 +442,15 @@ class BlazorNativeRuntime(
      * FRAMES ARE NOT CONFINED TO HOST CALLS (Phase 16.1). They come from .NET's
      * render thread, during a host call OR later from a continuation: a handler
      * that awaited a host call re-renders when that call completes, with no
-     * export in progress. So [retire] does NOT quiesce .NET: it drains only the
-     * Kotlin lane and never calls into the runtime, and a late continuation can
-     * still deliver a frame to the retired runtime's onFrame (until the
-     * replacement's start() re-registers the callback), and afterwards to the
-     * replacement's. RetireLateContinuationTest pins that hazard as it stands.
+     * export in progress. Since 17.3 (#425) a replaced page's frame reaches
+     * neither shell, through three steps. [retire] marks this runtime retired:
+     * it drops every frame it still receives and waits out a callback already
+     * past that check (RetireLateContinuationTest). The replacement's frame
+     * callback registration holds .NET's delivery until its mount, so a frame
+     * the old page renders in between is dropped (RecreationTests'
+     * AFrameOfTheOldRoot_AfterANewShellRegisters_IsNotDeliveredToIt). And the
+     * mount disposes the old root, so its late continuation renders nothing
+     * after it (RecreationTests, RecreationAndroidTest).
      * [shutdown] IS quiescent: it calls `blazornative_shutdown`, which closes
      * .NET's frame gate and waits out any callback in flight before it
      * returns, so no frame reaches this runtime afterwards
@@ -513,17 +545,29 @@ class BlazorNativeRuntime(
      * (Activity recreation) — see the recreation contract on [start]: an
      * old-lane dispatch must never execute concurrently with the
      * replacement's start(). Does NOT touch the native session (that is
-     * [shutdown]'s job); idempotent. NOT QUIESCENT: a handler continuation
-     * that resumes after this returns can still deliver a frame to this
-     * runtime's onFrame — see the recreation contract on [start].
+     * [shutdown]'s job); idempotent. Since 17.3 (#425) it also marks this runtime
+     * retired: a handler continuation that resumes after this returns can still
+     * reach the frame callback, and the callback drops it; a callback already
+     * past that check is waited out within the same 5 s budget, so this
+     * runtime's onFrame sees no frame after retire() returns, unless that budget
+     * ran out — see the recreation contract on [start].
      *
      * @return true when the lane drained in time; false on timeout — the
      *   in-flight dispatch is stuck inside the dll (log loudly; proceeding
      *   with a replacement start() risks the concurrent-entry hazard).
      */
     fun retire(): Boolean {
+        retired = true // 17.3 (#425): from now on, any frame that reaches this runtime is dropped
         dispatchLane.shutdown()
-        return dispatchLane.awaitTermination(5, TimeUnit.SECONDS)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        val drained = dispatchLane.awaitTermination(5, TimeUnit.SECONDS)
+        // 17.3 (#425): and a callback that passed the retired check just before it was set is
+        // waited out, within the same 5 s budget, so onFrame sees no frame after this returns.
+        // Not from inside a callback, which would wait for itself.
+        if (!insideCallback.get()) {
+            while (callbacksInFlight.get() > 0 && System.nanoTime() < deadline) Thread.sleep(1)
+        }
+        return drained
     }
 
     /**

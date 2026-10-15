@@ -34,6 +34,9 @@ internal static unsafe class HostSession
     private static NativeRenderer? s_renderer;
     private static NativeNavigationManager? s_navigation; // born with the session (Phase 3.5)
     private static IntPtr s_frameCallback; // delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void>
+    /// <summary>17.3 (#425): true from a new shell's frame-callback registration until its mount
+    /// has replaced the old root; native delivery is held meanwhile. See SetFrameCallback.</summary>
+    private static bool s_holdForTheNewShellsMount;
     private static FrameGate? s_frameGate; // the live session's gate; born and detached with it
 
     /// <summary>How long shutdown waits for callbacks already in flight, and, separately,
@@ -202,7 +205,9 @@ internal static unsafe class HostSession
     }
 
     /// <summary>Stores the host's frame callback. IntPtr.Zero disables
-    /// delivery; re-registration is allowed (last wins). Phase 16.1: once this
+    /// delivery; re-registration is allowed (last wins). 17.3 (#425): a
+    /// registration while a root is live is a NEW shell, and native delivery is
+    /// held until its mount replaces that root. Phase 16.1: once this
     /// returns, no callback holding the PREVIOUS pointer is still in flight, so the
     /// host may release its old callback object. Android Activity recreation does
     /// exactly that without calling shutdown. The gate stays open: frames keep
@@ -211,6 +216,17 @@ internal static unsafe class HostSession
     /// which would otherwise wait for itself.</summary>
     public static void SetFrameCallback(IntPtr fnPtr)
     {
+        // 17.3 (#425): a registration while a root is live comes from a NEW shell, such as a
+        // recreated Activity, which mounts next. Until that mount replaces the root, the old root
+        // is still alive, and a frame from its late continuation carries the old page's nodes to
+        // the new shell. So native delivery is held from before the pointer changes until the
+        // replacing mount has disposed the old root (UnmountAndMount). A frame of the old root in
+        // between is dropped: the shell it was meant for is gone. A shell that registers and never
+        // mounts receives nothing.
+        if (fnPtr != IntPtr.Zero && Volatile.Read(ref s_currentRootComponentId) >= 0
+            && HoldForTheNewShellsMountForTests)
+            Volatile.Write(ref s_holdForTheNewShellsMount, true);
+
         if (FrameGate.CallerIsInside)
         {
             // Registering from a callback: that callback is itself an old-pointer entry,
@@ -272,6 +288,16 @@ internal static unsafe class HostSession
     // internal-type access is deliberate and drift-guarded by VerifyAccessors.
 #pragma warning disable BL0006
     internal static NativeRenderer? CurrentRenderer => Volatile.Read(ref s_renderer);
+
+    /// <summary>17.3 (#425): true when the code running now belongs to a dispatch that began under
+    /// a root the shell has since replaced. Outside any dispatch, false.</summary>
+    internal static bool IsCodeOfAReplacedRoot(out int codeGeneration, out int currentGeneration)
+    {
+        NativeRenderer? renderer = CurrentRenderer;
+        currentGeneration = renderer?.RootGeneration ?? 0;
+        codeGeneration = renderer?.FlowingRootGeneration ?? currentGeneration;
+        return codeGeneration != currentGeneration;
+    }
 #pragma warning restore BL0006
 
     /// <summary>The session's navigation manager, or null before the first
@@ -293,6 +319,7 @@ internal static unsafe class HostSession
             Volatile.Write(ref s_frameGate, null);
             Volatile.Write(ref s_navigation, null);
             Volatile.Write(ref s_currentRootComponentId, -1);
+            Volatile.Write(ref s_holdForTheNewShellsMount, false);
             return (renderer, gate);
         }
     }
@@ -356,8 +383,15 @@ internal static unsafe class HostSession
     /// under s_lock, and everything that waits (the gate's drain, the renderer's
     /// dispose on its render thread, and the join) runs after the lock is
     /// released. The session's render thread is joined, so no thread leaks.</summary>
+    /// <summary>Test-only: false switches off 17.3's hold for a new shell's mount (see
+    /// SetFrameCallback). ShutdownQuiescenceTests re-register callbacks over a live root without
+    /// a mount, because their subject is the callback epoch and the gate, not the hold.
+    /// ResetForTests turns it back on.</summary>
+    internal static bool HoldForTheNewShellsMountForTests { get; set; } = true;
+
     internal static void ResetForTests()
     {
+        HoldForTheNewShellsMountForTests = true;
         (NativeRenderer? renderer, FrameGate? gate) = Detach();
         // Gate A: clear the app's captured ConfigureServices delegate too,
         // so a session-composition capture never leaks across tests (the
@@ -433,9 +467,11 @@ internal static unsafe class HostSession
     /// known non-default route mounts ITS page instead (unknown/empty →
     /// "/" → the requested default). Explicit mounts of any OTHER name
     /// (test Intent extras, probes) are never overridden.
-    /// One mount per session: a second TryMount over a live root is ADDITIVE
-    /// (the new root renders alongside the old one) and orphans the old
-    /// root's tracking — host contract: use navigation to change pages.</remarks>
+    /// 17.3 (#425): a second TryMount over a live root comes from a new shell,
+    /// such as a recreated Activity, and REPLACES the root: the old one is
+    /// disposed without a removal frame, and the new shell's route decides the
+    /// page (see ResolveTheMount). Navigation remains the way to change pages
+    /// within one shell.</remarks>
     public static int TryMount(string name)
     {
         // Phase 8.0: the distinguished empty-registry diagnostic. Rides the
@@ -459,20 +495,31 @@ internal static unsafe class HostSession
             NativeRenderer renderer = EnsureSession();
 
             string effective = name;
-            if (Volatile.Read(ref s_currentRootComponentId) < 0
-                && name == NativeNavigationManager.DefaultComponent
-                && Volatile.Read(ref s_navigation) is { } nav)
+            if (Volatile.Read(ref s_currentRootComponentId) >= 0)
             {
-                // CurrentRoute lazily queries the host here (startup query);
-                // the table clamps it, so ResolveComponent cannot miss.
-                effective = nav.ResolveComponent(nav.CurrentRoute);
+                // 17.3 (#425): a second mount comes from a new shell, such as a recreated
+                // Activity, and replaces the root as one render-thread unit, the navigation
+                // swap's shape. Everything that decides the new page runs inside the unit, so no
+                // code of the old root can navigate between the decision and the mount. The
+                // generation is bumped FIRST: from then on the old root's code is stale. The old
+                // root is disposed, so its late continuation re-renders nothing: Blazor drops a
+                // render request for a disposed component.
+                renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() =>
+                    {
+                        renderer.RootGeneration++;
+                        effective = ResolveTheMount(name, replacing: true);
+                        Volatile.Read(ref s_navigation)?.PublishBackState();
+                        UnmountAndMount(effective, renderer, replacedByTheShell: true);
+                    }))
+                    .GetAwaiter().GetResult();
             }
-
-            // Phase 16.2 (#346): the session's back state reaches the shell before the
-            // mount's first frame. Sent on EVERY mount, changed or not: a second mount is a
-            // new shell, such as a recreated Activity, that has not been told yet.
-            Volatile.Read(ref s_navigation)?.PublishBackState();
-            MountRoot(effective, renderer);
+            else
+            {
+                renderer.RootGeneration++;
+                effective = ResolveTheMount(name, replacing: false);
+                Volatile.Read(ref s_navigation)?.PublishBackState();
+                MountRoot(effective, renderer);
+            }
             // #201 developer trace (Debug, IsEnabled-guarded). `effective` is the
             // resolved registry name — a route-aware initial mount may differ from `name`.
             if (BnLog.IsEnabled(BnLogLevel.Debug))
@@ -544,7 +591,24 @@ internal static unsafe class HostSession
 
     /// <summary>The body of the swap unit: unmounts the tracked current root, then
     /// mounts <paramref name="name"/>. Both emit frames. Throws on failure.</summary>
-    private static void UnmountAndMount(string name, NativeRenderer renderer)
+    /// <summary>The page a shell's mount shows. 17.3 (#425): a REPLACING mount first asks the new
+    /// shell which page it is on, whether it mounts the default page or one by name. A recreated
+    /// Activity restores the route the session is on, so its page and back stack stay; a fresh
+    /// shell in the same process starts at its own route, and the earlier back stack is dropped.
+    /// A mount of the default page then resolves it from the current route: on the first mount
+    /// CurrentRoute lazily queries the host (the startup query), and the table clamps it, so
+    /// ResolveComponent cannot miss. Phase 16.2 (#346): the caller then publishes the back state,
+    /// on EVERY mount, so it reaches the new shell before the mount's first frame.</summary>
+    private static string ResolveTheMount(string name, bool replacing)
+    {
+        if (Volatile.Read(ref s_navigation) is not { } nav)
+            return name;
+        if (replacing)
+            nav.AdoptTheShellsRoute();
+        return name == NativeNavigationManager.DefaultComponent ? nav.ResolveComponent(nav.CurrentRoute) : name;
+    }
+
+    private static void UnmountAndMount(string name, NativeRenderer renderer, bool replacedByTheShell = false)
     {
         int current = Volatile.Read(ref s_currentRootComponentId);
         if (current >= 0)
@@ -558,8 +622,15 @@ internal static unsafe class HostSession
             // The fault itself still surfaces (thrown here → rc 2 on the
             // deferred path), and the next swap can proceed to a mount.
             Volatile.Write(ref s_currentRootComponentId, -1);
-            renderer.Unmount(current);
+            if (replacedByTheShell)
+                renderer.UnmountReplacedRoot(current); // 17.3: no removal frame for a shell that is gone
+            else
+                renderer.Unmount(current);
         }
+        // 17.3 (#425): the old root is gone, so the frames the new shell receives from here on are
+        // its own. See SetFrameCallback for why delivery was held until now.
+        if (replacedByTheShell)
+            Volatile.Write(ref s_holdForTheNewShellsMount, false);
         MountRoot(name, renderer);
     }
 
@@ -569,7 +640,9 @@ internal static unsafe class HostSession
     /// even for direct named mounts. Throws on mount failure.</summary>
     private static void MountRoot(string name, NativeRenderer renderer)
     {
-        int rootId = Components[name](renderer);
+        // 17.3 (#425): under the current root generation, so code the page starts from its lifecycle
+        // methods carries it too, and is dropped if it navigates after its root was replaced.
+        int rootId = renderer.MountUnderRootGeneration(() => Components[name](renderer));
         Volatile.Write(ref s_currentRootComponentId, rootId);
         if (Volatile.Read(ref s_navigation) is { } nav
             && NativeNavigationManager.TryGetRouteForComponent(name, out string route))
@@ -690,6 +763,8 @@ internal static unsafe class HostSession
             var gate = new FrameGate();
             renderer.FrameSink = frame =>
             {
+                if (Volatile.Read(ref s_holdForTheNewShellsMount))
+                    return; // 17.3 (#425): the old root's frame, for a shell that is gone
                 if (!gate.TryEnter(out int slot))
                     return;
                 try

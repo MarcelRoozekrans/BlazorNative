@@ -47,16 +47,17 @@ features.** The user-visible outcomes:
 - [ ] **#440 is fixed:** Android's biometrics `check` and every secure-storage path return from
       `hostCallBegin` at once and complete through `host_call_complete` from a background executor,
       as iOS has since 16.4. A pin shows `hostCallBegin` returns before the work runs.
-- [ ] **#425 is fixed, by session generation, or by the fallback if no carrier exists.**
-  - A frame from a retired session never reaches the new one. A pin delivers a late frame after
-    `retire()` and asserts this.
-  - **Fallback, owner decision 2026-10-14:** if 17.3's design proves that no existing carrier can
-    hold a generation without breaking the frozen ABI, `retire()` closes .NET's frame gate for the
-    old session instead, as `shutdown()` already does.
-  - **Recreation is wired:** the reference shell and the template retire the old runtime and start
-    a new one on Activity recreation, proven on the Android device lane by a rotation test.
-  - **Navigation history resets with the session,** per #425's comment: after recreation, Back at
-    the root finishes and does not navigate to the old sub-page. This is pinned on the same path.
+- [ ] **#425 is fixed: a mount replaces the root.** *Revised 2026-10-15, by owner decision. The
+      first plan was a session generation, but there is one process-global session, and the
+      stale frames come from the old root that a second mount leaves alive.*
+  - A mount disposes any root already mounted, so a late continuation of the old page renders
+    nothing.
+  - A retired runtime drops any frame it still receives.
+  - Recreation is wired: `MainActivity` retires the old runtime, in the reference shell and the
+    template, proven on the Android device lane by a rotation test.
+  - **A recreated shell stays on its page with its back stack,** owner decision 2026-10-15, which
+    answers #425's comment. Navigation from a disposed root's late code is dropped. Both are pinned
+    on the same path.
 - [ ] **#426 is fixed:** Android redacts the FaultNotice message the way iOS does, and a twin pin
       holds the two shells' redaction together. *Builder's call:* iOS's `privacy: .redacted` is not
       tied to a build configuration, so 17.4's design measures what iOS actually redacts, and when,
@@ -82,7 +83,7 @@ features.** The user-visible outcomes:
 
 1. Phase 17.1 — fault attribution (#464, #494) [complete] — a fault is its own dispatch's via the flowing scope; strict-mode loss found by review and fixed; all #494 anchors redded; 0.20.0 BREAKING; #500 filed (#503)
 2. Phase 17.2 — Android host-call contract (#440) [complete] — one serial executor per handler, after-auth work off main, 5 pins, Android 233 → 238; #506 filed (#507)
-3. Phase 17.3 — Activity recreation (#425) [pending]
+3. Phase 17.3 — Activity recreation (#425) [active]
 4. Phase 17.4 — fault-path parity (#426, #435) [pending]
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [pending]
 6. Phase 17.6 — audit and close [pending]

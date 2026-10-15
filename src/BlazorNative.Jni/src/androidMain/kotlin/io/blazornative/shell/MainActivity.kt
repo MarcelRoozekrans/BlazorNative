@@ -71,6 +71,9 @@ class MainActivity : FragmentActivity() {
          */
         const val EXTRA_COMPONENT = "io.blazornative.shell.EXTRA_COMPONENT"
 
+        /** 17.3 (#425): the saved-state key for the route a recreated Activity restores. */
+        private const val STATE_ROUTE = "io.blazornative.shell.STATE_ROUTE"
+
         /** Phase 5.1 deep-link custom scheme (design §4): blazornative://<route>.
          * A custom scheme (no domain verification) is the simplest honest proof
          * of the launch-time deep-link mechanism; https App Links are later work. */
@@ -326,8 +329,8 @@ class MainActivity : FragmentActivity() {
         // mount is still by NAME, per the design, but resolved shell-side so it
         // is robust to Activity recreation + the shared instrumented session
         // (see loadDeepLinkRoutes). PRECEDENCE: an explicit EXTRA_COMPONENT
-        // (test override) wins the mount over a deep link; the route seed still
-        // applies.
+        // (test override) wins the mount over a deep link, and since 17.3 it
+        // seeds its own route too; a recreated Activity's saved route wins both.
         val deepLinkRoute = parseDeepLinkRoute(intent)
         // #200: Info — narration, suppressed at the Release default (Warn) and
         // back at `Info` or higher. NOT deleted: the Phase 11.2 device runbook
@@ -337,14 +340,30 @@ class MainActivity : FragmentActivity() {
         // Phase 3.1: the shell half of IMobileBridge. Passing the Activity is
         // safe — AndroidShellBridge captures applicationContext ONLY (the
         // process-lifetime retention contract on ShellBridgeHandlers).
-        val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: "/", onError = onError)
+        // 17.3 (#425): .NET compares the shell's route with the session's on every mount after
+        // the first. The same route means a recreation: the page and its back stack stay. A
+        // different one means a fresh launch: .NET resets the back stack. So the launch seeds the
+        // route of the page it mounts: an EXTRA_COMPONENT its own route, else the deep link's. An
+        // unrouted page has none, and seeds the deep link or "/". A recreated Activity restores
+        // the route it saved in onSaveInstanceState, which outranks its launch Intent; when the
+        // user navigated away from the launch's route, the restored route also picks the page.
+        val routes = loadDeepLinkRoutes()
+        val restoredRoute = savedInstanceState?.getString(STATE_ROUTE)
+        val extraComponent = intent.getStringExtra(EXTRA_COMPONENT)
+        val extraRoute = extraComponent?.let { name -> routes.entries.firstOrNull { it.value == name }?.key }
+        val launchRoute = extraRoute ?: deepLinkRoute ?: "/"
+        val bridge = AndroidShellBridge(
+            this,
+            initialRoute = restoredRoute ?: launchRoute,
+            onError = onError,
+        )
         shellBridge = bridge
 
-        val routes = loadDeepLinkRoutes()
-        val componentName = intent.getStringExtra(EXTRA_COMPONENT)
+        val launchComponent = extraComponent
             ?: deepLinkRoute?.let { routes[it] }
             ?: routes["/"]
             ?: "BnDemo"
+        val componentName = restoredRoute?.takeIf { it != launchRoute }?.let { routes[it] } ?: launchComponent
 
         thread(name = "BlazorNative-Runtime-Boot") {
             try {
@@ -405,6 +424,12 @@ class MainActivity : FragmentActivity() {
         if (booted) runtime.dispatchHostEvent(BnHostEvent.OnPause)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 17.3 (#425): the route a recreation restores; see the bridge construction in onCreate.
+        shellBridge?.currentRoute()?.let { outState.putString(STATE_ROUTE, it) }
+    }
+
     override fun onDestroy() {
         // THE onDestroy TRAP (BlazorNativeRuntime.start KDoc): fire the lifecycle
         // event but DO NOT call runtime.shutdown(). Activity recreation re-runs
@@ -413,6 +438,13 @@ class MainActivity : FragmentActivity() {
         // recreated Activity expects. shutdown() is reserved for genuine
         // process-exit paths, which Android does not give an Activity.
         if (booted) runtime.dispatchHostEvent(BnHostEvent.OnDestroy)
+        // 17.3 (#425): retire this runtime, so a frame that still reaches it, before the
+        // recreated Activity's start() re-registers the callback, is dropped instead of
+        // rendered into this Activity's views. retire() waits, bounded at 5 s, only for a
+        // dispatch's synchronous part, since 16.1 returns at its first yield; the OnDestroy
+        // event above is queued ahead of it and still runs. NOT COVERED: a recreation during
+        // boot, while `booted` is false and the boot thread may still be inside start(): #511.
+        if (booted) runtime.retire()
         // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
         // mapper is reachable from the runtime's frame callback (process-global
         // session), so without this every recreation would leak a complete view
