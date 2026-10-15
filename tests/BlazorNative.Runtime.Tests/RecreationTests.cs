@@ -138,6 +138,32 @@ public sealed class RecreationTests
     }
 
     [Fact]
+    public void AReplacingMount_SendsTheNewShellNoRemovalFrameForTheOldRoot()
+    {
+        // The old root's removal frame describes the OLD shell's views, which are gone with its
+        // Activity. Sent to the new shell, it removes nodes that shell never had; a navigation swap
+        // keeps its removal frame, because there the shell is the same.
+        Session s = Start(r => r.Mount<DemoMarker>());
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            int framesBefore;
+            lock (s.Frames) framesBefore = s.Frames.Count;
+            Assert.True(framesBefore > 0, "anchor: the first mount delivered no frame");
+            Assert.Equal(0, HostSession.TryMount("BnDemo")); // the recreated shell's mount
+
+            List<RenderFrame> after;
+            lock (s.Frames) after = s.Frames.Skip(framesBefore).ToList();
+            Assert.True(after.Count > 0, "the replacing mount delivered no frame at all");
+            Assert.True(after.All(f => !f.Patches.OfType<RemoveNodePatch>().Any()),
+                $"the replacing mount sent the new shell a removal of the old root's nodes; frames after it: "
+                + $"[{string.Join(" | ", after.Select(f => string.Join(",", f.Patches.Select(p => p.GetType().Name))))}]");
+            Assert.Contains(after[0].Patches, p => p is CreateNodePatch);
+        }
+        finally { End(s); }
+    }
+
+    [Fact]
     public void ASecondMount_StaysOnTheCurrentPage_WithItsHistory()
     {
         Session s = Start(r => r.Mount<DemoMarker>());

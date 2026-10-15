@@ -258,6 +258,21 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="RunAfterDispatch"/> instead (the navigation swap does).</summary>
     public void Unmount(int componentId) => OnRenderThread(() => RemoveRootComponent(componentId));
 
+    /// <summary>17.3 (#425): disposes a root the SHELL has replaced, a recreated Activity's old
+    /// page, without delivering the disposal batch. Its RemoveNode patches describe the old
+    /// shell's views, which are gone with that shell; sent to the new shell they would remove
+    /// nodes it never had. The renderer's own tree is still updated. A navigation swap keeps
+    /// <see cref="Unmount"/>, because there the shell is the same one.</summary>
+    internal void UnmountReplacedRoot(int componentId) => OnRenderThread(() =>
+    {
+        _dropDeliveryOfReplacedRoot = true;
+        try { RemoveRootComponent(componentId); }
+        finally { _dropDeliveryOfReplacedRoot = false; }
+    });
+
+    /// <summary>Set only while <see cref="UnmountReplacedRoot"/> runs. Render thread only.</summary>
+    private bool _dropDeliveryOfReplacedRoot;
+
     // ── Post-dispatch deferral (Phase 3.5, scoped per dispatch in 16.1) ──────
     //
     // Blazor's Renderer.DispatchEventAsync keeps its batch open across the
@@ -483,6 +498,9 @@ public sealed class NativeRenderer : BlazorRenderer
             // already done, so GetResult() rethrows into the catch below; a
             // genuinely async subscriber gets a fault continuation so its
             // throw is still routed, never dropped.
+            if (_dropDeliveryOfReplacedRoot)
+                return Task.CompletedTask; // 17.3: the replaced root's shell is gone; see UnmountReplacedRoot
+
             var framesTask = _frames.InvokeAsync(frame, default);
             if (framesTask.IsCompleted)
                 framesTask.GetAwaiter().GetResult();

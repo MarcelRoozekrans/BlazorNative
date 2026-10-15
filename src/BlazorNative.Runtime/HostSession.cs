@@ -494,7 +494,8 @@ internal static unsafe class HostSession
                 // its page re-renders nothing: Blazor drops a render request for a disposed
                 // component. Before 17.3 the old root stayed alive and its late frame reached
                 // the recreated Activity.
-                renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(() => UnmountAndMount(effective, renderer)))
+                renderer.Dispatcher.InvokeAsync(() => renderer.RunAfterDispatch(
+                        () => UnmountAndMount(effective, renderer, replacedByTheShell: true)))
                     .GetAwaiter().GetResult();
             }
             else
@@ -572,7 +573,7 @@ internal static unsafe class HostSession
 
     /// <summary>The body of the swap unit: unmounts the tracked current root, then
     /// mounts <paramref name="name"/>. Both emit frames. Throws on failure.</summary>
-    private static void UnmountAndMount(string name, NativeRenderer renderer)
+    private static void UnmountAndMount(string name, NativeRenderer renderer, bool replacedByTheShell = false)
     {
         int current = Volatile.Read(ref s_currentRootComponentId);
         if (current >= 0)
@@ -586,7 +587,10 @@ internal static unsafe class HostSession
             // The fault itself still surfaces (thrown here → rc 2 on the
             // deferred path), and the next swap can proceed to a mount.
             Volatile.Write(ref s_currentRootComponentId, -1);
-            renderer.Unmount(current);
+            if (replacedByTheShell)
+                renderer.UnmountReplacedRoot(current); // 17.3: no removal frame for a shell that is gone
+            else
+                renderer.Unmount(current);
         }
         MountRoot(name, renderer);
     }
