@@ -32,6 +32,7 @@ import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -268,12 +269,63 @@ class AndroidShellBridge(
         Thread(r, "BlazorNative-Camera").apply { isDaemon = true }
     }
 
+    /** Phase 17.2 (#440): THE BEGIN CONTRACT. hostCallBegin records the request and returns at
+     * once; the outcome arrives later through host_call_complete. Biometrics and secure storage
+     * used to do their BiometricManager and AndroidKeyStore work inside the begin, on the
+     * caller's thread, which is .NET's render thread. Each handler now owns a serial executor,
+     * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests START in
+     * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
+     * An auth-bound request frees its executor while its prompt is up, so its after-auth work
+     * runs when the prompt answers, behind whatever was queued meanwhile; that was already so
+     * when the work ran inline, and is #506's question. Daemon,
+     * so neither blocks process exit. */
+    private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
+    }
+    private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
+    }
+
+    /** 17.2: the secure-storage KeyStore work after a biometric prompt. The prompt answers on
+     * main; this sends the work back to the secure-storage executor, so none of it runs on main.
+     * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
+     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed. */
+    private fun afterAuth(requestId: Long, failure: String, work: () -> Unit) {
+        secureStorageExecutor.execute {
+            try {
+                work()
+            } catch (t: Throwable) {
+                onError("$failure (request $requestId)", t)
+                completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+            }
+        }
+    }
+
+    /** Runs one biometrics or secure-storage job on its executor. A throw is DATA, never a
+     * hang: it is reported to onError and the request completes with [errorStatus]. If the job
+     * had already completed the request, the second completion gets rc 1, which the completer
+     * treats as benign. */
+    private fun runJob(requestId: Long, errorStatus: Int, job: () -> Unit) {
+        try {
+            testGateForWork()
+            job()
+        } catch (t: Throwable) {
+            onError("host call $requestId failed on its executor", t)
+            completeHostCall(requestId, errorStatus, null)
+        }
+    }
+
     override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
         when (op) {
             HostCallOp.GEOLOCATION -> handleGeolocation(requestId, argsJson)
             HostCallOp.NOTIFICATIONS -> handleNotifications(requestId, argsJson)
-            HostCallOp.BIOMETRICS -> handleBiometrics(requestId, argsJson)
-            HostCallOp.SECURE_STORAGE -> handleSecureStorage(requestId, argsJson)
+            // 17.2 (#440): enqueue and return; the work runs on the handler's own executor.
+            HostCallOp.BIOMETRICS -> biometricsExecutor.execute {
+                runJob(requestId, BiometricStatus.ERROR) { handleBiometrics(requestId, argsJson) }
+            }
+            HostCallOp.SECURE_STORAGE -> secureStorageExecutor.execute {
+                runJob(requestId, SecureStorageStatus.ERROR) { handleSecureStorage(requestId, argsJson) }
+            }
             HostCallOp.CAMERA -> handleCamera(requestId, argsJson)
             // HostCallOp.FAULT_NOTICE (Phase 16.1) has no arm here ON PURPOSE: the shared
             // BridgeRegistrar answers it before any ShellBridgeHandlers sees it, and routes
@@ -620,8 +672,33 @@ class AndroidShellBridge(
      * 0 = the .NET continuation was found and resolved (proves recreation survival),
      * 1 = unknown/already-completed id (benign). */
     private fun completeHostCall(requestId: Long, status: Int, payload: Map<String, String>?) {
+        // 17.2 test seam: when set, the test owns the completion and the thread it ran on, and
+        // the request ids it begins were never issued by .NET, so nothing is sent on.
+        completeHookForTest?.let { hook ->
+            hook(requestId, status, payload, Thread.currentThread().name)
+            return
+        }
         val rc = BridgeHostCallCompleter.complete(requestId, status, payload)
         lastHostCallCompleteRcForTest = rc
+    }
+
+    /** 17.2 test seam: runs at the start of biometrics and secure-storage work. Signals
+     * [gateReachedForTest], waits on [workGateForTest], then calls [jobFaultForTest]. All three
+     * are null in production, so this does nothing there. */
+    private fun testGateForWork() {
+        gateReachedForTest?.countDown()
+        workGateForTest?.await(30, java.util.concurrent.TimeUnit.SECONDS)
+        jobFaultForTest?.invoke()
+    }
+
+    /** 17.2 test seam: waits, bounded, until the biometrics and secure-storage work queued so far
+     * has run. Each executor is serial, so a latch queued behind the work is a barrier. */
+    internal fun drainForTest(timeoutMs: Long = 5_000) {
+        for (executor in listOf(biometricsExecutor, secureStorageExecutor)) {
+            val done = java.util.concurrent.CountDownLatch(1)
+            executor.execute { done.countDown() }
+            done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
     }
 
     // ── Biometrics + secure storage (Phase 9.2 — the SECOND reuse of the 9.0 ABI) ─
@@ -763,13 +840,10 @@ class AndroidShellBridge(
             reason = "Confirm to store a protected secret",
             crypto = BiometricPrompt.CryptoObject(cipher),
             onAuthenticated = { result ->
-                try {
+                afterAuth(requestId, "secure set('$key', auth) encrypt failed after auth") {
                     val c = result?.cryptoObject?.cipher ?: cipher
                     storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
                     completeHostCall(requestId, SecureStorageStatus.OK, null)
-                } catch (t: Throwable) {
-                    onError("secure set('$key', auth) encrypt failed after auth (request $requestId)", t)
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
             },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
@@ -823,15 +897,12 @@ class AndroidShellBridge(
             reason = reason,
             crypto = BiometricPrompt.CryptoObject(cipher),
             onAuthenticated = { result ->
-                try {
+                afterAuth(requestId, "secure getWithAuth('$key') decrypt failed after auth") {
                     // The OS-unlocked cipher from the CryptoObject is the ONLY one that
                     // can decrypt — use it, never a fresh unbound cipher.
                     val c = result?.cryptoObject?.cipher ?: cipher
                     val plain = String(c.doFinal(blob.ct), Charsets.UTF_8)
                     completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
-                } catch (t: Throwable) {
-                    onError("secure getWithAuth('$key') decrypt failed after auth (request $requestId)", t)
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
             },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
@@ -1697,6 +1768,25 @@ class AndroidShellBridge(
          * CryptoObject binding (hasCryptoObject) and denial-as-data no-hang. Null in
          * production; reset in the test's finally so it never leaks across tests. */
         @Volatile @JvmStatic var biometricGateHook: ((BiometricGate) -> Unit)? = null
+
+        /** 17.2 test seams (instrumented AndroidHostCallContractTest), null in production and
+         * reset by [resetHostCallContractForTest]. [completeHookForTest] takes every host-call
+         * completion with the thread it ran on, instead of sending it to .NET.
+         * [gateReachedForTest] counts down, and [workGateForTest] holds, the start of each
+         * biometrics or secure-storage job; [jobFaultForTest] makes that job throw. */
+        @VisibleForTesting @Volatile @JvmStatic internal var completeHookForTest:
+            ((requestId: Long, status: Int, payload: Map<String, String>?, threadName: String) -> Unit)? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var workGateForTest: java.util.concurrent.CountDownLatch? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var jobFaultForTest: (() -> Unit)? = null
+
+        @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
+            completeHookForTest = null
+            workGateForTest = null
+            gateReachedForTest = null
+            jobFaultForTest = null
+            biometricGateHook = null
+        }
 
         /** Test seam (instrumented BnCameraAndroidTest / CameraCaptureAndroidTest): when non-null,
          * a `capture` hands the pending capture to this hook INSTEAD OF launching the real
