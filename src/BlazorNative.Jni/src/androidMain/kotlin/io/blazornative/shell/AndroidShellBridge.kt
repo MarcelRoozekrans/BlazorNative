@@ -268,12 +268,45 @@ class AndroidShellBridge(
         Thread(r, "BlazorNative-Camera").apply { isDaemon = true }
     }
 
+    /** Phase 17.2 (#440): THE BEGIN CONTRACT. hostCallBegin records the request and returns at
+     * once; the outcome arrives later through host_call_complete. Biometrics and secure storage
+     * used to do their BiometricManager and AndroidKeyStore work inside the begin, on the
+     * caller's thread, which is .NET's render thread. Each handler now owns a serial executor,
+     * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests keep their
+     * order, a set then a get of one key included, and so [drainForTest] is a barrier. Daemon,
+     * so neither blocks process exit. */
+    private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
+    }
+    private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
+    }
+
+    /** Runs one biometrics or secure-storage job on its executor. A throw is DATA, never a
+     * hang: it is reported to onError and the request completes with [errorStatus]. If the job
+     * had already completed the request, the second completion gets rc 1, which the completer
+     * treats as benign. */
+    private fun runJob(requestId: Long, errorStatus: Int, job: () -> Unit) {
+        try {
+            testGateForWork()
+            job()
+        } catch (t: Throwable) {
+            onError("host call $requestId failed on its executor", t)
+            completeHostCall(requestId, errorStatus, null)
+        }
+    }
+
     override fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
         when (op) {
             HostCallOp.GEOLOCATION -> handleGeolocation(requestId, argsJson)
             HostCallOp.NOTIFICATIONS -> handleNotifications(requestId, argsJson)
-            HostCallOp.BIOMETRICS -> handleBiometrics(requestId, argsJson)
-            HostCallOp.SECURE_STORAGE -> handleSecureStorage(requestId, argsJson)
+            // 17.2 (#440): enqueue and return; the work runs on the handler's own executor.
+            HostCallOp.BIOMETRICS -> biometricsExecutor.execute {
+                runJob(requestId, BiometricStatus.ERROR) { handleBiometrics(requestId, argsJson) }
+            }
+            HostCallOp.SECURE_STORAGE -> secureStorageExecutor.execute {
+                runJob(requestId, SecureStorageStatus.ERROR) { handleSecureStorage(requestId, argsJson) }
+            }
             HostCallOp.CAMERA -> handleCamera(requestId, argsJson)
             // HostCallOp.FAULT_NOTICE (Phase 16.1) has no arm here ON PURPOSE: the shared
             // BridgeRegistrar answers it before any ShellBridgeHandlers sees it, and routes
@@ -639,9 +672,15 @@ class AndroidShellBridge(
         jobFaultForTest?.invoke()
     }
 
-    /** 17.2 test seam: waits until the biometrics and secure-storage work queued so far has run.
-     * A no-op until that work has its own executors. */
-    internal fun drainForTest(timeoutMs: Long = 5_000) {}
+    /** 17.2 test seam: waits, bounded, until the biometrics and secure-storage work queued so far
+     * has run. Each executor is serial, so a latch queued behind the work is a barrier. */
+    internal fun drainForTest(timeoutMs: Long = 5_000) {
+        for (executor in listOf(biometricsExecutor, secureStorageExecutor)) {
+            val done = java.util.concurrent.CountDownLatch(1)
+            executor.execute { done.countDown() }
+            done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+    }
 
     // ── Biometrics + secure storage (Phase 9.2 — the SECOND reuse of the 9.0 ABI) ─
     //
@@ -694,7 +733,6 @@ class AndroidShellBridge(
      * prompts — the geolocation `mode:check` sibling); action=authenticate shows the OS
      * BiometricPrompt (no CryptoObject) and returns a BiometricStatus. */
     private fun handleBiometrics(requestId: Long, argsJson: String) {
-        testGateForWork()
         val args = FlatJson.parse(argsJson)
         when (val action = args["action"] ?: "authenticate") {
             "check" -> completeHostCall(requestId, canAuthenticateStatus(), null)
@@ -729,7 +767,6 @@ class AndroidShellBridge(
      * [SecureOutcome] and complete inline; the auth arms (auth-bound set, getWithAuth of
      * an auth item) suspend behind a BiometricPrompt and complete from its callback. */
     private fun handleSecureStorage(requestId: Long, argsJson: String) {
-        testGateForWork()
         val args = FlatJson.parse(argsJson)
         val key = args["key"].orEmpty()
         when (val action = args["action"] ?: "get") {
@@ -783,7 +820,9 @@ class AndroidShellBridge(
         runBiometricGate(
             reason = "Confirm to store a protected secret",
             crypto = BiometricPrompt.CryptoObject(cipher),
-            onAuthenticated = { result ->
+            // 17.2: the prompt answers on main; the KeyStore work after it goes back to this
+            // handler's executor, so none of it runs on main.
+            onAuthenticated = { result -> secureStorageExecutor.execute {
                 try {
                     val c = result?.cryptoObject?.cipher ?: cipher
                     storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
@@ -792,7 +831,7 @@ class AndroidShellBridge(
                     onError("secure set('$key', auth) encrypt failed after auth (request $requestId)", t)
                     completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
-            },
+            } },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
         )
     }
@@ -843,7 +882,8 @@ class AndroidShellBridge(
         runBiometricGate(
             reason = reason,
             crypto = BiometricPrompt.CryptoObject(cipher),
-            onAuthenticated = { result ->
+            // 17.2: the decrypt after the prompt runs on this handler's executor, never on main.
+            onAuthenticated = { result -> secureStorageExecutor.execute {
                 try {
                     // The OS-unlocked cipher from the CryptoObject is the ONLY one that
                     // can decrypt — use it, never a fresh unbound cipher.
@@ -854,7 +894,7 @@ class AndroidShellBridge(
                     onError("secure getWithAuth('$key') decrypt failed after auth (request $requestId)", t)
                     completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
-            },
+            } },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
         )
     }

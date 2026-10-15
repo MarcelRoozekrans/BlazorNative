@@ -113,6 +113,10 @@ interface ShellBridgeHandlers {
     // instead of the id leaking pending forever. The production Android host
     // (AndroidShellBridge) overrides it with the real geolocation flow.
     //
+    // Phase 17.2 (#440): AndroidShellBridge's biometrics and secure storage honour the
+    // return-quickly rule through their own serial executors; before 17.2 their KeyStore
+    // and BiometricManager work ran inside this call, on the caller's thread.
+    //
     // Phase 16.1: [HostCallOp.FAULT_NOTICE] never reaches this method. BridgeRegistrar
     // answers it itself, so every host, including a test host, routes it to onError.
     fun hostCallBegin(requestId: Long, op: Int, argsJson: String) {
