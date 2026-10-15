@@ -3812,6 +3812,7 @@ mirroring iOS 16.4.
 **Surface:** Backend
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-15-phase-17.2-design.md`](../superpowers/specs/2026-10-15-phase-17.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-15-phase-17.2-android-host-calls.md`](../superpowers/plans/2026-10-15-phase-17.2-android-host-calls.md)
 
 #### Phase 17.3: Activity recreation (#425) [status: pending]
 **Goal:** A recreated Activity retires the old runtime and starts a fresh one. It sees no frame from
