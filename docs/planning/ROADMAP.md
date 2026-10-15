@@ -3806,11 +3806,12 @@ scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7'
 **Record:** [`docs/plans/2026-10-14-phase-17.1-record.md`](../plans/2026-10-14-phase-17.1-record.md)
 **Completed:** 2026-10-15 · [PR #503](https://github.com/MarcelRoozekrans/BlazorNative/pull/503), released in 0.20.0 with a BREAKING note. A fault that a dispatch's own code raises is that dispatch's, even inline inside another dispatch's window. Capture and the begun-call mark both check the flowing scope; code with no dispatch flow stays the window's; a finished dispatch's fault is logged, in strict mode too. Every .NET and JVM anchor #494 listed has a recorded red, and the child-begin claim is pinned. 23 recorded mutations. .NET 1316 → 1323, Android 233, iOS 288. #464 and #494 closed; #500 filed.
 
-#### Phase 17.2: Android host-call contract (#440) [status: pending]
+#### Phase 17.2: Android host-call contract (#440) [status: active]
 **Goal:** Android's biometrics and KeyStore work leaves `hostCallBegin` for a background executor,
 mirroring iOS 16.4.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-15-phase-17.2-design.md`](../superpowers/specs/2026-10-15-phase-17.2-design.md)
 
 #### Phase 17.3: Activity recreation (#425) [status: pending]
 **Goal:** A recreated Activity retires the old runtime and starts a fresh one. It sees no frame from
