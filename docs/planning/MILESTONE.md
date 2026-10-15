@@ -81,7 +81,7 @@ features.** The user-visible outcomes:
 ## Phases
 
 1. Phase 17.1 — fault attribution (#464, #494) [complete] — a fault is its own dispatch's via the flowing scope; strict-mode loss found by review and fixed; all #494 anchors redded; 0.20.0 BREAKING; #500 filed (#503)
-2. Phase 17.2 — Android host-call contract (#440) [active]
+2. Phase 17.2 — Android host-call contract (#440) [complete] — one serial executor per handler, after-auth work off main, 5 pins, Android 233 → 238; #506 filed (#507)
 3. Phase 17.3 — Activity recreation (#425) [pending]
 4. Phase 17.4 — fault-path parity (#426, #435) [pending]
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [pending]
