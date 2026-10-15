@@ -620,9 +620,28 @@ class AndroidShellBridge(
      * 0 = the .NET continuation was found and resolved (proves recreation survival),
      * 1 = unknown/already-completed id (benign). */
     private fun completeHostCall(requestId: Long, status: Int, payload: Map<String, String>?) {
+        // 17.2 test seam: when set, the test owns the completion and the thread it ran on, and
+        // the request ids it begins were never issued by .NET, so nothing is sent on.
+        completeHookForTest?.let { hook ->
+            hook(requestId, status, payload, Thread.currentThread().name)
+            return
+        }
         val rc = BridgeHostCallCompleter.complete(requestId, status, payload)
         lastHostCallCompleteRcForTest = rc
     }
+
+    /** 17.2 test seam: runs at the start of biometrics and secure-storage work. Signals
+     * [gateReachedForTest], waits on [workGateForTest], then calls [jobFaultForTest]. All three
+     * are null in production, so this does nothing there. */
+    private fun testGateForWork() {
+        gateReachedForTest?.countDown()
+        workGateForTest?.await(30, java.util.concurrent.TimeUnit.SECONDS)
+        jobFaultForTest?.invoke()
+    }
+
+    /** 17.2 test seam: waits until the biometrics and secure-storage work queued so far has run.
+     * A no-op until that work has its own executors. */
+    internal fun drainForTest(timeoutMs: Long = 5_000) {}
 
     // ── Biometrics + secure storage (Phase 9.2 — the SECOND reuse of the 9.0 ABI) ─
     //
@@ -675,6 +694,7 @@ class AndroidShellBridge(
      * prompts — the geolocation `mode:check` sibling); action=authenticate shows the OS
      * BiometricPrompt (no CryptoObject) and returns a BiometricStatus. */
     private fun handleBiometrics(requestId: Long, argsJson: String) {
+        testGateForWork()
         val args = FlatJson.parse(argsJson)
         when (val action = args["action"] ?: "authenticate") {
             "check" -> completeHostCall(requestId, canAuthenticateStatus(), null)
@@ -709,6 +729,7 @@ class AndroidShellBridge(
      * [SecureOutcome] and complete inline; the auth arms (auth-bound set, getWithAuth of
      * an auth item) suspend behind a BiometricPrompt and complete from its callback. */
     private fun handleSecureStorage(requestId: Long, argsJson: String) {
+        testGateForWork()
         val args = FlatJson.parse(argsJson)
         val key = args["key"].orEmpty()
         when (val action = args["action"] ?: "get") {
@@ -1697,6 +1718,25 @@ class AndroidShellBridge(
          * CryptoObject binding (hasCryptoObject) and denial-as-data no-hang. Null in
          * production; reset in the test's finally so it never leaks across tests. */
         @Volatile @JvmStatic var biometricGateHook: ((BiometricGate) -> Unit)? = null
+
+        /** 17.2 test seams (instrumented AndroidHostCallContractTest), null in production and
+         * reset by [resetHostCallContractForTest]. [completeHookForTest] takes every host-call
+         * completion with the thread it ran on, instead of sending it to .NET.
+         * [gateReachedForTest] counts down, and [workGateForTest] holds, the start of each
+         * biometrics or secure-storage job; [jobFaultForTest] makes that job throw. */
+        @Volatile @JvmStatic var completeHookForTest:
+            ((requestId: Long, status: Int, payload: Map<String, String>?, threadName: String) -> Unit)? = null
+        @Volatile @JvmStatic var workGateForTest: java.util.concurrent.CountDownLatch? = null
+        @Volatile @JvmStatic var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
+        @Volatile @JvmStatic var jobFaultForTest: (() -> Unit)? = null
+
+        @JvmStatic fun resetHostCallContractForTest() {
+            completeHookForTest = null
+            workGateForTest = null
+            gateReachedForTest = null
+            jobFaultForTest = null
+            biometricGateHook = null
+        }
 
         /** Test seam (instrumented BnCameraAndroidTest / CameraCaptureAndroidTest): when non-null,
          * a `capture` hands the pending capture to this hook INSTEAD OF launching the real

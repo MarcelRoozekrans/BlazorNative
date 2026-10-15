@@ -267,7 +267,7 @@ private object BnSecureKeys {
 
 /** Shared launch/poll/tap harness (the NotifHarness house style) + the lock-screen PIN
  * helpers the keystore tests need. */
-private object SecureHarness {
+internal object SecureHarness {
 
     fun launchDemo(): ActivityScenario<MainActivity> {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
