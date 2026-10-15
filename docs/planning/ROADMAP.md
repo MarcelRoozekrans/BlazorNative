@@ -3825,6 +3825,7 @@ decision: the session generation rested on a premise the code does not match.*
 **Surface:** Backend
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-15-phase-17.3-design.md`](../superpowers/specs/2026-10-15-phase-17.3-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-15-phase-17.3-activity-recreation.md`](../superpowers/plans/2026-10-15-phase-17.3-activity-recreation.md)
 
 #### Phase 17.4: Fault-path parity (#426, #435) [status: pending]
 **Goal:** Android redacts the FaultNotice message the way iOS does. The slow-handler warning names
