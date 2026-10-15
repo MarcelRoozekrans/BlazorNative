@@ -32,6 +32,7 @@ import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -272,14 +273,32 @@ class AndroidShellBridge(
      * once; the outcome arrives later through host_call_complete. Biometrics and secure storage
      * used to do their BiometricManager and AndroidKeyStore work inside the begin, on the
      * caller's thread, which is .NET's render thread. Each handler now owns a serial executor,
-     * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests keep their
-     * order, a set then a get of one key included, and so [drainForTest] is a barrier. Daemon,
+     * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests START in
+     * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
+     * An auth-bound request frees its executor while its prompt is up, so its after-auth work
+     * runs when the prompt answers, behind whatever was queued meanwhile; that was already so
+     * when the work ran inline, and is #506's question. Daemon,
      * so neither blocks process exit. */
     private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
     }
     private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
+    }
+
+    /** 17.2: the secure-storage KeyStore work after a biometric prompt. The prompt answers on
+     * main; this sends the work back to the secure-storage executor, so none of it runs on main.
+     * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
+     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed. */
+    private fun afterAuth(requestId: Long, failure: String, work: () -> Unit) {
+        secureStorageExecutor.execute {
+            try {
+                work()
+            } catch (t: Throwable) {
+                onError("$failure (request $requestId)", t)
+                completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+            }
+        }
     }
 
     /** Runs one biometrics or secure-storage job on its executor. A throw is DATA, never a
@@ -820,18 +839,13 @@ class AndroidShellBridge(
         runBiometricGate(
             reason = "Confirm to store a protected secret",
             crypto = BiometricPrompt.CryptoObject(cipher),
-            // 17.2: the prompt answers on main; the KeyStore work after it goes back to this
-            // handler's executor, so none of it runs on main.
-            onAuthenticated = { result -> secureStorageExecutor.execute {
-                try {
+            onAuthenticated = { result ->
+                afterAuth(requestId, "secure set('$key', auth) encrypt failed after auth") {
                     val c = result?.cryptoObject?.cipher ?: cipher
                     storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
                     completeHostCall(requestId, SecureStorageStatus.OK, null)
-                } catch (t: Throwable) {
-                    onError("secure set('$key', auth) encrypt failed after auth (request $requestId)", t)
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
-            } },
+            },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
         )
     }
@@ -882,19 +896,15 @@ class AndroidShellBridge(
         runBiometricGate(
             reason = reason,
             crypto = BiometricPrompt.CryptoObject(cipher),
-            // 17.2: the decrypt after the prompt runs on this handler's executor, never on main.
-            onAuthenticated = { result -> secureStorageExecutor.execute {
-                try {
+            onAuthenticated = { result ->
+                afterAuth(requestId, "secure getWithAuth('$key') decrypt failed after auth") {
                     // The OS-unlocked cipher from the CryptoObject is the ONLY one that
                     // can decrypt — use it, never a fresh unbound cipher.
                     val c = result?.cryptoObject?.cipher ?: cipher
                     val plain = String(c.doFinal(blob.ct), Charsets.UTF_8)
                     completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
-                } catch (t: Throwable) {
-                    onError("secure getWithAuth('$key') decrypt failed after auth (request $requestId)", t)
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
                 }
-            } },
+            },
             onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
         )
     }
@@ -1764,13 +1774,13 @@ class AndroidShellBridge(
          * completion with the thread it ran on, instead of sending it to .NET.
          * [gateReachedForTest] counts down, and [workGateForTest] holds, the start of each
          * biometrics or secure-storage job; [jobFaultForTest] makes that job throw. */
-        @Volatile @JvmStatic var completeHookForTest:
+        @VisibleForTesting @Volatile @JvmStatic internal var completeHookForTest:
             ((requestId: Long, status: Int, payload: Map<String, String>?, threadName: String) -> Unit)? = null
-        @Volatile @JvmStatic var workGateForTest: java.util.concurrent.CountDownLatch? = null
-        @Volatile @JvmStatic var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
-        @Volatile @JvmStatic var jobFaultForTest: (() -> Unit)? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var workGateForTest: java.util.concurrent.CountDownLatch? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
+        @VisibleForTesting @Volatile @JvmStatic internal var jobFaultForTest: (() -> Unit)? = null
 
-        @JvmStatic fun resetHostCallContractForTest() {
+        @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
             completeHookForTest = null
             workGateForTest = null
             gateReachedForTest = null

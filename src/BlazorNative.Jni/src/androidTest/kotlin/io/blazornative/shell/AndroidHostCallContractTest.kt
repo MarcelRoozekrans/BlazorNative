@@ -33,6 +33,10 @@ import java.util.concurrent.TimeUnit
  *   - that an after-auth decrypt SUCCEEDS: the hook's succeed() passes no AuthenticationResult,
  *     and the emulator's key is per-use auth-bound, so the decrypt throws and completes
  *     AuthFailed. Pin 5 proves only WHERE the after-auth work runs;
+ *   - the auth-bound SET's after-auth path on its own: it shares AndroidShellBridge.afterAuth
+ *     with getWithAuth, which pin 5 drives, so one hop is pinned for both. The set itself cannot
+ *     reach its prompt on the CI emulator, since provisioning its key needs an enrolled biometric;
+ *   - the order of an auth-bound request's after-auth work against later requests, #506;
  *   - geolocation and notifications, whose begins #440 does not name;
  *   - the iOS twin: BnBiometricsTests and BnSecureStorageTests pin it since 16.4.
  */
