@@ -323,6 +323,20 @@ public sealed class NativeNavigationManager : INavigationManager
     /// NOT raise RouteChanged — mounting is not a navigation.</summary>
     internal void NotifyMounted(string route) => _currentRoute = route;
 
+    /// <summary>17.3 (#425): before a REPLACING mount of the default page, ask the shell which
+    /// page it wants, through the same CurrentRoute query the first mount uses. A recreated
+    /// shell (a rotated Activity) restores the route the session is on, so nothing changes: the
+    /// page and its back stack stay. A fresh shell in the same process starts at its own route,
+    /// so that route becomes current and the earlier shell's back stack is dropped.</summary>
+    internal void AdoptTheShellsRoute()
+    {
+        string shells = QueryStartupRoute();
+        if (shells == CurrentRoute)
+            return;
+        _previousRoute = null;
+        _currentRoute = shells;
+    }
+
     /// <summary>17.3 (#425): a disposed page's continuation still runs after its await; only its
     /// re-render is dropped. A navigation from such code must not move the recreated shell's new
     /// root, so it is dropped and logged.</summary>

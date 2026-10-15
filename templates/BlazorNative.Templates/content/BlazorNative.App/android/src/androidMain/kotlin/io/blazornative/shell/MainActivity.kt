@@ -84,6 +84,9 @@ class MainActivity : FragmentActivity() {
          */
         const val EXTRA_COMPONENT = "io.blazornative.shell.EXTRA_COMPONENT"
 
+        /** 17.3 (#425): the saved-state key for the route a recreated Activity restores. */
+        private const val STATE_ROUTE = "io.blazornative.shell.STATE_ROUTE"
+
         /** Phase 5.1 deep-link custom scheme (design §4): blazornative://<route>.
          * A custom scheme (no domain verification) is the simplest honest proof
          * of the launch-time deep-link mechanism; https App Links are later work. */
@@ -350,7 +353,11 @@ class MainActivity : FragmentActivity() {
         // Phase 3.1: the shell half of IMobileBridge. Passing the Activity is
         // safe — AndroidShellBridge captures applicationContext ONLY (the
         // process-lifetime retention contract on ShellBridgeHandlers).
-        val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: "/", onError = onError)
+        // 17.3 (#425): a recreated Activity restores the route it saved in onSaveInstanceState,
+        // so .NET's replacing mount keeps the page and its back stack; a fresh launch has no
+        // saved state and starts at "/" (or the deep link), and .NET resets the back stack.
+        val restoredRoute = savedInstanceState?.getString(STATE_ROUTE)
+        val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: restoredRoute ?: "/", onError = onError)
         shellBridge = bridge
 
         val routes = loadDeepLinkRoutes()
@@ -416,6 +423,12 @@ class MainActivity : FragmentActivity() {
     override fun onPause() {
         super.onPause()
         if (booted) runtime.dispatchHostEvent(BnHostEvent.OnPause)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 17.3 (#425): the route a recreation restores; see the bridge construction in onCreate.
+        shellBridge?.currentRoute()?.let { outState.putString(STATE_ROUTE, it) }
     }
 
     override fun onDestroy() {

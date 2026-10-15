@@ -476,7 +476,10 @@ internal static unsafe class HostSession
                 // The first mount: CurrentRoute lazily queries the host here (startup query);
                 // the table clamps it, so ResolveComponent cannot miss. 17.3 (#425): a
                 // REPLACING mount, a recreated Activity, resolves the route the session is
-                // already on, so the recreated shell stays on its page with its back stack.
+                // already on, so the recreated shell stays on its page with its back stack. A
+                // fresh shell in the same process starts at its own route instead.
+                if (replacing)
+                    nav.AdoptTheShellsRoute();
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 

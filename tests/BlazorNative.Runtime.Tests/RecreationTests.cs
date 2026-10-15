@@ -191,6 +191,34 @@ public sealed class RecreationTests
     }
 
     [Fact]
+    public void ASecondMount_ByAFreshShellAtTheRoot_ShowsTheRootAndResetsHistory()
+    {
+        // A NEW shell in the same process, not a recreated one: an Activity launched fresh, whose
+        // route is "/", while the session was left on /settings. The shell says which page it
+        // wants through CurrentRoute; a recreated shell restores its route, a fresh one starts at
+        // its own. So the mount shows the root, and the old page's back stack is not this shell's.
+        Session s = Start(r => r.Mount<DemoMarker>());
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            Nav().NavigateToAsync("/settings").AsTask().GetAwaiter().GetResult();
+            Assert.True(Nav().CanGoBack, "anchor: the session must have a back stack to reset");
+
+            FakeShellHost.Route = "/"; // the fresh shell's own route
+            int framesBefore;
+            lock (s.Frames) framesBefore = s.Frames.Count;
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            List<string> after = Texts(s, framesBefore);
+            Assert.True(after.Contains("demo-marker") && !after.Contains("settings-marker"),
+                $"a fresh shell at '/' was shown [{string.Join(", ", after)}]: it must start at its own route, not "
+                + "the page an earlier shell left the session on.");
+            Assert.False(Nav().CanGoBack, "a fresh shell inherited an earlier shell's back stack");
+            Assert.Equal("/", Nav().CurrentRoute);
+        }
+        finally { End(s); }
+    }
+
+    [Fact]
     public void ANavigationFromADisposedRootsContinuation_IsDropped()
     {
         Session s = Start(r => r.Mount<AwaitingProbe>());
