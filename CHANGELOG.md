@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.19.0...v0.20.0) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **17.1:** in #464's scenario the window dispatch now returns its own rc, and the continuation's fault arrives as its own dispatch's FaultNotice under its own handler id. It used to return rc 0 with the continuation's fault reported under the window's id, and the window's own synchronous fault was lost.
+
+### Bug Fixes
+
+* **17.1:** a fault from an inline continuation is its own dispatch's ([#503](https://github.com/MarcelRoozekrans/BlazorNative/issues/503)) ([00976fd](https://github.com/MarcelRoozekrans/BlazorNative/commit/00976fd7dd958f2d96a07efb491d320940745af2))
+* **17.2:** biometrics and secure storage leave hostCallBegin for their own executors on Android ([#507](https://github.com/MarcelRoozekrans/BlazorNative/issues/507)) ([31af87c](https://github.com/MarcelRoozekrans/BlazorNative/commit/31af87ceb51f3c8bf592be75f9d5960fde6c8983))
+* **17.3:** a recreated activity never shows the old page's frame ([#510](https://github.com/MarcelRoozekrans/BlazorNative/issues/510)) ([6aa6809](https://github.com/MarcelRoozekrans/BlazorNative/commit/6aa68096560fcef4321d7779dfa905e3411fdd4b))
+
 ## [0.19.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.18.0...v0.19.0) (2026-10-03)
 
 
