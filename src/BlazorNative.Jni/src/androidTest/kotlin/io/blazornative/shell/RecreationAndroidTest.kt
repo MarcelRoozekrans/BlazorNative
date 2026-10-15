@@ -97,6 +97,27 @@ class RecreationAndroidTest {
         }
     }
 
+    @Test
+    fun a_recreated_deep_linked_activity_stays_on_the_page_it_navigated_to() {
+        // A recreated Activity keeps its launch Intent, deep link included. The route it saved
+        // must win over that deep link, or rotating after navigating away resets it to the
+        // linked page and drops its back stack.
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        ActivityScenario.launch<MainActivity>(AndroidShellBridge.buildTapIntent(ctx, "/")).use { scenario ->
+            assertTrue("the deep-linked BnDemo never rendered within 60s", pollUntil(scenario, 60_000) { hasEditText(it) })
+            tapButton(scenario, "Settings →")
+            assertTrue("anchor: the swap to settings never completed within 10s",
+                pollUntil(scenario, 10_000) { settingsTitle(it) != null && !hasEditText(it) })
+
+            scenario.recreate()
+            assertTrue("the recreated deep-linked Activity went back to its linked page: its launch " +
+                "Intent's deep link outranked the route it saved",
+                pollUntil(scenario, 60_000) { settingsTitle(it) != null && !hasEditText(it) })
+            assertTrue("the recreated deep-linked Activity lost its back stack",
+                pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
+        }
+    }
+
     private fun launch(component: String? = null): ActivityScenario<MainActivity> {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         if (component != null) intent.putExtra(MainActivity.EXTRA_COMPONENT, component)

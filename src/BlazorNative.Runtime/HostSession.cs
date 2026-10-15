@@ -470,16 +470,18 @@ internal static unsafe class HostSession
 
             string effective = name;
             bool replacing = Volatile.Read(ref s_currentRootComponentId) >= 0;
+            // 17.3 (#425): a REPLACING mount comes from a new shell, so ask it which page it is
+            // on, whether it mounts the default page or one by name. A recreated Activity
+            // restores the route the session is on: its page and back stack stay. A fresh shell
+            // in the same process starts at its own route, and the earlier back stack is dropped.
+            if (replacing && Volatile.Read(ref s_navigation) is { } shellsNav)
+                shellsNav.AdoptTheShellsRoute();
             if (name == NativeNavigationManager.DefaultComponent
                 && Volatile.Read(ref s_navigation) is { } nav)
             {
                 // The first mount: CurrentRoute lazily queries the host here (startup query);
-                // the table clamps it, so ResolveComponent cannot miss. 17.3 (#425): a
-                // REPLACING mount, a recreated Activity, resolves the route the session is
-                // already on, so the recreated shell stays on its page with its back stack. A
-                // fresh shell in the same process starts at its own route instead.
-                if (replacing)
-                    nav.AdoptTheShellsRoute();
+                // the table clamps it, so ResolveComponent cannot miss. A replacing mount has
+                // just adopted the shell's route above.
                 effective = nav.ResolveComponent(nav.CurrentRoute);
             }
 

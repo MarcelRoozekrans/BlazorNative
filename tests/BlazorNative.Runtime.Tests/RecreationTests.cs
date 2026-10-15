@@ -219,6 +219,34 @@ public sealed class RecreationTests
     }
 
     [Fact]
+    public void ASecondMount_OfANamedPageByAFreshShell_ShowsItAndResetsHistory()
+    {
+        // The same fresh launch, but the shell mounts a page by NAME, as a launch Intent's
+        // EXTRA_COMPONENT or deep link does. The shell's route names that page. The session was
+        // left on "/" with a back stack, so the shell's route differs: it is a fresh shell, and
+        // the earlier shell's back stack is not its own.
+        Session s = Start(r => r.Mount<DemoMarker>());
+        try
+        {
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            Nav().NavigateToAsync("/settings").AsTask().GetAwaiter().GetResult();
+            Nav().NavigateToAsync("/").AsTask().GetAwaiter().GetResult();
+            Assert.True(Nav().CanGoBack, "anchor: the session must have a back stack to reset");
+
+            FakeShellHost.Route = "/settings"; // the fresh shell's own route, naming its page
+            int framesBefore;
+            lock (s.Frames) framesBefore = s.Frames.Count;
+            Assert.Equal(0, HostSession.TryMount("BnSettingsPage"));
+            List<string> after = Texts(s, framesBefore);
+            Assert.True(after.Contains("settings-marker"),
+                $"the named page was not shown [{string.Join(", ", after)}]");
+            Assert.False(Nav().CanGoBack, "a fresh shell's named mount inherited an earlier shell's back stack");
+            Assert.Equal("/settings", Nav().CurrentRoute);
+        }
+        finally { End(s); }
+    }
+
+    [Fact]
     public void ANavigationFromADisposedRootsContinuation_IsDropped()
     {
         Session s = Start(r => r.Mount<AwaitingProbe>());

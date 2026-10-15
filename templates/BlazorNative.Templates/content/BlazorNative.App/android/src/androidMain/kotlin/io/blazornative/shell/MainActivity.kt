@@ -342,8 +342,8 @@ class MainActivity : FragmentActivity() {
         // mount is still by NAME, per the design, but resolved shell-side so it
         // is robust to Activity recreation + the shared instrumented session
         // (see loadDeepLinkRoutes). PRECEDENCE: an explicit EXTRA_COMPONENT
-        // (test override) wins the mount over a deep link; the route seed still
-        // applies.
+        // (test override) wins the mount over a deep link, and since 17.3 it
+        // seeds its own route too; a recreated Activity's saved route wins both.
         val deepLinkRoute = parseDeepLinkRoute(intent)
         // #200: Info — narration, suppressed at the Release default (Warn) and
         // back at `Info` or higher. NOT deleted: the Phase 11.2 device runbook
@@ -353,15 +353,25 @@ class MainActivity : FragmentActivity() {
         // Phase 3.1: the shell half of IMobileBridge. Passing the Activity is
         // safe — AndroidShellBridge captures applicationContext ONLY (the
         // process-lifetime retention contract on ShellBridgeHandlers).
-        // 17.3 (#425): a recreated Activity restores the route it saved in onSaveInstanceState,
-        // so .NET's replacing mount keeps the page and its back stack; a fresh launch has no
-        // saved state and starts at "/" (or the deep link), and .NET resets the back stack.
+        // 17.3 (#425): the shell's route always names the page it mounts, because .NET compares
+        // it with the session's route on every mount after the first. The same route means a
+        // recreation: the page and its back stack stay. A different one means a fresh launch:
+        // .NET resets the back stack. So a recreated Activity restores the route it saved in
+        // onSaveInstanceState, ahead of its launch Intent's deep link, and mounts that route's
+        // page. An EXTRA_COMPONENT mount seeds that component's route, not the deep link's.
+        val routes = loadDeepLinkRoutes()
         val restoredRoute = savedInstanceState?.getString(STATE_ROUTE)
-        val bridge = AndroidShellBridge(this, initialRoute = deepLinkRoute ?: restoredRoute ?: "/", onError = onError)
+        val extraComponent = intent.getStringExtra(EXTRA_COMPONENT)
+        val extraRoute = extraComponent?.let { name -> routes.entries.firstOrNull { it.value == name }?.key }
+        val bridge = AndroidShellBridge(
+            this,
+            initialRoute = restoredRoute ?: extraRoute ?: deepLinkRoute ?: "/",
+            onError = onError,
+        )
         shellBridge = bridge
 
-        val routes = loadDeepLinkRoutes()
-        val componentName = intent.getStringExtra(EXTRA_COMPONENT)
+        val componentName = restoredRoute?.let { routes[it] }
+            ?: extraComponent
             ?: deepLinkRoute?.let { routes[it] }
             ?: routes["/"]
             ?: "BnStarterPage"
