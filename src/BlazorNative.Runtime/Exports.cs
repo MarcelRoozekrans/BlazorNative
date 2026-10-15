@@ -475,6 +475,10 @@ public static class Exports
     /// FaultNotice host-call op, never as an rc, whether the shell answers inside `hostCallBegin` or
     /// later. Frames from the synchronous part are delivered before the export returns; frames from a
     /// continuation are delivered later, from the render thread.
+    /// A fault belongs to the dispatch whose own code raised it, even when that code runs inline
+    /// inside another dispatch's synchronous part; if that dispatch has already finished, the fault is
+    /// only logged. Code that flows no dispatch, and a render or a post-dispatch action that any code
+    /// queues, belong to the dispatch whose window runs them.
     /// END rc-contract
     ///
     /// Return codes:
@@ -488,7 +492,9 @@ public static class Exports
     ///   2 = the synchronous part faulted before a host call or a fetch was begun
     ///       in it — the handler, the resulting re-render, frame delivery, or a navigation swap it
     ///       queued (anything routed to HandleException inside this dispatch's
-    ///       window; detail ex.ToString() on stderr — Kotlin logs loudly);
+    ///       window and raised by its own code or by code that flows no dispatch; since
+    ///       17.1 a fault another dispatch's inline continuation raises there is that
+    ///       dispatch's, never this rc; detail ex.ToString() on stderr — Kotlin logs loudly);
     ///   3 = malformed or NULL args, including a handlerId outside the int
     ///       range of the renderer's handler table.
     ///
@@ -890,8 +896,9 @@ public static class Exports
     /// 2 = the back swap faulted. Runs on the render thread and waits for its
     /// synchronous part: the swap's frames are delivered before this returns
     /// (RunAfterDispatch finds no open scope and runs at once). NavigateBackAsync
-    /// completes synchronously today; if it ever yields, this reports rc 0 and a
-    /// later fault is sent to the shell as a FaultNotice, the dispatch_event contract.
+    /// completes synchronously today. If it ever yields, or begins a host call or a fetch, and
+    /// faults after that, this reports rc 0 and the fault is sent to the shell as a FaultNotice,
+    /// the dispatch_event contract.
     /// Phase 16.2 (#346): every rc 1 also sends a BackUnhandled notice. The shell now
     /// dispatches back fire-and-forget and never reads this rc, so the notice is what
     /// tells it to hand the press to the platform's default back; without it a back at
@@ -952,8 +959,9 @@ public static class Exports
     /// unknown/empty route — the shell had a route the app does not know, benign) /
     /// 2 = the navigation swap faulted. Runs on the render thread and waits for its
     /// synchronous part: NavigateToAsync runs the swap inline, so the target page's
-    /// frames are delivered before this returns. If it ever yields, this reports rc 0
-    /// and a later fault is sent to the shell as a FaultNotice, the dispatch_event contract. An unknown
+    /// frames are delivered before this returns. If it ever yields, or begins a host call or a
+    /// fetch, and faults after that, this reports rc 0 and the fault is sent to the shell as a
+    /// FaultNotice, the dispatch_event contract. An unknown
     /// route surfaces as ArgumentException from NavigateToAsync and is mapped to
     /// rc 1 (not handled) rather than rc 2 (fault): a stale deep link is not a
     /// renderer fault, and a live session that cannot honour the route simply stays

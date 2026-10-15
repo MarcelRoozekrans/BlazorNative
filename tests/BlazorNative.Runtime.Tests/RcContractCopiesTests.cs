@@ -43,6 +43,9 @@ public sealed class RcContractCopiesTests
     private static string ContractIn(string relative, string? prefix, bool fenced)
     {
         string path = Path.Combine(BnRepo.Root(), relative);
+        Assert.True(File.Exists(path),
+            $"{relative}: this copy of the rc contract is gone. If it moved, re-point Copies at its new path; "
+            + "if it was deleted on purpose, remove it from Copies, since the pin otherwise compares nothing.");
         string[] lines = File.ReadAllLines(path);
         int[] begins = [.. lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("BEGIN rc-contract", StringComparison.Ordinal)).Select(x => x.i)];
         int[] ends = [.. lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("END rc-contract", StringComparison.Ordinal)).Select(x => x.i)];

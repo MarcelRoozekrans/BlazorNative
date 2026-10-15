@@ -27,7 +27,13 @@ namespace BlazorNative.Runtime.Tests;
 // The fault is driven through the real exports and the real FakeShellHost
 // hostCallBegin, so the notice is read back as the shell would receive it.
 //
-// DOES NOT COVER:
+// Later phases added sections below, each with its own limits:
+//   - 16.7 (#455): a fault after the handler BEGAN a host call or a fetch is a FaultNotice with
+//     rc 0, whether the shell answered inside hostCallBegin or later;
+//   - 17.1 (#464): a fault belongs to the dispatch whose own code raised it, even when that code
+//     is another dispatch's continuation running inline inside this dispatch's window.
+//
+// DOES NOT COVER, for the 16.1 facts:
 //   - what a shell DOES with the notice: FaultNoticeTest.kt pins that Kotlin's
 //     BridgeRegistrar hands it to BlazorNativeRuntime's onError, and
 //     BnFaultNoticeTests.swift the iOS arm;
@@ -393,13 +399,8 @@ public sealed class FaultNoticeTests
     //     synchronous fault after it stays rc 2. The contract does not promise this, but
     //     AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2 pins it,
     //     and with it the thread-bound choice: the 16.7 record's M4-after is its red under M4;
-    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline,
-    //     for example by completing a TaskCompletionSource that continuation awaits. Measured
-    //     on 2026-10-02, the 16.7 record's M4-explore: a call that continuation begins marks
-    //     THIS dispatch, because the mark is thread-bound, so this dispatch returns rc 0; the
-    //     continuation's fault is captured in this dispatch's window and sent under this
-    //     handler's id; and this dispatch's own synchronous fault is never reported. Not
-    //     pinned: that is the known 16.1 window-attribution defect, filed as #464;
+    //   - a continuation of ANOTHER dispatch that this handler's synchronous part runs inline.
+    //     That was #464; the 17.1 section pins it now;
     //   - a handler cancelled in its synchronous part. Measured on 2026-10-02: it returns rc 0
     //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
     //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
@@ -719,6 +720,9 @@ public sealed class FaultNoticeTests
                 + "and no notice would prove nothing.");
             Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            // Rule 7 limit, named in 17.1 from #494: no probe-side change can red this rc assertion,
+            // because turning the cancellation into a fault after the begun call is rc 0 too. The
+            // 16.8 re-audit's X2 reds the Assert.Empty below instead.
             Assert.True(rc == 0, $"rc was {rc}: a handler cancelled in its synchronous part after it began a host "
                 + "call must match a late cancellation: rc 0 and nothing sent.");
             lock (pending) Assert.True(pending.Count == 0, "nothing may still be running");
@@ -789,6 +793,30 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0()
+    {
+        // 17.1, from #494: the re-render is part of the handler's synchronous part and flows its
+        // scope, so a call a CHILD begins there marks the dispatch, and a render fault after it
+        // in the same synchronous part is a FaultNotice with rc 0. The mirror of the sibling-order
+        // fact above, and a guard on 17.1's flowing check in NoteShellCallBegun: a child's render
+        // must still mark.
+        var (rc, _, pending, previous) = DispatchProbe("child-begin-then-sibling-throw");
+        try
+        {
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                $"anchor: the child's begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
+            Assert.True(ShellCallProbe.ChildThrowSeq > ShellCallProbe.SiblingBeginSeq && ShellCallProbe.SiblingBeginSeq > 0,
+                $"anchor: the begin must come before the fault, but the child began at {ShellCallProbe.SiblingBeginSeq} "
+                + $"and the sibling threw at {ShellCallProbe.ChildThrowSeq}.");
+            Assert.True(rc == 0, $"rc was {rc}: the child's begun call marks the dispatch, so the later render fault "
+                + "is a FaultNotice with rc 0, not the dispatch's rc 2.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for the render fault after the begun call.");
+            Assert.Equal("child-after-begin", NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args)["message"]);
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void ANoticeDotNetSends_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
         var (rc, _, pending, previous) = DispatchProbe("notice-then-throw");
@@ -803,7 +831,12 @@ public sealed class FaultNoticeTests
                 $"anchor: the probe's FaultNotice was not begun; notices seen: [{string.Join(", ", messages)}]");
             Assert.True(rc == 2, $"rc was {rc}: a notice .NET sends is not a shell call the handler began, so a "
                 + "fault after it must stay rc 2.");
-            Assert.DoesNotContain("after-notice", messages);
+            // 17.1, from #494: read the notices again after the rc, with nothing pending. rc 2 and an
+            // empty pending list exclude every notice source, as in the control, so this check is
+            // immediate by construction; reading the list taken before the rc checked nothing.
+            lock (pending) Assert.True(pending.Count == 0, "nothing may still be running after a synchronous fault");
+            Assert.DoesNotContain("after-notice",
+                Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)["message"]));
         }
         finally { TearDown(pending, previous); }
     }
@@ -891,6 +924,270 @@ public sealed class FaultNoticeTests
         finally { TearDown(pending, previous); }
     }
 
+    // ── 17.1 (#464): a fault belongs to the dispatch whose own code raised it ──
+    //
+    // Dispatch A awaits a TaskCompletionSource the app made WITHOUT RunContinuationsAsynchronously.
+    // Dispatch B's handler completes it, so A's continuation runs inline inside B's synchronous
+    // part, on the render thread, inside B's window. Its execution context still flows A's scope,
+    // and that is what tells the two apart: a fault A's own code raises is A's, a late FaultNotice
+    // under A's handler id, and B keeps its own rc. A call A's continuation begins never marks B.
+    // Code that flows no dispatch scope is still the window's, and a fault from a dispatch that has
+    // already finished goes to the no-window path, never to the window. Each fact's anchor,
+    // InlineContinuationProbe.RanInsideB, proves the continuation really ran inside B's window.
+    //
+    // DOES NOT COVER:
+    //   - a RE-RENDER that A's continuation queues inside B's window, by StateHasChanged. Blazor
+    //     renders it in B's batch, under B's scope, so a render fault from it is B's. Render
+    //     faults belong to the batch that renders them; per-render attribution is #500;
+    //   - work A's continuation queues through RunAfterDispatch, a navigation for example. It
+    //     runs when B's window closes, and a fault in it is B's. Also #500;
+    //   - a flowing scope that another renderer owns: treated as no flow, so the window's. That
+    //     rests on reading HandleException; a second renderer in one process has no test here;
+    //   - a nested dispatch: B's own fire-and-forget continuation running inline inside a window C
+    //     opened while B's synchronous part was still open. Not built here; it rests on reading.
+
+    [Fact]
+    public void AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows()
+    {
+        var run = DispatchTwo("a-await-then-throw", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB,
+                "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(run.RcA == 0, $"A returned rc {run.RcA}; it suspended on the gate, so its synchronous part was clean.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: B's own synchronous part did not fault. A's fault was charged to "
+                + "B's window, which is #464.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice: A's fault was lost instead of reaching A as a late fault.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
+            Assert.Equal("a-late", args["message"]);
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AnInlineContinuationsFault_LeavesTheWindowsOwnFault_Rc2()
+    {
+        var run = DispatchTwo("a-await-then-throw", "b-complete-then-throw");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: B faulted in its own synchronous part after completing the gate, "
+                + "and that fault must be its rc 2, not lost behind A's.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's fault.");
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            var single = Assert.Single(notices);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), single["handlerId"]);
+            Assert.Equal("a-late", single["message"]);
+            Assert.DoesNotContain(notices, n => n["message"] == "b-own");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void ACallBegunByAnInlineContinuation_DoesNotMarkTheWindow()
+    {
+        var run = DispatchTwo("a-await-then-begin-and-throw", "b-complete-then-throw");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
+                "anchor: A's continuation never began its geolocation call.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: the call A's continuation began marked B, so B's own "
+                + "synchronous fault became rc 0. Only B's own synchronous part may mark B.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's fault.");
+            var args = NativeShellBridge.ParseFlatJsonObject(Assert.Single(Notices()).Args);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), args["handlerId"]);
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AFaultWithNoDispatchFlow_InsideAWindow_IsTheWindows()
+    {
+        var run = DispatchTwo("a-register-no-flow", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: the no-flow continuation did not run inside B's window.");
+            Assert.True(InlineContinuationProbe.SawNoFlow,
+                "anchor: the continuation was meant to flow no dispatch scope, but the renderer saw one.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: a fault from code that flows no dispatch is the window's, "
+                + "so nothing that is B's today becomes unreported.");
+            lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
+            Assert.Empty(Notices());
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows()
+    {
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+        try
+        {
+            var run = DispatchTwo("a-register-flowing", "b-complete");
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(run.RcA == 0, $"A returned rc {run.RcA}; it finished cleanly, so its scope is Done.");
+                Assert.True(run.RcB == 0, $"rc was {run.RcB}: A's code raised the fault after A finished. It is A's, and "
+                    + "A can no longer report it, so it is logged and never charged to B's window.");
+                lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
+                Assert.Empty(Notices());
+                lock (log)
+                {
+                    string line = Assert.Single(log, l => l.Contains("a-orphan", StringComparison.Ordinal));
+                    Assert.True(line.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal),
+                        $"the fault was logged, but not as a finished dispatch's fault inside another window: {line}");
+                }
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Sink = sink; }
+    }
+
+    [Fact]
+    public void AFinishedDispatchsFault_InsideAWindow_IsLoggedInStrictModeToo()
+    {
+        // From the 17.1 final review: in strict mode the no-window path rethrows, and inside B's
+        // window that throw lands in a Task nobody observes, so the fault vanished with no log.
+        // Strict mode exists to make faults loud; a finished dispatch's fault must still be logged.
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+        try
+        {
+            var run = DispatchTwo("a-register-flowing", "b-complete", strict: true);
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(run.RcB == 0, $"rc was {run.RcB}: a finished dispatch's fault is never charged to B's window.");
+                lock (log) Assert.True(log.Any(l => l.Contains("a-orphan", StringComparison.Ordinal)
+                        && l.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal)),
+                    "the finished dispatch's fault vanished in strict mode: nothing logged it, nothing reported it.");
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Sink = sink; }
+    }
+
+    /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
+    private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
+        DispatchTwo(string labelA, string labelB, bool strict = false)
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
+        NativeRenderer renderer = StartSession(strict, frames);
+        InlineContinuationProbe.Reset();
+        InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
+        renderer.Mount<InlineContinuationProbe>();
+        int a = HandlerFor(frames, "click", labelA);
+        int b = HandlerFor(frames, "click", labelB);
+        FakeShellHost.AutoCompleteHostCall = true;
+        int rcA = DispatchBounded(a, """{"name":"click"}""");
+        int rcB = DispatchBounded(b, """{"name":"click"}""");
+        return (rcA, rcB, a, b, pending, previous);
+    }
+
+    /// <summary>17.1 (#464): A's handlers wait on an app-made gate; B's handlers complete it inline.</summary>
+    private sealed class InlineContinuationProbe : ComponentBase
+    {
+        /// <summary>Made WITHOUT RunContinuationsAsynchronously, as the app code in #464 does.</summary>
+        public static TaskCompletionSource Gate = new();
+        private static volatile bool s_inB;
+        /// <summary>The anchor: a continuation of A ran while B's handler was completing the gate.</summary>
+        public static volatile bool RanInsideB;
+        /// <summary>The no-flow anchor: that continuation saw no execution context.</summary>
+        public static volatile bool SawNoFlow;
+
+        /// <summary>Reads the renderer's flowing scope for the no-flow anchor. DispatchTwo sets it.</summary>
+        public static Func<bool> FlowingScopeIsSet = () => true;
+        private static ExecutionContext? s_mountContext;
+
+        protected override void OnInitialized() => s_mountContext = ExecutionContext.Capture();
+
+        public static void Reset()
+        {
+            Gate = new TaskCompletionSource();
+            s_inB = false;
+            RanInsideB = false;
+            SawNoFlow = false;
+        }
+
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            Button(b, 0, "a-await-then-throw", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                throw new InvalidOperationException("a-late");
+            });
+            Button(b, 10, "a-await-then-begin-and-throw", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                throw new InvalidOperationException("a-late");
+            });
+            Button(b, 20, "a-register-no-flow", () =>
+            {
+                // Code that flows no dispatch scope: it runs in the execution context captured at
+                // mount, when no dispatch was open, not in whatever context completes the gate.
+                ExecutionContext mountContext = s_mountContext!;
+                _ = Gate.Task.ContinueWith(_ => ExecutionContext.Run(mountContext.CreateCopy(), _ =>
+                {
+                    RanInsideB = s_inB;
+                    SawNoFlow = !FlowingScopeIsSet();
+                    _ = DispatchExceptionAsync(new InvalidOperationException("no-flow"));
+                }, null), TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 30, "a-register-flowing", () =>
+            {
+                _ = Gate.Task.ContinueWith(_ =>
+                {
+                    RanInsideB = s_inB;
+                    _ = DispatchExceptionAsync(new InvalidOperationException("a-orphan"));
+                }, TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 40, "b-complete", () => CompleteGate());
+            Button(b, 50, "b-complete-then-throw", () =>
+            {
+                CompleteGate();
+                throw new InvalidOperationException("b-own");
+            });
+        }
+
+        private static void CompleteGate()
+        {
+            s_inB = true;
+            try { Gate.SetResult(); }
+            finally { s_inB = false; }
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Func<Task> onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+
+        private void Button(RenderTreeBuilder b, int seq, string label, Action onClick)
+        {
+            b.OpenElement(seq, "button");
+            b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
+            b.AddContent(seq + 2, label);
+            b.CloseElement();
+        }
+    }
+
     /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
     private sealed class ShellCallProbe : ComponentBase
     {
@@ -976,6 +1273,7 @@ public sealed class FaultNoticeTests
             });
             Button(b, 120, "child-throw-then-sibling-begin", () => { _showChildren = true; });
             Button(b, 130, "next-ok", () => { _okCount++; });
+            Button(b, 160, "child-begin-then-sibling-throw", () => { _showBeginFirst = true; });
             if (_okCount > 0)
             {
                 b.OpenElement(140, "text");
@@ -991,9 +1289,18 @@ public sealed class FaultNoticeTests
                 b.OpenComponent<BeginOnInitChild>(151);
                 b.CloseComponent();
             }
+            if (_showBeginFirst)
+            {
+                // The mirror: the first child begins a host call, then its sibling faults.
+                b.OpenComponent<BeginOnInitChild>(170);
+                b.CloseComponent();
+                b.OpenComponent<ThrowAfterSiblingBeganChild>(171);
+                b.CloseComponent();
+            }
         }
 
         private bool _showChildren;
+        private bool _showBeginFirst;
         private int _okCount;
 
         /// <summary>Order stamps for child-throw-then-sibling-begin: each child takes the next
@@ -1024,6 +1331,16 @@ public sealed class FaultNoticeTests
         {
             ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
             throw new InvalidOperationException("child-before-begin");
+        }
+    }
+
+    /// <summary>Faults in its synchronous OnInitialized, after its sibling began a call (17.1).</summary>
+    private sealed class ThrowAfterSiblingBeganChild : ComponentBase
+    {
+        protected override void OnInitialized()
+        {
+            ShellCallProbe.ChildThrowSeq = Interlocked.Increment(ref ShellCallProbe.Sequence);
+            throw new InvalidOperationException("child-after-begin");
         }
     }
 

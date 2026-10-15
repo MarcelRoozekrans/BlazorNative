@@ -22,10 +22,17 @@ import java.util.concurrent.TimeUnit
  * FormatException while parsing it — a genuine late fault in the sample app, raised
  * with the published dll's production error mode.
  *
+ * Phase 16.7 (#455) added the inline case. A fault after the handler BEGAN a host call is
+ * a FaultNotice with rc 0 even when the shell answers that call inside hostCallBegin, as
+ * Android's camera path can: [InlineCameraHost] answers inside begin, and
+ * a_fault_after_an_inline_answered_host_call_is_a_fault_notice_not_rc_2 drives it through
+ * the dll.
+ *
  * DOES NOT COVER: the iOS arm (BnFaultNoticeTests.swift), or the notice's exact args,
- * which FaultNoticeTests.cs pins on the .NET side. The session is the one
- * process-global .NET session every JVM test shares, so the held call is always
- * answered in a finally.
+ * which FaultNoticeTests.cs pins on the .NET side, with the classification's limits:
+ * a call begun on another thread, a fetch, and a continuation of another dispatch
+ * running inline (17.1, #464). The session is the one process-global .NET session every
+ * JVM test shares, so the held call is always answered in a finally.
  */
 class FaultNoticeTest {
 
@@ -87,6 +94,14 @@ class FaultNoticeTest {
         }
     }
 
+    /**
+     * 16.7 (#455), through the NativeAOT dll: Take Photo's camera call is answered inside
+     * hostCallBegin with a malformed payload, the demo's continuation throws, and that fault
+     * must reach onError as a FaultNotice while the dispatch returns rc 0. Anchors:
+     * answeredInsideBegin proves the answer came inside begin, and completeRc proves the call
+     * was still pending when it came. Covers the camera op only; FaultNoticeTests.cs pins the
+     * fetch and the other classification cases on the .NET side.
+     */
     @Test
     fun a_fault_after_an_inline_answered_host_call_is_a_fault_notice_not_rc_2() {
         val host = InlineCameraHost()

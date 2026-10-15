@@ -3795,12 +3795,14 @@ path and its Android host calls enter 1.0 with no known defect. No new features.
 · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #464, #494, #440, #425, #426, #435, #454, #424, #458.
 
-#### Phase 17.1: Fault attribution (#464, #494) [status: pending]
+#### Phase 17.1: Fault attribution (#464, #494) [status: active]
 **Goal:** A fault belongs to the dispatch whose continuation raised it, checked through the flowing
 scope at capture and at the begun-call mark. Both outcomes are pinned, and 16.7's
 `FaultNoticeTests` partials are proven.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-14-phase-17.1-design.md`](../superpowers/specs/2026-10-14-phase-17.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md`](../superpowers/plans/2026-10-14-phase-17.1-fault-attribution.md)
 
 #### Phase 17.2: Android host-call contract (#440) [status: pending]
 **Goal:** Android's biometrics and KeyStore work leaves `hostCallBegin` for a background executor,

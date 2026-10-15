@@ -595,11 +595,38 @@ public sealed class NativeRenderer : BlazorRenderer
         // call or a fetch before it (16.7) — never from this stack. A handler suspended on
         // an await holds no scope, so a fault raised by ANOTHER dispatch meanwhile
         // is that dispatch's, never the suspended one's (16.0 requirement 1).
+        //
+        // 17.1 (#464): the window owns only its own flow. A continuation of another
+        // dispatch can run inline inside this window, when app code completes a
+        // TaskCompletionSource made without RunContinuationsAsynchronously. Its execution
+        // context still flows that other dispatch's scope, so a fault its own code raises
+        // is that dispatch's late fault, below, and never this window's. Code that flows no
+        // dispatch scope, or another renderer's, stays the window's.
+        //
+        // A parameter-binding fault needs no exclusion here: it comes from a render, and a
+        // render inside this window runs in this window's batch under this window's flow, so
+        // it is captured above. That rests on reading the render path; no test builds the
+        // other case, because nothing found can reach it.
         if (_currentScope is { } scope)
         {
-            scope.Fault ??= exception;
-            BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
-            return;
+            DispatchScope? owner = s_flowingScope.Value;
+            bool anotherDispatchs = owner is not null
+                && !ReferenceEquals(owner, scope)
+                && ReferenceEquals(owner.Owner, this);
+            if (!anotherDispatchs)
+            {
+                scope.Fault ??= exception;
+                BnLog.Error("BlazorNative.Renderer", "render fault (dispatch window)", exception);
+                return;
+            }
+            if (owner!.Done)
+            {
+                // That dispatch has finished, so nothing can report the fault and nothing
+                // waits for it. Log it, in strict mode too: the no-window path's strict
+                // rethrow would land in a Task nobody observes, and the fault would vanish.
+                BnLog.Error("BlazorNative.Renderer", FinishedDispatchFaultLogLabel, exception);
+                return;
+            }
         }
 
         // After a handler's first await: no scope is open, but the continuation still
@@ -1587,7 +1614,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice.</summary>
     internal static void NoteShellCallBegun()
     {
-        if (t_syncScope is { Fault: null } scope)
+        // Both conditions are needed (17.1, #464). Thread-bound alone marks this dispatch for a
+        // call that another dispatch's continuation, running inline in this synchronous part,
+        // began; flowing alone would mark it for a call begun on another thread, such as inside
+        // Task.Run, which the 16.7 record's M4 showed.
+        if (t_syncScope is { Fault: null } scope && ReferenceEquals(s_flowingScope.Value, scope))
             scope.ShellCallBegun = true;
     }
 
@@ -1604,6 +1635,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// this way, and the one that asserts it WAS, track the real text: a reworded
     /// literal would leave the absence assertions passing while checking nothing.</summary>
     internal const string LateFaultLogLabel = "render fault (after the handler's first await)";
+
+    /// <summary>The log line for a fault that a FINISHED dispatch's code raised inside another
+    /// dispatch's window (17.1, #464): logged only, since nothing can report it.</summary>
+    internal const string FinishedDispatchFaultLogLabel =
+        "render fault (a finished dispatch's code, inside another dispatch's window)";
 
     // ── The slow-handler warning (Phase 16.3, #9) ────────────────────────────
     //
