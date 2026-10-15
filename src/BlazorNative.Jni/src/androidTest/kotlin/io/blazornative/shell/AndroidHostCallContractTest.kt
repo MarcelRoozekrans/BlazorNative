@@ -43,7 +43,13 @@ class AndroidHostCallContractTest {
 
     private lateinit var bridge: AndroidShellBridge
     private val completions: MutableList<Completion> = Collections.synchronizedList(mutableListOf())
-    private var nextId = 1_000_000_000L
+    private val callers: MutableList<Thread> = Collections.synchronizedList(mutableListOf())
+
+    companion object {
+        /** Process-wide, so no two tests ever share a request id: a gated job one test leaves
+         * behind cannot complete into the next test's hook under the same id. */
+        private val ids = java.util.concurrent.atomic.AtomicLong(1_000_000_000L)
+    }
     private val key = "bn_contract_test"
 
     @Before
@@ -59,6 +65,7 @@ class AndroidHostCallContractTest {
     @After
     fun cleanup() {
         AndroidShellBridge.workGateForTest?.countDown()
+        synchronized(callers) { callers.toList() }.forEach { it.join(10_000) }
         bridge.drainForTest()
         bridge.secureDeleteCore(key)
         AndroidShellBridge.resetHostCallContractForTest()
@@ -76,7 +83,9 @@ class AndroidHostCallContractTest {
     /** Begins [op] on a worker thread and returns whether hostCallBegin returned within [ms]. */
     private fun beginReturnsWithin(ms: Long, id: Long, op: Int, args: String): Boolean {
         val returned = CountDownLatch(1)
-        Thread({ bridge.hostCallBegin(id, op, args); returned.countDown() }, "contract-test-caller").start()
+        val caller = Thread({ bridge.hostCallBegin(id, op, args); returned.countDown() }, "contract-test-caller")
+        callers.add(caller)
+        caller.start()
         return returned.await(ms, TimeUnit.MILLISECONDS)
     }
 
@@ -85,7 +94,7 @@ class AndroidHostCallContractTest {
         val reached = CountDownLatch(1)
         AndroidShellBridge.workGateForTest = gate
         AndroidShellBridge.gateReachedForTest = reached
-        val id = nextId++
+        val id = ids.getAndIncrement()
 
         val returned = beginReturnsWithin(1_000, id, op, args)
         assertTrue("anchor: the work never reached its gate, so this proves nothing",
@@ -112,8 +121,8 @@ class AndroidHostCallContractTest {
 
     @Test
     fun secure_storage_keeps_request_order() {
-        val set = nextId++
-        val get = nextId++
+        val set = ids.getAndIncrement()
+        val get = ids.getAndIncrement()
         bridge.hostCallBegin(set, HostCallOp.SECURE_STORAGE, """{"action":"set","key":"$key","value":"v1","auth":"0"}""")
         bridge.hostCallBegin(get, HostCallOp.SECURE_STORAGE, """{"action":"get","key":"$key"}""")
         bridge.drainForTest()
@@ -127,7 +136,7 @@ class AndroidHostCallContractTest {
     @Test
     fun a_throw_on_the_executor_completes_error_never_a_hang() {
         AndroidShellBridge.jobFaultForTest = { throw IllegalStateException("job-fault") }
-        val id = nextId++
+        val id = ids.getAndIncrement()
         bridge.hostCallBegin(id, HostCallOp.SECURE_STORAGE, """{"action":"get","key":"$key"}""")
         val done = completionFor(id)
         assertTrue("a job that threw left the request pending: a hang", done != null)
@@ -143,7 +152,7 @@ class AndroidHostCallContractTest {
             val gateSeen = CountDownLatch(1)
             var gate: AndroidShellBridge.BiometricGate? = null
             AndroidShellBridge.biometricGateHook = { g -> gate = g; gateSeen.countDown() }
-            val id = nextId++
+            val id = ids.getAndIncrement()
             bridge.hostCallBegin(id, HostCallOp.SECURE_STORAGE, """{"action":"getWithAuth","key":"$key","reason":"test"}""")
             assertTrue("anchor: the getWithAuth never reached the prompt", gateSeen.await(10, TimeUnit.SECONDS))
             // The real prompt answers on the main thread; so does this.
