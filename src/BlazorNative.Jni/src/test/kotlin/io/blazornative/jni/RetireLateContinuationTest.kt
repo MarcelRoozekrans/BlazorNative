@@ -55,6 +55,10 @@ class RetireLateContinuationTest {
             while (runtime.framesDroppedAfterRetire.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
             assertTrue(runtime.framesDroppedAfterRetire.get() > 0,
                 "anchor: no frame reached the retired runtime within 5 s, so its drop was never exercised")
+            // The callback counts a frame BEFORE it would deliver it, so a broken drop delivers it
+            // just after the anchor passes. Asserting at once raced that delivery and passed with
+            // the drop removed, mutation J1 in the 17.3 record; give the callback time to finish.
+            Thread.sleep(500)
             assertTrue(framesAfterRetire.isEmpty(),
                 "a retired runtime's onFrame received a frame from a late continuation, which on Activity " +
                     "recreation renders into a destroyed Activity's views (#425): $framesAfterRetire")
