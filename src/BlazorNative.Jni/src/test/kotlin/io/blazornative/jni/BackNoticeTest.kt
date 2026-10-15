@@ -37,8 +37,11 @@ import java.util.concurrent.atomic.AtomicInteger
 class BackNoticeTest {
 
     /** An in-memory host that records every op its own hostCallBegin is handed. */
-    private class RecordingHost : ShellBridgeHandlers {
-        @Volatile private var route: String = "/"
+    /** [initialRoute] is the route the shell reports on its mount. Since 17.3 (#425) a mount
+     * after the first keeps the session's back stack only when that route is the session's:
+     * the shell continues the session, as a recreated Activity does. */
+    private class RecordingHost(initialRoute: String = "/") : ShellBridgeHandlers {
+        @Volatile private var route: String = initialRoute
         val ops: MutableList<Int> = Collections.synchronizedList(mutableListOf())
         override fun navigate(route: String) { this.route = route }
         override fun currentRoute(): String = route
@@ -230,7 +233,9 @@ class BackNoticeTest {
      */
     @Test
     fun the_back_state_rides_the_mount_of_a_page_whose_first_render_is_empty() {
-        // History first, so the mount below sends BackState(true).
+        // History first, so the mount below sends BackState(true). The probe has no route of its
+        // own, so its shell reports the session's, /settings, and continues that back stack:
+        // since 17.3 (#425) a shell at another route starts fresh, without it.
         val warmup = BlazorNativeRuntime(onFrame = {})
         warmup.start(componentName = "BnDemo", platformOs = "test-host", bridge = RecordingHost())
         assertEquals(0, warmup.dispatchHostEventBlocking(BnHostEvent.Navigate.wireName, "/settings"))
@@ -242,7 +247,7 @@ class BackNoticeTest {
             onFrame = { f -> carried.add(f to buffer.takeForBatch(f.patches)) },
             onBackState = { buffer.offer(it) },
         )
-        runtime.start(componentName = "EmptyFirstRenderProbe", platformOs = "test-host", bridge = RecordingHost())
+        runtime.start(componentName = "EmptyFirstRenderProbe", platformOs = "test-host", bridge = RecordingHost("/settings"))
         try {
             // Wait for the content, so a rule that carried the value late is observable too.
             assertTrue(waitFor(10_000) {
@@ -265,7 +270,8 @@ class BackNoticeTest {
 
     /** Holds the camera call open and records it; the test answers it. */
     private class HoldingCameraHost : ShellBridgeHandlers {
-        @Volatile private var route: String = "/"
+        // The session's route after the warm-up, so this shell continues its back stack (17.3).
+        @Volatile private var route: String = "/settings"
         val cameraCall = CountDownLatch(1)
         @Volatile var heldRequestId: Long = -1
         override fun navigate(route: String) { this.route = route }
@@ -303,7 +309,8 @@ class BackNoticeTest {
      */
     @Test
     fun back_hold_probe_holds_the_lane_until_its_camera_call_is_released() {
-        // History first: a forward step from BnDemo, so the probe's back is handled.
+        // History first: a forward step from BnDemo, so the probe's back is handled. The probe's
+        // shell reports the session's route, /settings, so it continues that back stack (17.3).
         val warmup = BlazorNativeRuntime(onFrame = {})
         warmup.start(componentName = "BnDemo", platformOs = "test-host", bridge = RecordingHost())
         assertEquals(0, warmup.dispatchHostEventBlocking(BnHostEvent.Navigate.wireName, "/settings"))
