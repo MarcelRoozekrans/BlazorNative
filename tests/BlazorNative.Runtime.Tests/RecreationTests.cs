@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
@@ -26,7 +28,7 @@ namespace BlazorNative.Runtime.Tests;
 //   - the shell: RecreationAndroidTest drives a real Activity recreation, and RetireLateContinuationTest
 //     the retired runtime dropping frames;
 //   - a recreation DURING boot, while the old boot thread is still inside start(): MainActivity
-//     documents it, and nothing here builds it;
+//     documents it, and nothing here builds it: #511;
 //   - work the old page queued through RunAfterDispatch before its root was disposed (#500's class).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,7 @@ public sealed class RecreationTests
         var originalDemo = HostSession.ReplaceRegistryEntryForTests("BnDemo", demo);
         var originalSettings = HostSession.ReplaceRegistryEntryForTests("BnSettingsPage", r => r.Mount<SettingsMarker>());
         AwaitingProbe.Reset();
+        InitAwaitingProbe.ReachedNavigate = false;
         return new Session(renderer, frames, originalDemo, originalSettings);
     }
 
@@ -275,6 +278,89 @@ public sealed class RecreationTests
         }
     }
 
+    [Fact]
+    public void ANavigationFromADisposedRootsLifecycleCode_IsDropped()
+    {
+        // Not a UI event: the old page's OnInitialized starts a load that awaits a held call and
+        // then navigates, as a splash page's "load, then go home" does. A rotation during that await
+        // disposes the page; its late code must not navigate the recreated shell either.
+        Session s = Start(r => r.Mount<InitAwaitingProbe>());
+        FakeShellHost.AutoCompleteHostCall = false;
+        var errors = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (level, category, message) => { if (level >= BnLogLevel.Error) lock (errors) errors.Add($"{category}: {message}"); };
+        try
+        {
+            Assert.True(HostSession.TryMount("BnDemo") == 0, "the probe's mount failed: " + string.Join(" | ", errors));
+            Assert.True(WaitUntil(() => FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation)),
+                "anchor: the probe's OnInitialized load never began its geolocation call");
+            long held = FakeShellHost.HostCalls().First(c => c.Op == (int)HostCallOp.Geolocation).RequestId;
+
+            HostSession.ReplaceRegistryEntryForTests("BnDemo", r => r.Mount<DemoMarker>());
+            Assert.Equal(0, HostSession.TryMount("BnDemo")); // the recreated shell's mount
+            NativeShellBridge.CompleteHostCall(held, 0, null);
+
+            Assert.True(WaitUntil(() => InitAwaitingProbe.ReachedNavigate),
+                "anchor: the old page's OnInitialized load never reached its NavigateToAsync");
+            Thread.Sleep(200);
+            Assert.True(Nav().CurrentRoute == "/",
+                $"the route is {Nav().CurrentRoute}: a disposed page's OnInitialized load navigated the new shell.");
+        }
+        finally
+        {
+            BnLog.Sink = sink;
+            End(s);
+        }
+    }
+
+    private static int s_nativeFrames;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static unsafe void CountNativeFrame(BlazorNativeFrame* frame) => Interlocked.Increment(ref s_nativeFrames);
+
+    private static unsafe void RegisterNativeCounter()
+    {
+        delegate* unmanaged[Cdecl]<BlazorNativeFrame*, void> fn = &CountNativeFrame;
+        HostSession.SetFrameCallback((IntPtr)fn);
+    }
+
+    [Fact]
+    public void AFrameOfTheOldRoot_AfterANewShellRegisters_IsNotDeliveredToIt()
+    {
+        // A recreated shell registers its frame callback, and only then mounts. Between the two
+        // the old root is still alive, so its late continuation can render. That frame is the old
+        // page's, and the shell that would receive it is the NEW one.
+        Session s = Start(r => r.Mount<AwaitingProbe>());
+        try
+        {
+            RegisterNativeCounter();
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            long held = ClickAndHold(s);
+
+            RegisterNativeCounter(); // the recreated shell's start(): registered, not yet mounted
+            int deliveredBefore = Volatile.Read(ref s_nativeFrames);
+            int framesBefore;
+            lock (s.Frames) framesBefore = s.Frames.Count;
+            NativeShellBridge.CompleteHostCall(held, 0, null);
+
+            Assert.True(WaitUntil(() => Texts(s, framesBefore).Contains("a-late")),
+                "anchor: the old page's late continuation never rendered, so nothing was exercised");
+            Thread.Sleep(200);
+            Assert.True(Volatile.Read(ref s_nativeFrames) == deliveredBefore,
+                $"{Volatile.Read(ref s_nativeFrames) - deliveredBefore} frame(s) of the old page reached the new "
+                + "shell between its registration and its mount: its views would get the old page's nodes.");
+
+            Assert.Equal(0, HostSession.TryMount("BnDemo"));
+            Assert.True(Volatile.Read(ref s_nativeFrames) > deliveredBefore,
+                "the new shell's own mount frame was never delivered: the hold was not released by its mount");
+        }
+        finally
+        {
+            HostSession.SetFrameCallback(IntPtr.Zero);
+            End(s);
+        }
+    }
+
     private static NativeNavigationManager Nav()
         => HostSession.CurrentNavigationManager ?? throw new Xunit.Sdk.XunitException("no navigation manager");
 
@@ -320,6 +406,28 @@ public sealed class RecreationTests
             b.AddContent(2, _text);
             b.CloseElement();
         }
+    }
+
+    /// <summary>A page whose OnInitialized starts a load that awaits a held geolocation call,
+    /// then navigates: lifecycle code, not a UI event. A root mounts synchronously, so the
+    /// load runs beside the first render rather than inside an awaited OnInitializedAsync.</summary>
+    private sealed class InitAwaitingProbe : ComponentBase
+    {
+        public static volatile bool ReachedNavigate;
+
+        [Inject] public IMobileBridge Bridge { get; set; } = default!;
+        [Inject] public INavigationManager Navigation { get; set; } = default!;
+
+        protected override void OnInitialized() => _ = LoadThenGoOnAsync();
+
+        private async Task LoadThenGoOnAsync()
+        {
+            await Bridge.CheckGeolocationPermissionAsync();
+            ReachedNavigate = true;
+            await Navigation.NavigateToAsync("/settings");
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b) => b.AddContent(0, "init-probe");
     }
 
     private sealed class DemoMarker : ComponentBase

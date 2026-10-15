@@ -158,6 +158,10 @@ public sealed unsafe class ShutdownQuiescenceTests
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();
+        // These pins re-register over a live root and keep delivering without a mount: their
+        // subject is the callback epoch and the gate. 17.3's hold for a new shell's mount would
+        // hold that delivery, so it is off here; RecreationTests pins the hold.
+        HostSession.HoldForTheNewShellsMountForTests = false;
         Interlocked.Exchange(ref s_frames, 0);
         RegisterCounter();
         NativeRenderer renderer = HostSession.EnsureSession();

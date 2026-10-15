@@ -1863,15 +1863,49 @@ public sealed class NativeRenderer : BlazorRenderer
     /// pin that <see cref="DispatchSyncPart"/> restores it.</summary>
     internal bool FlowingScopeIsSetForTests => s_flowingScope.Value is not null;
 
+    private int _rootGeneration;
+
     /// <summary>17.3 (#425): bumped by the host each time the SHELL mounts a root, which replaces
     /// any root already mounted (a recreated Activity). Navigation swaps do not bump it, so a
-    /// handler that navigates and then navigates again stays current.</summary>
-    internal int RootGeneration { get; set; }
+    /// handler that navigates and then navigates again stays current. Written by the host's
+    /// mount, read by code on any thread, hence the volatile accesses.</summary>
+    internal int RootGeneration
+    {
+        get => Volatile.Read(ref _rootGeneration);
+        set => Volatile.Write(ref _rootGeneration, value);
+    }
 
-    /// <summary>17.3 (#425): the root generation of the dispatch whose code is running now, flowed
-    /// into its continuations; null outside any dispatch of this renderer.</summary>
+    /// <summary>17.3 (#425): the generation a page's own code was started under, when no dispatch
+    /// scope says otherwise: set around a root's mount, so a task its lifecycle methods start
+    /// carries the generation of the root it belongs to.</summary>
+    private static readonly AsyncLocal<(NativeRenderer Owner, int Generation)?> s_mountGeneration = new();
+
+    /// <summary>17.3 (#425): mounts a root under the current <see cref="RootGeneration"/>, so code
+    /// the page starts from its lifecycle methods, not from a UI event, carries that generation
+    /// into its continuations too. A UI event's own <see cref="DispatchScope"/> still wins.
+    /// Set ON the render thread: its dispatcher does not carry the caller's execution context,
+    /// so a value set on the host's thread would never reach the page's lifecycle code.</summary>
+    internal T MountUnderRootGeneration<T>(Func<T> mount) => OnRenderThread(() =>
+    {
+        (NativeRenderer, int)? outer = s_mountGeneration.Value;
+        s_mountGeneration.Value = (this, RootGeneration);
+        try
+        {
+            return mount(); // its own OnRenderThread runs inline here
+        }
+        finally
+        {
+            s_mountGeneration.Value = outer;
+        }
+    });
+
+    /// <summary>17.3 (#425): the root generation of the code running now: its UI event's dispatch
+    /// scope, flowed into the handler's continuations, or else the mount its page's lifecycle code
+    /// was started from. Null for code of neither, such as a host event or a deep link.</summary>
     internal int? FlowingRootGeneration
-        => s_flowingScope.Value is { } scope && ReferenceEquals(scope.Owner, this) ? scope.RootGeneration : null;
+        => s_flowingScope.Value is { } scope && ReferenceEquals(scope.Owner, this) ? scope.RootGeneration
+            : s_mountGeneration.Value is { } mount && ReferenceEquals(mount.Owner, this) ? mount.Generation
+            : null;
 
     /// <summary>Runs one UI event's SYNCHRONOUS part — the handler up to its first
     /// incomplete await, its re-render and FrameSink delivery — inside its own

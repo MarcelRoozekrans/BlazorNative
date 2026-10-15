@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference
  * and the old Activity's runtime is retired in onDestroy, so a frame that still reaches it is
  * dropped. RecreationTests pins the .NET half; RetireLateContinuationTest the retired runtime.
  *
- * DOES NOT COVER: a recreation during boot, while the old boot thread may still be inside start();
+ * DOES NOT COVER: a recreation during boot, while the old boot thread may still be inside start(), #511;
  * and the iOS shell, which mounts once per app and has no Activity recreation.
  */
 @RunWith(AndroidJUnit4::class)
@@ -62,6 +62,12 @@ class RecreationAndroidTest {
             assertTrue("the recreated BnCameraDemo never rendered within 60s",
                 pollUntil(scenario, 60_000) { echoText(it) != null })
 
+            // The old page's nodes are not this Activity's, so a late frame of the old page is
+            // ignored patch by patch and never changes the screen. The mapper counts such patches:
+            // that count, not the screen, is what shows whether a late frame arrived. Mutation L2,
+            // the .NET unmount removed, passed the screen check alone.
+            val foreignBefore = AtomicReference(0)
+            scenario.onActivity { foreignBefore.set(it.mapper.foreignPatchesForTest) }
             held.get()!!.cancel()
             // Anchor: the cancel reached a LIVE .NET continuation, the old page's, so it ran.
             assertTrue("anchor: the cancel never reached the old page's continuation (rc " +
@@ -72,6 +78,11 @@ class RecreationAndroidTest {
             scenario.onActivity { shown.set(echoText(it)?.text?.toString()) }
             assertFalse("the recreated Activity shows '${shown.get()}': the OLD page's late continuation " +
                 "rendered into the new Activity. That is #425.", shown.get() == "status:Cancelled")
+            val foreign = AtomicReference(0)
+            scenario.onActivity { foreign.set(it.mapper.foreignPatchesForTest - foreignBefore.get()) }
+            assertTrue("the recreated Activity received ${foreign.get()} patch(es) for the OLD page's nodes after " +
+                "the cancel: the old page's late continuation still rendered, into the new shell. That is #425.",
+                foreign.get() == 0)
         }
     }
 
@@ -117,6 +128,24 @@ class RecreationAndroidTest {
                 pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
         }
     }
+
+    @Test
+    fun a_recreated_activity_on_an_unrouted_page_keeps_that_page() {
+        // BackHoldProbe has no route, so its launch seeds "/" and saves "/". The restored route is
+        // the launch's own, so the user never navigated: the recreated Activity keeps the page its
+        // launch chose instead of resolving "/" to the home page.
+        launch("BackHoldProbe").use { scenario ->
+            assertTrue("BackHoldProbe never rendered within 60s",
+                pollUntil(scenario, 60_000) { buttonLabelled(it, "Hold") })
+            scenario.recreate()
+            assertTrue("the recreated Activity replaced the unrouted page with the home page: rotation " +
+                "lost the page its launch chose",
+                pollUntil(scenario, 60_000) { buttonLabelled(it, "Hold") && !hasEditText(it) })
+        }
+    }
+
+    private fun buttonLabelled(act: MainActivity, label: String): Boolean =
+        widgetRoot(act)?.let { root -> firstMatch(root) { v -> v is Button && v.text.toString() == label } } != null
 
     private fun launch(component: String? = null): ActivityScenario<MainActivity> {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
