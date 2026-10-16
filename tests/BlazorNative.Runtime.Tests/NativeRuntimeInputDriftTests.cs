@@ -10,7 +10,7 @@ namespace BlazorNative.Runtime.Tests;
 // BlazorNative.Runtime library that JNA loads through `jna.library.path` is not
 // a classpath entry, so unless the task declares it, a rebuilt library leaves
 // the task up to date and the old result stands. The pin: every top-level block
-// in src/BlazorNative.Jni/build.gradle.kts that sets `jna.library.path` also
+// in src/BlazorNative.Jni/build.gradle.kts and in the template's android/build.gradle.kts that sets `jna.library.path` also
 // declares an `inputs.files(` or `inputs.dir(` call with relative path
 // sensitivity.
 //
@@ -19,6 +19,7 @@ namespace BlazorNative.Runtime.Tests;
 //     checks the declaration exists, not that the two name the same path.
 //   - A block that loads the library through some other property than
 //     `jna.library.path`.
+//   - An `inputs.files(` inside a `//` comment in the block: it satisfies the scan.
 //   - A block nested inside another top-level block; the scan splits at lines
 //     that start with a closing brace in column one.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,18 +58,25 @@ public sealed class NativeRuntimeInputDriftTests
 
     /// <summary>The Test configuration and both JavaExec tasks declare the native runtime as an input.</summary>
     [Fact]
-    public void TheJvmTasksThatLoadTheRuntime_DeclareItAsAnInput()
-    {
-        var gradle = File.ReadAllText(Path.Combine(BnRepo.Root(), "src", "BlazorNative.Jni", "build.gradle.kts"));
+    public void TheJvmTasksThatLoadTheRuntime_DeclareItAsAnInput() =>
+        AssertDeclared(Path.Combine("src", "BlazorNative.Jni", "build.gradle.kts"), 3);
 
-        Assert.True(WithJnaPath(gradle).Count >= 3,
-            "fewer than 3 task blocks set jna.library.path in build.gradle.kts. The Test configuration and the "
-            + "runPreviewHost and runInspectorHost tasks are expected, so the scan may be reading nothing.");
+    /// <summary>The template's Test configuration declares it too, so consumer apps do not inherit the trap.</summary>
+    [Fact]
+    public void TheTemplatesTestTask_DeclaresTheRuntimeAsAnInput() =>
+        AssertDeclared(Path.Combine("templates", "BlazorNative.Templates", "content", "BlazorNative.App", "android", "build.gradle.kts"), 1);
+
+    private static void AssertDeclared(string relativePath, int expectedBlocks)
+    {
+        var gradle = File.ReadAllText(Path.Combine(BnRepo.Root(), relativePath));
+
+        Assert.True(WithJnaPath(gradle).Count >= expectedBlocks,
+            $"fewer than {expectedBlocks} task blocks set jna.library.path in {relativePath}, so the scan may be reading nothing.");
 
         var offenders = Offenders(gradle);
         Assert.True(offenders.Count == 0,
-            "a task that sets jna.library.path does not declare the native runtime as an input (#424), so a rebuilt "
-            + "library leaves it UP-TO-DATE: " + string.Join("; ", offenders)
+            $"in {relativePath}, a task that sets jna.library.path does not declare the native runtime as an input (#424), "
+            + "so a rebuilt library leaves it UP-TO-DATE: " + string.Join("; ", offenders)
             + ". Add inputs.files(...).withPathSensitivity(PathSensitivity.RELATIVE).");
     }
 
