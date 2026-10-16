@@ -131,10 +131,12 @@ $ErrorActionPreference = 'Stop'
 # NODE REUSE OFF, for every MSBuild call below: the likely fix for #454. In the
 # hangs the publish had exited, yet something still held its output pipe, so this
 # script's `| Out-Host` never saw EOF. The 2026-10-15 Linux hang ran with node
-# reuse on: no MSBUILDDISABLENODEREUSE in any hung process's environment, and
-# persistent MSBuild nodes running. A worker node that outlives the publish is the
-# leading suspect; it is not proven, and #530 tracks proving it. With reuse off, no
-# MSBuild node the publish starts can outlive it. Whatever the cause, the bound in
+# reuse on: no MSBUILDDISABLENODEREUSE in the environment of any of the three
+# dumped processes, and persistent MSBuild nodes running. A worker node that
+# outlives the publish is the leading suspect; it is not proven, and #530 tracks
+# proving it. With reuse off, MSBuild's documented behaviour is that no worker node
+# outlives the build that started it; this repo does not pin that behaviour, only
+# that the switch and the variable are set. Whatever the cause, the bound in
 # the test project's BoundedScript turns a stall into a named failure. The
 # variable covers any MSBuild this script starts, and each call also passes
 # -nodeReuse:false. GeneratorRunTests pins both.
