@@ -6,6 +6,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +41,22 @@ class PollAndroidTest {
                 return
             }
             fail("pollUntil returned on a destroyed activity instead of failing naming it")
+        }
+    }
+
+    @Test
+    fun a_predicate_that_throws_is_rethrown_unchanged() {
+        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            scenario.awaitBooted()
+            val thrown = IllegalStateException("probe")
+            try {
+                pollUntil(scenario, 2_000) { throw thrown }
+            } catch (e: Throwable) {
+                assertSame("the predicate's exception must reach the caller as it was thrown", thrown, e)
+                return
+            }
+            fail("pollUntil swallowed the predicate's exception")
         }
     }
 }

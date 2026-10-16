@@ -14,7 +14,7 @@ namespace BlazorNative.Runtime.Tests;
 // WHAT THIS DOES NOT COVER (Rule 5):
 //   - That a caller uses Poll.kt's function and not a differently named loop of
 //     its own; only the name pollUntil is scanned.
-//   - A declaration that is not spelled `fun pollUntil`, such as a backticked name.
+//   - A declaration whose name is backticked, or a function with another name.
 //   - A declaration inside a comment, which reds as a false positive.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class PollUntilDriftTests
 {
     private static readonly Regex Declaration =
-        new(@"\bfun\s+pollUntil\s*\(", RegexOptions.CultureInvariant);
+        new(@"\bfun\s+(<[^>]*>\s*)?([\w<>?, .]+\.)?pollUntil\s*(<[^>]*>)?\s*\(", RegexOptions.CultureInvariant);
 
     private static readonly string[] SharedHome = ["Poll.kt"];
 
@@ -47,11 +47,21 @@ public sealed class PollUntilDriftTests
             + "surfaces a bare NullPointerException: " + string.Join(", ", offenders) + ". Use Poll.kt.");
     }
 
-    /// <summary>Non-vacuity: a private copy is reported, and the shared home is not.</summary>
+    /// <summary>Non-vacuity: every spelling of a private copy is reported, a similar name is not, and the shared home is exempt.</summary>
     [Fact]
     public void APlantedPrivateCopy_IsReported()
     {
-        const string copy = "    private fun pollUntil(\n        scenario: ActivityScenario<MainActivity>,\n";
-        Assert.Equal(["Planted.kt"], Offenders([("Planted.kt", copy), ("Poll.kt", copy), ("Other.kt", "val x = 1")]));
+        string[] copies =
+        [
+            "    private fun pollUntil(\n        scenario: ActivityScenario<MainActivity>,\n",
+            "    private fun <T> pollUntil(scenario: T): Boolean = false",
+            "    private fun pollUntil<T>(scenario: T): Boolean = false",
+            "    private fun ActivityScenario<MainActivity>.pollUntil(deadlineMs: Long): Boolean = false",
+        ];
+        foreach (var copy in copies)
+            Assert.Equal(["Planted.kt"], Offenders([("Planted.kt", copy), ("Poll.kt", copy), ("Other.kt", "val x = 1")]));
+
+        Assert.Empty(Offenders([("Similar.kt",
+            "private fun pollUntilIdle(a: Int): Boolean = false\nprivate fun pollUntilBackNavigatedAway(a: Int) = false\nval x = pollUntil(s, 1) { true }")]));
     }
 }
