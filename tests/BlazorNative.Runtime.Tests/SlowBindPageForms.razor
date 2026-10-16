@@ -1,0 +1,20 @@
+@* Phase 17.4 (#435): one page holding the two other @bind-Value forms, for
+   SlowHandlerWarningTests. Two inputs use plain @bind-Value on a property whose
+   setter is slow; one uses @bind-Value:get/:set with a slow :set method. *@
+<BnInput Placeholder="bind-plain-a" @bind-Value="PlainA" />
+<BnInput Placeholder="bind-plain-b" @bind-Value="PlainB" />
+<BnInput Placeholder="bind-get-set" @bind-Value:get="_set" @bind-Value:set="SetSlow" />
+
+@code {
+    private string _a = "";
+    private string _b = "";
+    private string _set = "";
+
+    /// <summary>Runs the slow part, tagged with the input it came from.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+    private string PlainA { get => _a; set { _a = value; Slow("bind-plain-a"); } }
+    private string PlainB { get => _b; set { _b = value; Slow("bind-plain-b"); } }
+
+    private void SetSlow(string value) { _set = value; Slow("bind-get-set"); }
+}

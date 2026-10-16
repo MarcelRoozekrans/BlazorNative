@@ -21,6 +21,7 @@
     ─────────────────────────────────────────────────────────────────────────
 *@
 @inherits BnLayoutItem
+@implements IForwardsUiEvent
 <switch value="@(Checked ? "true" : "false")"
         enabled="@(Enabled ? null : "false")"
         @attributes="ItemAttributes"
@@ -41,4 +42,12 @@
     private Task HandleChange(ChangeEventArgs e)
         => CheckedChanged.InvokeAsync(
             BnCheckbox.ParseBoolPayload(e.Value?.ToString(), "switch"));
+
+    /// <summary>The app's CheckedChanged delegate when <paramref name="attached"/> is this
+    /// wrapper's own HandleChange, the change it forwards, so the slow-handler warning
+    /// names the app's handler; null for any other event or delegate.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+        => eventName == "change" && attached.Equals((Func<ChangeEventArgs, Task>)HandleChange)
+            ? EventCallbackDelegate.Of(CheckedChanged)
+            : null;
 }

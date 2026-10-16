@@ -51,22 +51,26 @@ namespace BlazorNative.Runtime.Tests;
 //     reached, or its method cannot be resolved, the key falls back to the tree
 //     owner: component type, frame sequence and event. Under that fallback a
 //     RenderFragment from a parent renders into the CHILD's tree with the PARENT's
-//     sequence numbers, so handlers can merge. Fails quiet. The fallback is not
-//     reached by any pin here; whether the NativeAOT build resolves the method is
+//     sequence numbers, so handlers can merge. Fails quiet. One pin reaches the
+//     fallback, through a wrapper hook that throws, and pins that the dispatch still
+//     completes and the warning names the tree owner; the merging itself is not
+//     pinned. Whether the NativeAOT build resolves the method and the hook is
 //     measured on the JVM lane, by SlowHandlerProbeTest. The 32-warning cap per
 //     session is the other quiet path, and it is pinned;
-//   - a handler whose method is the FRAMEWORK's: Blazor's own (every @bind runs
+//   - a handler whose method is the FRAMEWORK's: Blazor's own (every element @bind runs
 //     Blazor's binder lambda), System's, or BlazorNative.Components'. Its owner key
 //     is combined with the tree-owner key, so @bind handlers stay apart by call
 //     site and the warning names the component holding the call site. When that
 //     component is itself a BlazorNative.Components wrapper, the call site is the
 //     wrapper's own line, so every instance in an app merges into one warning
-//     naming the wrapper, not the app's handler. Exactly: BnInput's change
-//     (HandleChange, sequence 102; pinned as a known limit), and by the same
-//     shape BnCheckbox, BnPicker, BnSlider and BnSwitch change, and BnModal's
-//     dismiss click (HandleDismissRequest). Fails quiet: one warning per wrapper
-//     type per session. BnButton, BnImage's onerror and BnScroll's onscroll
-//     forward the app's delegate itself and are keyed by the app's method;
+//     naming the wrapper, not the app's handler, UNLESS the wrapper implements
+//     IForwardsUiEvent: BnInput, BnCheckbox, BnPicker, BnSlider and BnSwitch change,
+//     and BnModal's dismiss click, hand over the app's delegate and are keyed by
+//     the app's method, each pinned. A wrapper with no app callback keeps the
+//     wrapper's key, pinned as the control. Other events on those wrappers, and
+//     wrappers outside that list, are not pinned. BnButton, BnImage's onerror and
+//     BnScroll's onscroll forward the app's delegate itself and are keyed by the
+//     app's method;
 //   - the navigate and safeAreaChanged arms by name. They share the timed helper
 //     with back and the lifecycle multicast, which are pinned;
 //   - a host event's PAYLOAD. The arms are keyed by event name and the payload never
@@ -196,6 +200,29 @@ public sealed class SlowHandlerWarningTests
                     return attach.HandlerId;
             }
             throw new Xunit.Sdk.XunitException($"node {n} ('{placeholder}') never had a '{eventName}' handler.");
+        }
+
+        /// <summary>The live <paramref name="eventName"/> handler on the
+        /// <paramref name="nth"/> node of type <paramref name="nodeType"/>, counted in
+        /// creation order, zero-based.</summary>
+        public int HandlerOnNode(string nodeType, string eventName, int nth = 0)
+        {
+            List<RenderFrame> all;
+            lock (_frames) all = _frames.ToList();
+            int[] nodes = all.SelectMany(f => f.Patches).OfType<CreateNodePatch>()
+                .Where(p => p.NodeType == nodeType).Select(p => p.NodeId).ToArray();
+            if (nodes.Length <= nth)
+                throw new Xunit.Sdk.XunitException(
+                    $"only {nodes.Length} '{nodeType}' nodes were created, not {nth + 1}. SlowProbe moved; "
+                    + "re-point this pin deliberately.");
+            for (int i = all.Count - 1; i >= 0; i--)
+            {
+                AttachEventPatch? attach = all[i].Patches.OfType<AttachEventPatch>()
+                    .LastOrDefault(p => p.NodeId == nodes[nth] && p.EventName == eventName);
+                if (attach is not null)
+                    return attach.HandlerId;
+            }
+            throw new Xunit.Sdk.XunitException($"'{nodeType}' node {nodes[nth]} never had a '{eventName}' handler.");
         }
 
         /// <summary>The node id of the button whose text is <paramref name="label"/>.</summary>
@@ -575,15 +602,14 @@ public sealed class SlowHandlerWarningTests
         Assert.All(lines, l => Assert.Contains(nameof(SlowProbe), l));
     }
 
-    /// <summary>A KNOWN LIMIT, pinned so it is exact rather than folklore. BnInput wraps
-    /// the app's ValueChanged in its own HandleChange, so the delegate the renderer sees
-    /// is BnInput's, and the call site that holds it is BnInput's own sequence 102. Every
-    /// BnInput change in an app therefore shares ONE key and ONE warning, which names
-    /// BnInput rather than the app's handler. When BnInput exposes the app's delegate, or
-    /// the key walks to the parent component, this pin goes red: flip it to two warnings
-    /// naming the app's methods, do not delete it.</summary>
+    /// <summary>Was a known limit until Phase 17.4: BnInput wraps the app's ValueChanged in
+    /// its own HandleChange, at its own sequence 102, so every BnInput change in an app
+    /// shared one warning naming BnInput. BnInput now hands the renderer the app's
+    /// delegate through <see cref="IForwardsUiEvent"/>, and the warning keys by and names
+    /// the app's method. Red when the renderer does not consult the hook, or BnInput
+    /// returns no delegate.</summary>
     [Fact]
-    public void TwoBnInputs_WithDifferentSlowHandlers_StillShareOneWarning_NamingBnInput_KnownLimit()
+    public void TwoBnInputs_WithDifferentSlowHandlers_GetTwoWarnings_NamingTheAppsHandlers()
     {
         using var s = new Session();
         int a = s.HandlerByPlaceholder("bn-in-a", "change");
@@ -595,9 +621,188 @@ public sealed class SlowHandlerWarningTests
 
         Assert.Equal(1, SlowProbe.RunsOf("bn-in-a")); // anchor: both app handlers ran
         Assert.Equal(1, SlowProbe.RunsOf("bn-in-b"));
-        var line = Assert.Single(s.SlowLines());
-        Assert.Contains($"in {typeof(BnInput).FullName} held", line);
-        Assert.DoesNotContain("HandleChange", line);
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2,
+            $"two BnInputs with different slow ValueChanged handlers gave {lines.Length} warnings, not 2. "
+            + $"BnInput forwards every app's ValueChanged from one line, so a key that does not ask the "
+            + $"wrapper for the app's delegate merges them:\n{string.Join("\n", lines)}");
+        Assert.True(lines.Count(l => l.Contains("BnInSlowA")) == 1 && lines.Count(l => l.Contains("BnInSlowB")) == 1,
+            $"the two warnings must name the app's methods BnInSlowA and BnInSlowB, one each:\n{string.Join("\n", lines)}");
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+    }
+
+    /// <summary>One slow app callback behind a forwarding wrapper: the warning names the
+    /// app's method, never the wrapper.</summary>
+    private static void AssertNamesTheAppsHandler(Session s, string tag, string method, Type wrapper)
+    {
+        Assert.Equal(1, SlowProbe.RunsOf(tag)); // anchor: the app handler ran
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 1 && lines[0].Contains($"{typeof(SlowProbe).FullName}.{method}"),
+            $"one slow {wrapper.Name} callback must give one warning naming the app's method {method}. "
+            + $"{wrapper.Name} wraps it in its own handler, so a key that does not ask the wrapper "
+            + $"for the app's delegate names {wrapper.Name}:\n{string.Join("\n", lines)}");
+        Assert.DoesNotContain(lines, l => l.Contains(wrapper.FullName!));
+    }
+
+    [Fact]
+    public void ASlowBnCheckbox_NamesTheAppsHandler()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerOnNode("checkbox", "change"), Change("true")));
+        AssertNamesTheAppsHandler(s, "bn-check", "BnCheckSlow", typeof(BnCheckbox));
+    }
+
+    [Fact]
+    public void ASlowBnPicker_NamesTheAppsHandler()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerOnNode("picker", "change"), Change("1")));
+        AssertNamesTheAppsHandler(s, "bn-pick", "BnPickSlow", typeof(BnPicker));
+    }
+
+    [Fact]
+    public void ASlowBnSlider_NamesTheAppsHandler()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerOnNode("slider", "change"), Change("42.5")));
+        AssertNamesTheAppsHandler(s, "bn-slide", "BnSlideSlow", typeof(BnSlider));
+    }
+
+    [Fact]
+    public void ASlowBnSwitch_NamesTheAppsHandler()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerOnNode("switch", "change"), Change("true")));
+        AssertNamesTheAppsHandler(s, "bn-switch", "BnSwitchSlow", typeof(BnSwitch));
+    }
+
+    [Fact]
+    public void ASlowBnModalDismiss_NamesTheAppsHandler()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerOnNode("modal", "click"), Click));
+        AssertNamesTheAppsHandler(s, "bn-modal", "BnModalSlow", typeof(BnModal));
+    }
+
+    /// <summary>The control: a wrapper with no app callback returns no delegate, and the
+    /// key falls back to the wrapper's own call site, naming the wrapper. No app handler
+    /// runs, so the slowness is a clock that jumps on every read.</summary>
+    [Fact]
+    public void AWrapperWithNoAppCallback_StillKeysByItsCallSite()
+    {
+        using var s = new Session();
+        int bare = s.HandlerOnNode("checkbox", "change", nth: 1);
+        Assert.NotEqual(s.HandlerOnNode("checkbox", "change"), bare);
+        s.Renderer.TimestampForTests = () => { FakeClock.Advance(SlowMs); return FakeClock.Now(); };
+
+        Assert.Equal(0, Dispatch(bare, Change("true")));
+
+        Assert.Equal(0, SlowProbe.RunsOf("bn-check")); // anchor: the other checkbox's app handler did not run
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(BnCheckbox).FullName} held", line);
+    }
+
+    /// <summary>Naming a slow handler can never fault its dispatch. A wrapper whose hook
+    /// throws something other than <see cref="NotSupportedException"/>, as
+    /// <see cref="EventCallbackDelegate"/>'s accessor would with a
+    /// <see cref="MissingFieldException"/> if ILC could not bind it, still completes: the
+    /// dispatch returns 0, the app's handler ran, and the warning names the tree owner,
+    /// the wrapper's own type, never the app's method. Red when Resolve lets the
+    /// exception escape.</summary>
+    [Fact]
+    public void AHookThatThrows_NeverFaultsTheDispatch_AndTheWarningFallsBackToTheTreeOwner()
+    {
+        using var s = new Session();
+        int handler = s.HandlerOnNode("checkbox", "change", nth: 2);
+
+        Assert.Equal(0, Dispatch(handler, Change("true")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bn-check-throw")); // anchor: the app handler ran
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(ThrowingHookCheckbox).FullName} held", line);
+        Assert.DoesNotContain("BnCheckThrowSlow", line);
+    }
+
+    /// <summary>A bound wrapper names the page that binds it. Under the .NET 10 Razor
+    /// compiler, <c>@bind-Value</c> and <c>@bind-Value:after</c> pass the wrapper a lambda
+    /// the compiler declares on the page, and <c>:get</c>/<c>:set</c> passes the app's
+    /// <c>:set</c> method, so the delegate BnInput forwards is app code. Measured on the
+    /// generated source of these .razor fixtures, which use <c>:after</c>.</summary>
+    [Fact]
+    public void TwoBoundBnInputs_OnTwoPages_GetTwoWarnings_NamingThePages()
+    {
+        using var s = new Session();
+        // Read each id just before its own dispatch: a bound page re-renders after it.
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-page-a", "change"), Change("x")));
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-page-b", "change"), Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-page-a")); // anchor: both :after methods ran
+        Assert.Equal(1, SlowProbe.RunsOf("bind-page-b"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2,
+            $"two @bind-Value BnInputs on two pages gave {lines.Length} warnings, not 2. BnInput forwards "
+            + $"both from one line, so a key that does not ask it for the page's delegate merges them:"
+            + $"\n{string.Join("\n", lines)}");
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageA).FullName}.")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageB).FullName}.")) == 1,
+            $"the two warnings must name {nameof(SlowBindPageA)} and {nameof(SlowBindPageB)}, one each:\n{string.Join("\n", lines)}");
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+    }
+
+    /// <summary>Two bound wrappers on ONE page stay apart. The Razor compiler declares one
+    /// lambda per <c>@bind-Value</c> call site on the page, so each bound input has its own
+    /// app method, its own key and its own warning, each naming the page. Before Phase
+    /// 17.4 this was planned as a known limit, on the premise that a bound wrapper
+    /// forwards Blazor's framework binder; the measured Razor output says otherwise.</summary>
+    [Fact]
+    public void TwoBoundBnInputs_OnOnePage_GetTwoWarnings()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-one-a", "change"), Change("x")));
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-one-b", "change"), Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-one-a")); // anchor: both :after methods ran
+        Assert.Equal(1, SlowProbe.RunsOf("bind-one-b"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
+            $"two @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones. "
+            + $"Each call site's page lambda is its own key:\n{string.Join("\n", lines)}");
+        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageTwo).FullName}.", l));
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+    }
+
+    /// <summary>Plain <c>@bind-Value</c>: the Razor compiler passes BnInput a lambda it
+    /// declares on the page, one per call site, so two plain-bound inputs on one page get
+    /// two warnings, each naming the page. The slowness is the bound property's setter.</summary>
+    [Fact]
+    public void TwoPlainBoundBnInputs_OnOnePage_GetTwoWarnings_NamingThePage()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-plain-a", "change"), Change("x")));
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-plain-b", "change"), Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-plain-a")); // anchor: both setters ran
+        Assert.Equal(1, SlowProbe.RunsOf("bind-plain-b"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
+            $"two plain @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones:"
+            + $"\n{string.Join("\n", lines)}");
+        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.", l));
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+    }
+
+    /// <summary><c>@bind-Value:get/:set</c>: the Razor compiler passes BnInput the app's
+    /// <c>:set</c> method itself, so the warning names that method.</summary>
+    [Fact]
+    public void AGetSetBoundBnInput_NamesTheAppsSetMethod()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-get-set", "change"), Change("x")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-get-set")); // anchor: the :set method ran
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.SetSlow held", line);
+        Assert.DoesNotContain(typeof(BnInput).FullName!, line);
     }
 
     [Fact]
@@ -706,6 +911,12 @@ public sealed class SlowHandlerWarningTests
         private void BnInSlowA(string _) => Run("bn-in-a", SlowMs);
         private void BnInSlowB(string _) => Run("bn-in-b", SlowMs);
         private void BnSlowTwo() => Run("bn-two", SlowMs);
+        private void BnCheckSlow(bool _) => Run("bn-check", SlowMs);
+        private void BnPickSlow(int _) => Run("bn-pick", SlowMs);
+        private void BnSlideSlow(float _) => Run("bn-slide", SlowMs);
+        private void BnSwitchSlow(bool _) => Run("bn-switch", SlowMs);
+        private void BnModalSlow(bool _) => Run("bn-modal", SlowMs);
+        private void BnCheckThrowSlow(bool _) => Run("bn-check-throw", SlowMs);
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
@@ -778,11 +989,68 @@ public sealed class SlowHandlerWarningTests
             b.CloseComponent();
             b.OpenComponent<ChildPageB>(31);
             b.CloseComponent();
+            // One of each other forwarding wrapper, each wrapping a slow app callback in
+            // its own HandleChange or HandleDismissRequest.
+            b.OpenComponent<BnCheckbox>(60);
+            b.AddComponentParameter(61, nameof(BnCheckbox.CheckedChanged),
+                EventCallback.Factory.Create<bool>(this, BnCheckSlow));
+            b.CloseComponent();
+            b.OpenComponent<BnPicker>(62);
+            b.AddComponentParameter(63, nameof(BnPicker.Items), new[] { "p0", "p1" });
+            b.AddComponentParameter(64, nameof(BnPicker.SelectedIndexChanged),
+                EventCallback.Factory.Create<int>(this, BnPickSlow));
+            b.CloseComponent();
+            b.OpenComponent<BnSlider>(65);
+            b.AddComponentParameter(66, nameof(BnSlider.ValueChanged),
+                EventCallback.Factory.Create<float>(this, BnSlideSlow));
+            b.CloseComponent();
+            b.OpenComponent<BnSwitch>(67);
+            b.AddComponentParameter(68, nameof(BnSwitch.CheckedChanged),
+                EventCallback.Factory.Create<bool>(this, BnSwitchSlow));
+            b.CloseComponent();
+            b.OpenComponent<BnModal>(69);
+            b.AddComponentParameter(70, nameof(BnModal.Visible), true);
+            b.AddComponentParameter(71, nameof(BnModal.VisibleChanged),
+                EventCallback.Factory.Create<bool>(this, BnModalSlow));
+            b.CloseComponent();
+            // The control: a second BnCheckbox with no app callback at all.
+            b.OpenComponent<BnCheckbox>(72);
+            b.CloseComponent();
+            // A BnCheckbox whose hook throws, with a slow app callback.
+            b.OpenComponent<ThrowingHookCheckbox>(81);
+            b.AddComponentParameter(82, nameof(BnCheckbox.CheckedChanged),
+                EventCallback.Factory.Create<bool>(this, BnCheckThrowSlow));
+            b.CloseComponent();
+            // @bind-Value with a slow :after method: two pages with one input each, and
+            // one page with two.
+            b.OpenComponent<SlowBindPageA>(73);
+            b.AddComponentParameter(74, nameof(SlowBindPageA.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            b.OpenComponent<SlowBindPageB>(75);
+            b.AddComponentParameter(76, nameof(SlowBindPageB.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            b.OpenComponent<SlowBindPageTwo>(77);
+            b.AddComponentParameter(78, nameof(SlowBindPageTwo.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // Plain @bind-Value and @bind-Value:get/:set, on one page.
+            b.OpenComponent<SlowBindPageForms>(79);
+            b.AddComponentParameter(80, nameof(SlowBindPageForms.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
         }
 
         public void Dispose() => Bridge.NativeEvents -= OnNativeEvent;
 
         internal static void RunSlow(string tag) => Run(tag, SlowMs);
+    }
+
+    /// <summary>A BnCheckbox whose hook throws <see cref="MissingFieldException"/>, the
+    /// exception an unbound <c>[UnsafeAccessor]</c> raises. It re-implements the hook, so
+    /// the renderer, which reaches the hook through BnCheckbox's own HandleChange, calls
+    /// this one.</summary>
+    private sealed class ThrowingHookCheckbox : BnCheckbox, IForwardsUiEvent
+    {
+        Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+            => throw new MissingFieldException("EventCallback`1", "Delegate");
     }
 
     // Two page types whose BuildRenderTree is the same line for line: a BnView whose

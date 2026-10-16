@@ -3,6 +3,7 @@ package io.blazornative.shell
 import android.util.Log
 import io.blazornative.jni.BnLogFormat
 import io.blazornative.jni.BnLogLevel
+import io.blazornative.jni.BnPrivacy
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BnShellLog — issue #200: the SHELL'S OWN narration, behind the SAME level gate
@@ -50,11 +51,18 @@ import io.blazornative.jni.BnLogLevel
 // deliberate keep, not an oversight — the tag is what `adb logcat -s
 // BlazorNative` (and `scripts/devloop.ps1`'s boot-marker wait) filters on.
 //
-// WHAT IS *NOT* GATED, AND MUST NOT BE. `Log.w` / `Log.e` stay bare, everywhere
-// in the shell. Warnings and errors ship in Release by design (BnLog's own rule,
-// design §4.3: the mapper's `ignored`/`skipped` lines are the only record that a
-// wire the app author wrote was silently dropped). The pin in
-// `AndroidLogDriftTests` therefore forbids `Log.i`/`Log.d`/`Log.v` ONLY.
+// WHAT IS *NOT* GATED, AND MUST NOT BE. `warn` and `error` are written at every
+// threshold; only `info`, `debug` and `verbose` are level-gated. Warnings and
+// errors ship in Release by design (BnLog's own rule, design §4.3: the mapper's
+// `ignored`/`skipped` lines are the only record that a wire the app author wrote
+// was silently dropped). The pin in `AndroidLogDriftTests` therefore forbids
+// `Log.i`/`Log.d`/`Log.v` ONLY. `LogPrivacyDriftTests` separately forbids every
+// other `android.util.Log` use outside this file.
+//
+// PRIVACY IS A SEPARATE AXIS FROM LEVEL. Every call takes a `BnPrivacy` whose
+// default is REDACTED. Unless [BnShellLog.reveal] is set, a REDACTED line is
+// written as `<private>`, a SAFE line keeps its text, and a throwable is dropped
+// from both.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -62,8 +70,10 @@ import io.blazornative.jni.BnLogLevel
  * ordinal the runtime is given, and the three levels that are SUPPRESSED at the
  * Release default.
  *
- * `info` / `debug` / `verbose` only. A warning or an error goes straight to
- * `Log.w` / `Log.e` — see the file header.
+ * `info` / `debug` / `verbose` are level gated. `warn` / `error` are written at
+ * every threshold. Every call takes a [BnPrivacy], REDACTED by default; text is
+ * written as given only when [reveal] is set or the call says SAFE, and a
+ * throwable is written only when [reveal] is set.
  */
 object BnShellLog {
 
@@ -97,6 +107,28 @@ object BnShellLog {
     var sink: (Int, String, String) -> Unit = { priority, tag, message ->
         Log.println(priority, tag, message)
     }
+
+    /**
+     * THE SINK FOR A LINE THAT CARRIES A THROWABLE. Only a revealed line reaches
+     * it; production writes what `Log.e(tag, msg, t)` writes, the message and the
+     * stack trace in one `Log.println`.
+     */
+    @Volatile
+    @JvmField
+    var throwableSink: (Int, String, String, Throwable) -> Unit = { priority, tag, message, t ->
+        Log.println(priority, tag, message + '\n' + Log.getStackTraceString(t))
+    }
+
+    /** What an unrevealed line's text is written as. */
+    const val PRIVATE: String = "<private>"
+
+    /**
+     * Whether text and throwables are written as given. False by default, so a
+     * line is redacted until the shell sets this.
+     */
+    @Volatile
+    @JvmField
+    var reveal: Boolean = false
 
     // volatile: written once on the main thread in onCreate, read from the boot
     // thread ([BOOT] lines), the main thread (deep links) and the dispatch lane
@@ -139,22 +171,68 @@ object BnShellLog {
     /** Success narration — boot lines, deep-link routes, the bridge's navigate.
      * SUPPRESSED at the Release default; this is issue #200's whole subject. */
     @JvmStatic
-    fun info(tag: String, message: String) = write(BnLogLevel.INFO, tag, message)
+    @JvmOverloads
+    fun info(tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        write(BnLogLevel.INFO, tag, message, null, privacy)
 
     /** Developer detail. Suppressed at the Release default. */
     @JvmStatic
-    fun debug(tag: String, message: String) = write(BnLogLevel.DEBUG, tag, message)
+    @JvmOverloads
+    fun debug(tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        write(BnLogLevel.DEBUG, tag, message, null, privacy)
 
     /** Per-frame / per-patch tracing. Suppressed at the Release default; guard
      * with [isEnabled] before building the message. */
     @JvmStatic
-    fun verbose(tag: String, message: String) = write(BnLogLevel.VERBOSE, tag, message)
+    @JvmOverloads
+    fun verbose(tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        write(BnLogLevel.VERBOSE, tag, message, null, privacy)
 
-    private fun write(level: Int, tag: String, message: String) {
+    /** A warning. NOT gated by level: it is written at every threshold. */
+    @JvmStatic
+    @JvmOverloads
+    fun warn(tag: String, message: String, t: Throwable? = null, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        writeUngated(BnLogFormat.WARN, tag, message, t, privacy)
+
+    /** An error. NOT gated by level: it is written at every threshold. */
+    @JvmStatic
+    @JvmOverloads
+    fun error(tag: String, message: String, t: Throwable? = null, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        writeUngated(BnLogFormat.ERROR, tag, message, t, privacy)
+
+    /**
+     * Writes a report from the shared JVM code's `BnDiagnostics.sink`, REDACTED,
+     * at the level it was reported with: a [BnLogLevel.WARN] report through
+     * [warn], anything else through [error]. Ungated, as both are.
+     */
+    @JvmStatic
+    fun diagnostic(tag: String, level: Int, message: String, t: Throwable?) =
+        if (level == BnLogLevel.WARN) warn(tag, message, t) else error(tag, message, t)
+
+    /**
+     * Writes a line at a ready-made `android.util.Log` priority, ungated. The
+     * stderr pump uses it, because the .NET side already applied the level.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun relay(priority: Int, tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+        writeUngated(priority, tag, message, null, privacy)
+
+    private fun write(level: Int, tag: String, message: String, t: Throwable?, privacy: BnPrivacy) {
         if (!isEnabled(level)) return
+        writeUngated(androidPriority(level), tag, message, t, privacy)
+    }
+
+    // Unrevealed: a REDACTED text becomes PRIVATE, a SAFE text is kept, and the
+    // throwable is dropped either way. Revealed: text and throwable as given.
+    private fun writeUngated(priority: Int, tag: String, message: String, t: Throwable?, privacy: BnPrivacy) {
         try {
-            sink(androidPriority(level), tag, message)
-        } catch (t: Throwable) {
+            if (reveal) {
+                if (t == null) sink(priority, tag, message) else throwableSink(priority, tag, message, t)
+            } else {
+                sink(priority, tag, if (privacy == BnPrivacy.SAFE) message else PRIVATE)
+            }
+        } catch (ignored: Throwable) {
             // A logger that faults its caller is worse than a quiet one — the
             // rule BnLog.Write and BnStderrPump.emit both already follow.
         }

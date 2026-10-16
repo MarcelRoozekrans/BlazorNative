@@ -2,6 +2,9 @@ package io.blazornative.shell
 
 import io.blazornative.jni.BnLogFormat
 import io.blazornative.jni.BnLogLevel
+import io.blazornative.jni.BnLogRecord
+import io.blazornative.jni.BnPrivacy
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -36,12 +39,20 @@ class BnShellLogTest {
          * a fresh test instance per method — an instance field would capture a
          * sink an earlier test had already swapped). */
         private val productionSink = BnShellLog.sink
+        private val productionThrowableSink = BnShellLog.throwableSink
     }
 
     private val captured = mutableListOf<Triple<Int, String, String>>()
 
+    private val capturedThrowables = mutableListOf<Throwable?>()
+
     private fun collect() {
         captured.clear()
+        capturedThrowables.clear()
+        BnShellLog.throwableSink = { priority, tag, message, t ->
+            captured += Triple(priority, tag, message)
+            capturedThrowables += t
+        }
         BnShellLog.sink = { priority, tag, message ->
             captured += Triple(priority, tag, message)
         }
@@ -52,6 +63,8 @@ class BnShellLogTest {
         // The object is process-global; leaving a test's sink or threshold
         // installed would make the NEXT test's result depend on ordering.
         BnShellLog.sink = productionSink
+        BnShellLog.throwableSink = productionThrowableSink
+        BnShellLog.reveal = false
         BnShellLog.setLevelFromOrdinal(BnLogLevel.UNSET)
     }
 
@@ -97,6 +110,7 @@ class BnShellLogTest {
     fun `the narration reappears at Info — the paired control`() {
         collect()
         BnShellLog.setLevelFromOrdinal(BnLogLevel.INFO)
+        BnShellLog.reveal = true // this control is about the level gate, not privacy
 
         BnShellLog.info("BlazorNative", "[BOOT] mounted BnDemo")
 
@@ -188,5 +202,139 @@ class BnShellLogTest {
         // caller is worse than a quiet one, and these calls sit on the boot
         // thread and inside the bridge's navigate.
         BnShellLog.info("BlazorNative", "[BOOT] mounted BnDemo")
+    }
+
+    // ── #426: one privacy seam ───────────────────────────────────────────────
+
+    @Test
+    fun `an unrevealed REDACTED message is written as private, with its throwable dropped`() {
+        collect()
+        BnShellLog.reveal = false
+
+        BnShellLog.error("BlazorNative", "node 7 faulted: secret-route", IllegalStateException("secret"))
+
+        assertEquals(1, captured.size)
+        assertEquals(BnShellLog.PRIVATE, captured[0].third)
+        assertEquals(BnLogFormat.ERROR, captured[0].first, "the level stays readable")
+        assertEquals("BlazorNative", captured[0].second, "the tag stays readable")
+        assertTrue(capturedThrowables.isEmpty(), "a redacted line must not carry the throwable")
+    }
+
+    @Test
+    fun `an unrevealed SAFE message keeps its text and drops its throwable`() {
+        collect()
+        BnShellLog.reveal = false
+
+        BnShellLog.warn("BlazorNative", "[bridge] constant text", IllegalStateException("secret"), BnPrivacy.SAFE)
+
+        assertEquals(1, captured.size)
+        assertEquals("[bridge] constant text", captured[0].third)
+        assertTrue(capturedThrowables.isEmpty())
+    }
+
+    @Test
+    fun `a revealed line is written as today, text and throwable`() {
+        collect()
+        BnShellLog.reveal = true
+        val t = IllegalStateException("secret")
+
+        BnShellLog.error("BlazorNative", "node 7 faulted", t)
+        BnShellLog.warn("BlazorNative", "w", null, BnPrivacy.SAFE)
+
+        assertEquals("node 7 faulted", captured[0].third, "the anchor: the unredacted path returns the input")
+        assertEquals(BnLogFormat.ERROR, captured[0].first)
+        assertEquals("BlazorNative", captured[0].second)
+        assertSame(t, capturedThrowables[0])
+        assertEquals(BnLogFormat.WARN, captured[1].first)
+        assertEquals("w", captured[1].third)
+    }
+
+    @Test
+    fun `redaction is the default privacy`() {
+        collect()
+        BnShellLog.reveal = false
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.VERBOSE)
+
+        BnShellLog.info("t", "i-text")
+        BnShellLog.debug("t", "d-text")
+        BnShellLog.verbose("t", "v-text")
+        BnShellLog.warn("t", "w-text")
+        BnShellLog.error("t", "e-text")
+
+        assertEquals(List(5) { BnShellLog.PRIVATE }, captured.map { it.third })
+    }
+
+    @Test
+    fun `info debug and verbose honour SAFE and stay level gated`() {
+        collect()
+        BnShellLog.reveal = false
+        BnShellLog.info("t", "quiet", BnPrivacy.SAFE)
+        assertTrue(captured.isEmpty(), "info is still gated at the default threshold")
+
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.VERBOSE)
+        BnShellLog.info("t", "i", BnPrivacy.SAFE)
+        BnShellLog.debug("t", "d", BnPrivacy.SAFE)
+        BnShellLog.verbose("t", "v", BnPrivacy.SAFE)
+        assertEquals(listOf("i", "d", "v"), captured.map { it.third })
+    }
+
+    @Test
+    fun `warn and error are never gated by level`() {
+        // There is no Off level: ERROR (1) is the lowest threshold setLevelFromOrdinal
+        // accepts, so the error half cannot fail by gating. error is ungated by
+        // structure, because it calls writeUngated; this fact pins only warn.
+        collect()
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.ERROR)
+        BnShellLog.warn("t", "w", null, BnPrivacy.SAFE)
+        BnShellLog.error("t", "e", null, BnPrivacy.SAFE)
+        assertEquals(listOf(BnLogFormat.WARN, BnLogFormat.ERROR), captured.map { it.first })
+    }
+
+    @Test
+    fun `a throwing throwable sink is swallowed`() {
+        BnShellLog.reveal = true
+        BnShellLog.throwableSink = { _, _, _, _ -> throw IllegalStateException("boom") }
+        BnShellLog.error("t", "m", RuntimeException("x"))
+    }
+
+    @Test
+    fun `a WARN diagnostic reaches the shell as WARN, and an ERROR one as ERROR`() {
+        collect()
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.ERROR) // the quietest threshold: neither is gated
+
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.WARN, "rc 2 for request 7", null)
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.ERROR, "onError: boom", IllegalStateException("x"))
+
+        assertEquals(
+            listOf(
+                Triple(BnLogFormat.WARN, "BlazorNative", BnShellLog.PRIVATE),
+                Triple(BnLogFormat.ERROR, "BlazorNative", BnShellLog.PRIVATE),
+            ),
+            captured)
+
+        // Anchor: revealed, the same WARN call keeps its text. That rules out PRIVATE
+        // coming from the capture or from diagnostic itself rather than from
+        // redaction; the first assertion already tells WARN from ERROR.
+        collect()
+        BnShellLog.reveal = true
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.WARN, "rc 2 for request 7", null)
+        assertEquals(listOf(Triple(BnLogFormat.WARN, "BlazorNative", "rc 2 for request 7")), captured)
+    }
+
+    @Test
+    fun `the pump forwards a record as private unrevealed and verbatim revealed`() {
+        collect()
+        val record = BnLogRecord(BnLogFormat.ERROR, "Exports", "faulted: secret stack")
+
+        BnShellLog.reveal = false
+        BnStderrLogcatPump.forward(record)
+        BnShellLog.reveal = true
+        BnStderrLogcatPump.forward(record)
+
+        assertEquals(BnShellLog.PRIVATE, captured[0].third)
+        assertEquals("faulted: secret stack", captured[1].third)
+        assertEquals("BlazorNative/Exports", captured[0].second, "the category tag is unchanged")
+        assertEquals(BnLogFormat.ERROR, captured[0].first, "the priority is unchanged")
+        assertTrue(capturedThrowables.isEmpty(), "a pumped line carries no throwable")
     }
 }

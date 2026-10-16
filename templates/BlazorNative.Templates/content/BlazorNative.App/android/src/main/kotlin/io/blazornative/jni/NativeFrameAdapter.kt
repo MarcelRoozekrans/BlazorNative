@@ -195,7 +195,7 @@ object NativeFrameAdapter {
                 else ->
                     // Unknown wire id: a newer runtime is talking to an older
                     // shell. Skip (forward compat) but leave a trace.
-                    System.err.println("[NativeFrameAdapter] skipping unknown patch kind $kind (patch $i of $patchCount)")
+                    BnDiagnostics.sink(BnLogLevel.WARN, "[NativeFrameAdapter] skipping unknown patch kind $kind (patch $i of $patchCount)", null)
             }
         }
 

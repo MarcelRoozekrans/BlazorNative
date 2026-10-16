@@ -81,6 +81,7 @@
     verbatim (an app that wants it binds it, exactly as on the web).
     ─────────────────────────────────────────────────────────────────────────
 *@
+@implements IForwardsUiEvent
 @if (Visible)
 {
     <modal scrimColor="@(ScrimColor ?? DefaultScrimColor)" @onclick="HandleDismissRequest">
@@ -152,6 +153,15 @@
     /// back.</summary>
     private Task HandleDismissRequest()
         => VisibleChanged.InvokeAsync(false);
+
+    /// <summary>The app's VisibleChanged delegate when <paramref name="attached"/> is this
+    /// modal's own HandleDismissRequest, the click it forwards as its dismissal request,
+    /// so the slow-handler warning names the app's handler; null for any other event or
+    /// delegate, the content-box tap included.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+        => eventName == "click" && attached.Equals((Func<Task>)HandleDismissRequest)
+            ? EventCallbackDelegate.Of(VisibleChanged)
+            : null;
 
     /// <summary>The content-box swallow (decision 4): a REAL handler that
     /// moves nothing, so on Android a content tap stops at the box instead

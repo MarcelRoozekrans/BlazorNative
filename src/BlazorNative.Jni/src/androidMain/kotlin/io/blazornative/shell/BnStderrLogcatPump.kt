@@ -1,9 +1,9 @@
 package io.blazornative.shell
 
 import android.system.Os
-import android.util.Log
 import io.blazornative.jni.BnLogFormat
 import io.blazornative.jni.BnLogRecord
+import io.blazornative.jni.BnPrivacy
 import io.blazornative.jni.BnStderrPump
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -145,7 +145,8 @@ object BnStderrLogcatPump {
      * be strictly worse than a shell with no transport: the failure mode of a
      * missing pump is "diagnostics go where they already went", and the failure
      * mode of a throw is a blank app. A failed install is reported to logcat at
-     * `Log.w` — the one channel that is guaranteed to work — and swallowed.
+     * warn through [BnShellLog], which writes `android.util.Log` directly — the one
+     * channel that is guaranteed to work — and swallowed.
      */
     @Synchronized
     fun install(): Boolean {
@@ -183,7 +184,7 @@ object BnStderrLogcatPump {
                     // treats a read failure as EOF. Belt and braces: an uncaught
                     // throw here would kill the transport for the process
                     // lifetime, silently.
-                    Log.w(TAG_PREFIX, "stderr pump reader stopped", t)
+                    BnShellLog.warn(TAG_PREFIX, "stderr pump reader stopped", t, BnPrivacy.SAFE)
                 }
             }, THREAD_NAME).apply {
                 // DAEMON, non-negotiable: the reader blocks on read() forever, so
@@ -196,8 +197,12 @@ object BnStderrLogcatPump {
             state = InstallState.Installed
             true
         } catch (t: Throwable) {
-            Log.w(TAG_PREFIX, "stderr → logcat pump could not be installed; the runtime's " +
-                "diagnostics stay on a stderr Android discards", t)
+            BnShellLog.warn(
+                TAG_PREFIX,
+                "stderr → logcat pump could not be installed; the runtime's diagnostics stay on a stderr Android discards",
+                t,
+                BnPrivacy.SAFE,
+            )
             false
         }
     }
@@ -219,7 +224,11 @@ object BnStderrLogcatPump {
      * `BlazorNative/<category>` (`BlazorNative/native` for anything the BCL,
      * NativeAOT or a third party wrote unprefixed — see
      * [BnLogFormat.FALLBACK_CATEGORY]). */
-    private fun toLogcat(record: BnLogRecord) {
-        Log.println(record.priority, "$TAG_PREFIX/${record.category}", record.message)
+    private fun toLogcat(record: BnLogRecord) = forward(record)
+
+    /** Writes a pumped .NET line through [BnShellLog], REDACTED: no .NET line
+     * is a shell-side constant. Internal so a JVM test can reach it. */
+    internal fun forward(record: BnLogRecord) {
+        BnShellLog.relay(record.priority, "$TAG_PREFIX/${record.category}", record.message, BnPrivacy.REDACTED)
     }
 }

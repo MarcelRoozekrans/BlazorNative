@@ -128,7 +128,10 @@ public sealed class AndroidLogDriftTests
     /// in Release by design (BnLog's own rule — the mapper's `ignored`/`skipped`
     /// lines are the only record that a wire the app author wrote was dropped),
     /// and a shell that could not report a boot failure without a threshold being
-    /// raised would be strictly worse than one that is noisy.
+    /// raised would be strictly worse than one that is noisy. Since #426 they go
+    /// through <c>BnShellLog.warn</c>/<c>error</c>, and <c>LogPrivacyDriftTests</c>
+    /// forbids a bare <c>Log.w</c>/<c>Log.e</c>; this pin's subject stays the
+    /// gated levels.
     ///
     /// The leading boundary keeps `BnShellLog.info` and `BnLogFormat`-qualified
     /// mentions out; the trailing `\s*\(` is what makes it a CALL rather than a
@@ -184,8 +187,9 @@ public sealed class AndroidLogDriftTests
             + "Release build. That is issue #200, observed on hardware: at the DEFAULT Warn a cold "
             + "launch still emitted four Info `[BOOT]` lines, while ZERO lines carried the pump's "
             + "BlazorNative/<category> tag — proof they never touched the seam.\n"
-            + "Use BnShellLog.info/debug/verbose(tag, message). Log.w and Log.e stay bare on "
-            + "purpose: warnings and errors ship in Release.\n"
+            + "Use BnShellLog.info/debug/verbose(tag, message). Warnings and errors ship in "
+            + "Release through BnShellLog.warn/error, ungated; LogPrivacyDriftTests forbids every "
+            + "other android.util.Log use outside BnShellLog.kt.\n"
             + $"({InstrumentedTests}'s instrumented diagnostics are exempt BY DIRECTORY — that is "
             + "about test output on an emulator and buys no exemption here.)");
     }

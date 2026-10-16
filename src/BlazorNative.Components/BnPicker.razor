@@ -66,6 +66,7 @@
     ─────────────────────────────────────────────────────────────────────────
 *@
 @inherits BnLayoutItem
+@implements IForwardsUiEvent
 <select items="@ItemsJson"
         selectedIndex="@EffectiveIndexWire"
         enabled="@(Enabled ? null : "false")"
@@ -136,6 +137,14 @@
 
     private Task HandleChange(ChangeEventArgs e)
         => SelectedIndexChanged.InvokeAsync(Clamp(ParseIndexPayload(e.Value?.ToString())));
+
+    /// <summary>The app's SelectedIndexChanged delegate when <paramref name="attached"/> is this
+    /// wrapper's own HandleChange, the change it forwards, so the slow-handler warning
+    /// names the app's handler; null for any other event or delegate.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+        => eventName == "change" && attached.Equals((Func<ChangeEventArgs, Task>)HandleChange)
+            ? EventCallbackDelegate.Of(SelectedIndexChanged)
+            : null;
 
     /// <summary>Strict wire parse — an invariant int. Missing or unparseable
     /// is a SHELL contract violation: throw (FormatException) → dispatch

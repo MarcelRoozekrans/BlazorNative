@@ -35,18 +35,19 @@ class BlazorNativeRuntime(
     // (see [checkFrameProducer]). Consumers still post to the main thread
     // before touching views.
     private val onFrame: (RenderFrame) -> Unit,
-    // (JVM-only default — Android callers must pass a Log-based sink. This is
-    // the SHELL's own Kotlin diagnostics, and it is NOT what Phase 11.4 Gate B's
-    // stderr pump covers: the pump redirects process fd 2, which is where the
-    // NATIVE runtime writes; ART routes a JVM `System.err.println` through its
-    // own path with the tag "System.err", losing the level and the category. So
-    // the pluggable sink stays, and the Activity still passes Log.e.)
+    // (The default writes through BnDiagnostics.sink, which is System.err on a
+    // desktop JVM. This is the SHELL's own Kotlin diagnostics, and it is NOT what
+    // Phase 11.4 Gate B's stderr pump covers: the pump redirects process fd 2,
+    // which is where the NATIVE runtime writes; ART routes a JVM
+    // `System.err.println` through its own path with the tag "System.err",
+    // losing the level, the category and, since #426, the redaction. So the
+    // pluggable sink stays, and the Activity passes BnShellLog.error.)
     //
     // THREAD SET: ANY thread — the start() caller, the BlazorNative-Dispatch lane, and
     // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after it began a host call
     // or a fetch arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
     // thread sent it. A sink that touches UI must post to the main thread first.
-    private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
+    private val onError: (String, Throwable) -> Unit = { msg, t -> BnDiagnostics.sink(BnLogLevel.ERROR, msg, t) },
     // Phase 16.2 (#346): .NET's BackState notice — whether a back would be handled now.
     // Sent when the value changes, before every mount, and for a navigation BEFORE the
     // frames that show the new page. THREAD SET: whichever thread .NET sent it from —

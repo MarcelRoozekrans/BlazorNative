@@ -49,6 +49,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
+    <InternalsVisibleTo Include="BlazorNative.Components" />
+    <InternalsVisibleTo Include="BlazorNative.Renderer" />
+    <!-- Phase 17.4: ForwardingHookTests calls IForwardsUiEvent directly. -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
   </ItemGroup>
 
   <ItemGroup>

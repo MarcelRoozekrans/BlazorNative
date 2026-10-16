@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
@@ -27,7 +28,7 @@ namespace BlazorNative.Components;
 /// <see cref="ValueChanged"/> out — when you need to intercept the edit.
 /// </para>
 /// </remarks>
-public sealed class BnInput : BnLayoutItem
+public sealed class BnInput : BnLayoutItem, IForwardsUiEvent
 {
     /// <summary>The current text. Null is sent as an empty string, so the text
     /// box always has a definite value.</summary>
@@ -81,4 +82,12 @@ public sealed class BnInput : BnLayoutItem
 
     private Task HandleChange(ChangeEventArgs e)
         => ValueChanged.InvokeAsync(e.Value?.ToString() ?? "");
+
+    /// <summary>The app's ValueChanged delegate when <paramref name="attached"/> is this
+    /// wrapper's own HandleChange, the change it forwards, so the slow-handler warning
+    /// names the app's handler; null for any other event or delegate.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+        => eventName == "change" && attached.Equals((Func<ChangeEventArgs, Task>)HandleChange)
+            ? EventCallbackDelegate.Of(ValueChanged)
+            : null;
 }

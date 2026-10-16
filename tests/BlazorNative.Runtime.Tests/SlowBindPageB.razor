@@ -1,0 +1,13 @@
+@* Phase 17.4 (#435): a page holding one BnInput bound with @bind-Value and a slow
+   :after method, for SlowHandlerWarningTests. A real .razor file, so the binder is
+   the one the Razor compiler emits. *@
+<BnInput Placeholder="bind-page-b" @bind-Value="_text" @bind-Value:after="After" />
+
+@code {
+    private string _text = "";
+
+    /// <summary>Runs the slow part, tagged with this page's input.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+    private void After() => Slow("bind-page-b");
+}

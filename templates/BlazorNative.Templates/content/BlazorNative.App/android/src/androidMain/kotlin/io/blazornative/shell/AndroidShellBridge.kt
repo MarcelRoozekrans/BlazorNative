@@ -31,7 +31,6 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -673,7 +672,9 @@ class AndroidShellBridge(
      * 1 = unknown/already-completed id (benign). */
     private fun completeHostCall(requestId: Long, status: Int, payload: Map<String, String>?) {
         // 17.2 test seam: when set, the test owns the completion and the thread it ran on, and
-        // the request ids it begins were never issued by .NET, so nothing is sent on.
+        // the request ids it begins were never issued by .NET, so nothing is sent on. One test
+        // differs: FaultNoticeLogAndroidTest's hook takes a real id .NET issued and forwards it
+        // to blazornative_host_call_complete itself, with a malformed payload.
         completeHookForTest?.let { hook ->
             hook(requestId, status, payload, Thread.currentThread().name)
             return
@@ -1771,7 +1772,9 @@ class AndroidShellBridge(
 
         /** 17.2 test seams (instrumented AndroidHostCallContractTest), null in production and
          * reset by [resetHostCallContractForTest]. [completeHookForTest] takes every host-call
-         * completion with the thread it ran on, instead of sending it to .NET.
+         * completion with the thread it ran on, instead of sending it to .NET. One test
+         * differs: FaultNoticeLogAndroidTest's hook forwards a real .NET-issued id to
+         * blazornative_host_call_complete itself, with a malformed payload, to fault the demo.
          * [gateReachedForTest] counts down, and [workGateForTest] holds, the start of each
          * biometrics or secure-storage job; [jobFaultForTest] makes that job throw. */
         @VisibleForTesting @Volatile @JvmStatic internal var completeHookForTest:

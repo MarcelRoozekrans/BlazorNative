@@ -43,7 +43,7 @@
     "proxy for a path, one line hides a tree, and the single positive control running through",
     "that matcher lives in another package so it stays green. And rewriting a pin's own fact",
     "body, which no assertion anywhere survives. A walk over a strict SUPERSET of these roots",
-    "is also undetected, and that one fails SAFE for all three pins, which assert absences --",
+    "is also undetected, and that one fails SAFE for every consumer, which all assert absences --",
     "an extra tree can only add offenders. The residuals that survive measurement live beside",
     "the code in ShellSourceScan; trust those, not a summary.",
     "",
@@ -112,7 +112,7 @@
     "That is disclosed here because a gap treated as covered ground is worse than an admitted",
     "one.",
     "",
-    "TO ADD A SET: add it here, then add it to ALL THREE consumers -- the totality fact",
+    "TO ADD A SET: add it here, then add it to EVERY consumer -- the totality fact",
     "reds until every one of them has said what it does about the new tree. That is the",
     "mechanism, not a chore around it."
   ],
@@ -275,6 +275,17 @@
         "androidInstrumentedTests": "test source; its own exemption is declared in that pin.",
         "androidJvmTests": "test source; likewise.",
         "androidJvmHost": "not the Android compilation. android.util.Log is not even on its classpath."
+      }
+    },
+    "LogPrivacyDriftTests": {
+      "consumes": ["androidShell", "androidTemplateMirror"],
+      "delegated": {},
+      "excluded": {
+        "appleShell": "Swift. The iOS half of the privacy rule is two named files, BnLog.swift and BnStderrPump.swift, which the pin reads by path rather than by tree scan.",
+        "appleTestBundle": "Swift test source.",
+        "androidInstrumentedTests": "test source. It runs on an emulator, never in a consumer's app, and writes its own diagnostics with android.util.Log.",
+        "androidJvmTests": "test source; likewise.",
+        "androidJvmHost": "the desktop inspector host. It runs on a JVM, never on a device, so its System.err is a terminal, not logcat."
       }
     },
     "NSLogDriftTests": {
