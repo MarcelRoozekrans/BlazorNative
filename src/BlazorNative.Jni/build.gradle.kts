@@ -259,6 +259,11 @@ tasks.withType<Test>().configureEach {
         showStandardStreams = true
     }
     systemProperty("jna.library.path", winX64PublishPath)
+    // The native runtime JNA loads is not a classpath entry: declare it, or a rebuilt library
+    // leaves this task UP-TO-DATE (#424). A missing DLL is an empty tree, so this never fails.
+    inputs.files(fileTree(winX64PublishPath) { include("BlazorNative.Runtime.dll") })
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,6 +293,9 @@ tasks.register<JavaExec>("runPreviewHost") {
     mainClass.set("io.blazornative.jni.PreviewHostKt")
     classpath = files(debugKotlinClasses) + previewHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(fileTree(winX64PublishPath) { include("BlazorNative.Runtime.dll") })
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
     systemProperty("stdout.encoding", "UTF-8")
     systemProperty("stderr.encoding", "UTF-8")
@@ -383,6 +391,9 @@ tasks.register<JavaExec>("runInspectorHost") {
         debugKotlinClasses,
     ) + inspectorHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(fileTree(winX64PublishPath) { include("BlazorNative.Runtime.dll") })
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
     systemProperty("stdout.encoding", "UTF-8")
     systemProperty("stderr.encoding", "UTF-8")
