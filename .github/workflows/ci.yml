@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1360 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1362 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2362,7 +2362,10 @@ jobs:
       # 1359 -> 1360 (17.4, +1, 2026-10-16): Runtime 1185 -> 1186. SlowHandlerWarningTests gains
       # AHookThatThrows_NeverFaultsTheDispatch_… — a wrapper hook that throws falls back to the tree
       # owner, and the dispatch still completes.
-      - name: .NET tests (assert 1360 passed / 0 skipped)
+      # 1360 -> 1362 (17.4, +2, 2026-10-16): Runtime 1186 -> 1188. LogPrivacyDriftTests gains the
+      # console-writer scan — no System.out, bare print or println, or printStackTrace in the
+      # shipped shell outside PreviewHost.kt — and its planted-violation control.
+      - name: .NET tests (assert 1362 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2380,8 +2383,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1360 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1360 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1362 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1362 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence

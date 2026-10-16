@@ -76,6 +76,10 @@ public sealed class ForwardingHookTests
         var receiver = new Receiver();
         var modal = new BnModal { VisibleChanged = EventCallback.Factory.Create<bool>(receiver, AppBoolMethod) };
         var input = new BnInput { ValueChanged = EventCallback.Factory.Create<string>(receiver, AppMethod) };
+        var checkbox = new BnCheckbox { CheckedChanged = EventCallback.Factory.Create<bool>(receiver, AppBoolMethod) };
+        var picker = new BnPicker { SelectedIndexChanged = EventCallback.Factory.Create<int>(receiver, AppIntMethod) };
+        var slider = new BnSlider { ValueChanged = EventCallback.Factory.Create<float>(receiver, AppFloatMethod) };
+        var toggle = new BnSwitch { CheckedChanged = EventCallback.Factory.Create<bool>(receiver, AppBoolMethod) };
         // Each probe has the SAME delegate type as the wrapper's own handler, so a check
         // that compared types alone would accept it: only identity tells them apart.
         Func<Task> notDismiss = () => Task.CompletedTask;
@@ -85,5 +89,13 @@ public sealed class ForwardingHookTests
             "BnModal returned the app's delegate for a Func<Task> that is not its HandleDismissRequest");
         Assert.True(((IForwardsUiEvent)input).ForwardedHandler("change", notChange) is null,
             "BnInput returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
+        Assert.True(((IForwardsUiEvent)checkbox).ForwardedHandler("change", notChange) is null,
+            "BnCheckbox returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
+        Assert.True(((IForwardsUiEvent)picker).ForwardedHandler("change", notChange) is null,
+            "BnPicker returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
+        Assert.True(((IForwardsUiEvent)slider).ForwardedHandler("change", notChange) is null,
+            "BnSlider returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
+        Assert.True(((IForwardsUiEvent)toggle).ForwardedHandler("change", notChange) is null,
+            "BnSwitch returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
     }
 }

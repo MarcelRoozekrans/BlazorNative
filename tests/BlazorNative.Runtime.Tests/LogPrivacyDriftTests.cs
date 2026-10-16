@@ -33,9 +33,14 @@ namespace BlazorNative.Runtime.Tests;
 //   · SAFE inside BnShellLog.kt or BnDiagnostics.kt. The SAFE check filters
 //     both files out wholesale: the seam compares against SAFE and the enum
 //     declares it. A SAFE passed inside either is not seen.
-//   · stderr writers other than `System.err`, such as `printStackTrace()`. There
-//     are none in the scanned trees today, and the System.err scan would not see
-//     one.
+//   · console writers the two console scans do not name. They see `System.err`,
+//     `System.out`, a bare `print(` or `println(`, a `::print` or `::println`
+//     reference, and `printStackTrace(`. A qualified `kotlin.io.println(`, a
+//     `Console`, or a `PrintStream` reached another way, such as through
+//     `FileDescriptor.out`, is not seen.
+//   · PreviewHost.kt's console output. It is the desktop devloop's `main()`, run
+//     only by Gradle's runPreviewHost JavaExec, and dead code in the APK, so the
+//     stdout scan exempts that one path.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class LogPrivacyDriftTests
@@ -66,6 +71,19 @@ public sealed class LogPrivacyDriftTests
 
     /// <summary>Any use of <c>System.err</c>.</summary>
     private const string SystemErrUse = @"\bSystem\s*\.\s*err\b";
+
+    /// <summary>The other console writers ART sends to logcat unredacted: any use of
+    /// <c>System.out</c>, a bare <c>print(</c> or <c>println(</c>, a <c>::print</c> or
+    /// <c>::println</c> reference, and <c>printStackTrace(</c>, which writes to
+    /// <c>System.err</c>. The leading boundary keeps a member such as
+    /// <c>writer.println(</c> out.</summary>
+    private const string ConsoleWriterUse =
+        @"\bSystem\s*\.\s*out\b|(?<![\w.:])print(?:ln)?\s*\(|::\s*print(?:ln)?\b|\bprintStackTrace\s*\(";
+
+    /// <summary>The one shipped file allowed to write the console: the desktop
+    /// devloop's <c>main()</c>, run only by Gradle's runPreviewHost JavaExec. The
+    /// template does not carry it.</summary>
+    private const string ConsoleSeam = "src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/PreviewHost.kt";
 
     /// <summary>The <c>BnShellLog</c> entry points that take a privacy argument,
     /// with the zero-based position of each one's message argument.</summary>
@@ -121,7 +139,7 @@ public sealed class LogPrivacyDriftTests
         RawHitAt(ShellSourceScan.PatternHits(text + "\nimport android.util.Log\n", AndroidLogUse), planted);
     }
 
-    // ── 2. No System.err outside the diagnostics sink ────────────────────────
+    // ── 2. No console writer outside its seam ────────────────────────────────
 
     [Fact]
     public void NoSystemErr_OutsideBnDiagnostics()
@@ -154,6 +172,52 @@ public sealed class LogPrivacyDriftTests
 
         int planted = LineCount(text) + 1;
         RawHitAt(ShellSourceScan.PatternHits(text + "\nSystem.err.println(\"planted\")\n", SystemErrUse), planted);
+    }
+
+    [Fact]
+    public void NoOtherConsoleWriter_OutsidePreviewHost()
+    {
+        ShellSourceScan.Hit[] hits = ShellSourceScan
+            .ForPattern(Consumer, null, KotlinSource, ConsoleWriterUse)
+            .HitsCoveringEveryDeclaredRoot();
+
+        // PreviewHost prints its tree and timings with println, so the pattern is
+        // still matching real code.
+        int seamHits = hits.Count(h => h.File == ConsoleSeam);
+        Assert.True(seamHits >= 2,
+            $"the console-writer pattern matched {seamHits} lines in {ConsoleSeam}, which prints "
+            + "its tree and timings with println. The pattern has stopped matching real code, so "
+            + "the absence below proves nothing.");
+
+        var offenders = hits.Where(h => h.File != ConsoleSeam).ToList();
+        Assert.True(offenders.Count == 0,
+            "A CONSOLE WRITER IN THE SHIPPED SHELL — ART sends System.out, println and "
+            + "printStackTrace to logcat, unredacted:\n"
+            + string.Join("\n", offenders.Select(h => $"  {h.File}:{h.Line}  {h.Text}"))
+            + "\n\nWrite through BnDiagnostics.sink in src/main, or BnShellLog in androidMain.");
+    }
+
+    [Fact]
+    public void TheConsoleWriterScan_FindsEachPlantedWrite()
+    {
+        string text = ReadCheckoutFile(
+            "src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt");
+        Assert.Empty(ShellSourceScan.PatternHits(text, ConsoleWriterUse));
+
+        int planted = LineCount(text) + 1;
+        string[] writes =
+        [
+            "System.out.println(\"planted\")",
+            "println(\"planted\")",
+            "print(value)",
+            "lines.forEach(::println)",
+            "t.printStackTrace()",
+        ];
+        foreach (string write in writes)
+            RawHitAt(ShellSourceScan.PatternHits(text + "\n" + write + "\n", ConsoleWriterUse), planted);
+
+        // A member println on a writer is not the console.
+        Assert.Empty(ShellSourceScan.PatternHits(text + "\nwriter.println(\"x\")\n", ConsoleWriterUse));
     }
 
     // ── 3. SAFE only on a literal ────────────────────────────────────────────

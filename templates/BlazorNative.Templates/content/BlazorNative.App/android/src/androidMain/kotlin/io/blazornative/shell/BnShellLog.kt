@@ -56,7 +56,8 @@ import io.blazornative.jni.BnPrivacy
 // errors ship in Release by design (BnLog's own rule, design §4.3: the mapper's
 // `ignored`/`skipped` lines are the only record that a wire the app author wrote
 // was silently dropped). The pin in `AndroidLogDriftTests` therefore forbids
-// `Log.i`/`Log.d`/`Log.v` ONLY.
+// `Log.i`/`Log.d`/`Log.v` ONLY. `LogPrivacyDriftTests` separately forbids every
+// other `android.util.Log` use outside this file.
 //
 // PRIVACY IS A SEPARATE AXIS FROM LEVEL. Every call takes a `BnPrivacy` whose
 // default is REDACTED. Unless [BnShellLog.reveal] is set, a REDACTED line is

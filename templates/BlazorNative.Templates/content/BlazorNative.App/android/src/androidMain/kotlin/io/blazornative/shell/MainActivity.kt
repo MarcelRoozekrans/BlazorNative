@@ -249,7 +249,8 @@ class MainActivity : FragmentActivity() {
         // ── Phase 11.4 Gate B (#155/#164): THE STDERR → LOGCAT PUMP ──────────
         //
         // INSTALLED FIRST IN onCreate, after only the #426 statements just above
-        // the call, AND THE ORDER IS THE POINT — not tidiness. Everything the .NET runtime, the BCL and NativeAOT itself diagnose goes
+        // the call, AND THE ORDER IS THE POINT — not tidiness. Everything the
+        // .NET runtime, the BCL and NativeAOT itself diagnose goes
         // to process fd 2, which Android sends to /dev/null. BnStderrLogcatPump
         // dup2()s a pipe over fd 2 and forwards each line to logcat through
         // BnShellLog.
