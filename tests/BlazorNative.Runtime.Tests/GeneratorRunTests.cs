@@ -92,7 +92,13 @@ public sealed class GeneratorRunTests
                 $"RunBounded did not return within {Outer.TotalSeconds} s of the start ({clock.Elapsed}): a held pipe hangs it");
             var ex = await Assert.ThrowsAsync<XunitException>(() => run);
             Assert.Contains("did not finish within", ex.Message);
+            // The stub itself never exits: it waits on its child's pipe. So this is the
+            // still-running case, and that message names the #454 shape and the cleanup.
+            Assert.Contains(StillRunning, ex.Message);
+            Assert.DoesNotContain(ExitedNoEof, ex.Message);
             Assert.Contains("#454", ex.Message);
+            Assert.Contains("#530", ex.Message);
+            Assert.Contains("dotnet build-server shutdown", ex.Message);
 
             // THE TREE: the stub's own pwsh is dead. Where `pwsh` is the dotnet global-tool
             // shim, as on the dev host, the stub is the shim's child, so this needs the tree
@@ -100,6 +106,120 @@ public sealed class GeneratorRunTests
             // Windows here.
             Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(15)),
                 $"the stub's pwsh (pid {pids["stub"]}) survived the bound's kill");
+        }
+        finally
+        {
+            if (ReadPids(pidFile).TryGetValue("sleeper", out int sleeper)) KillOwnSleeper(sleeper, factStart);
+            try { File.Delete(pidFile); } catch (IOException) { /* temp file */ }
+        }
+    }
+
+    /// <summary>Text of <see cref="BoundedScript.RunBounded"/>'s two failure cases.</summary>
+    private const string StillRunning = "the script was still running at the bound";
+
+    private const string ExitedNoEof = "but its output never reached end of file";
+
+    /// <summary>The bound for the two case facts below. The sleeper-only case cannot
+    /// leave the still-running case however slow its start-up. The exited case needs
+    /// one pwsh start-up, the launcher's, before the bound; 10 s leaves room for that
+    /// on a loaded runner. Nothing here measures a runner's start-up time.</summary>
+    private static readonly TimeSpan SleeperBound = TimeSpan.FromSeconds(3);
+
+    private static readonly TimeSpan ExitedBound = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// PIN, the still-running case: a script that is still running at the bound, here
+    /// the stub's sleeper role run directly, fails with the still-running message, not
+    /// the exited one. A slow generation lands here too. ANCHOR: the sleeper recorded
+    /// itself and is alive while the run is pending.
+    /// </summary>
+    [Fact]
+    public async Task AScriptStillRunningAtTheBound_FailsSayingItWasStillRunning()
+    {
+        Assert.True(File.Exists(Stub), $"the stub is missing: {Stub}");
+        string pidFile = Path.Combine(
+            Path.GetTempPath(), "bn-454-sleep-" + Guid.NewGuid().ToString("N") + ".pids");
+
+        DateTime factStart = DateTime.Now;
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            Task<GeneratorRun> run = Task.Run(() =>
+                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile, "-Role", "sleeper"], SleeperBound));
+
+            Dictionary<string, int> pids = new();
+            while (!run.IsCompleted && clock.Elapsed < Outer)
+            {
+                pids = ReadPids(pidFile);
+                if (pids.ContainsKey("sleeper")) break;
+                await Task.Delay(100);
+            }
+            Assert.True(pids.ContainsKey("sleeper"), "the sleeper never recorded itself before the run returned");
+            Assert.True(IsAlive(pids["sleeper"]), "the sleeper is not alive: the script is not running");
+
+            TimeSpan left = Outer - clock.Elapsed;
+            Task first = await Task.WhenAny(run, Task.Delay(left > TimeSpan.Zero ? left : TimeSpan.Zero));
+            Assert.True(first == run,
+                $"RunBounded did not return within {Outer.TotalSeconds} s of the start ({clock.Elapsed})");
+            var ex = await Assert.ThrowsAsync<XunitException>(() => run);
+            Assert.Contains("did not finish within", ex.Message);
+            Assert.Contains(StillRunning, ex.Message);
+            Assert.DoesNotContain(ExitedNoEof, ex.Message);
+        }
+        finally
+        {
+            if (ReadPids(pidFile).TryGetValue("sleeper", out int sleeper)) KillOwnSleeper(sleeper, factStart);
+            try { File.Delete(pidFile); } catch (IOException) { /* temp file */ }
+        }
+    }
+
+    /// <summary>
+    /// PIN, the exited case: a script that exits while a descendant holds its own
+    /// output pipe fails with the exited message, naming #530, not the still-running
+    /// one. The stub's launcher role, run directly, is that script: it starts the
+    /// sleeper, which inherits the script's stdout, and exits. This is the record's
+    /// first stub shape, not the dumps'. ANCHOR: the launcher has exited and the
+    /// sleeper is alive while the run is pending, so the pipe is held when the bound
+    /// fires.
+    /// </summary>
+    [Fact]
+    public async Task AScriptThatExitsWithItsPipeHeld_FailsSayingItExited()
+    {
+        Assert.True(File.Exists(Stub), $"the stub is missing: {Stub}");
+        string pidFile = Path.Combine(
+            Path.GetTempPath(), "bn-454-exit-" + Guid.NewGuid().ToString("N") + ".pids");
+
+        DateTime factStart = DateTime.Now;
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            Task<GeneratorRun> run = Task.Run(() =>
+                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile, "-Role", "launcher"], ExitedBound));
+
+            Dictionary<string, int> pids = new();
+            while (!run.IsCompleted && clock.Elapsed < Outer)
+            {
+                pids = ReadPids(pidFile);
+                if (pids.Count == 2 && !IsAlive(pids["launcher"])) break;
+                await Task.Delay(100);
+            }
+            Assert.True(pids.Count == 2,
+                $"the stub recorded {pids.Count} of its 2 roles before the run returned; "
+                + "the exited-with-pipe-held shape never formed");
+            Assert.False(IsAlive(pids["launcher"]), "the launcher never exited");
+            Assert.False(run.IsCompleted,
+                "the run returned before the anchor held, so the bound was not what ended it");
+            Assert.True(IsAlive(pids["sleeper"]), "the sleeper is not alive: nothing holds the pipe");
+
+            TimeSpan left = Outer - clock.Elapsed;
+            Task first = await Task.WhenAny(run, Task.Delay(left > TimeSpan.Zero ? left : TimeSpan.Zero));
+            Assert.True(first == run,
+                $"RunBounded did not return within {Outer.TotalSeconds} s of the start ({clock.Elapsed}): a held pipe hangs it");
+            var ex = await Assert.ThrowsAsync<XunitException>(() => run);
+            Assert.Contains("did not finish within", ex.Message);
+            Assert.Contains(ExitedNoEof, ex.Message);
+            Assert.DoesNotContain(StillRunning, ex.Message);
+            Assert.Contains("#530", ex.Message);
         }
         finally
         {

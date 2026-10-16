@@ -8,6 +8,10 @@
 #   launcher  starts the sleeper, which inherits its stdout, and exits at once;
 #   sleeper   holds that stdout open for 600 s.
 #
+# GeneratorRunTests also runs two roles directly: the sleeper alone, a script
+# still running at the bound, and the launcher alone, a script that exits while
+# the sleeper holds the script's own stdout.
+#
 # Each role appends "<role> <$PID>" to -PidFile. $PID is read inside each
 # process, so it names the real pwsh, never the dotnet global-tool shim, where
 # `pwsh` resolves to one, as on the dev host.

@@ -19,8 +19,10 @@ internal sealed record GeneratorRun(int ExitCode, string Log);
 /// <para>A run FINISHES when the process has exited AND both of its streams have
 /// reached EOF, all within one deadline. Either one missing at the deadline is a
 /// failure that names the script, its arguments, the bound and the last 20 lines of
-/// output. It is never a wait. GeneratorRunTests pins this against a stub with the
-/// dumps' shape.</para>
+/// output. It is never a wait. The failure says which case it hit: the script still
+/// running at the bound, which is a slow step or the dumps' shape, or the script
+/// exited with its own output pipe still held. GeneratorRunTests pins both cases, the
+/// first against a stub with the dumps' shape and against a plain sleeper.</para>
 ///
 /// <para>On expiry the process tree is killed. A tree kill reaches only processes
 /// still linked to the launched one: a descendant re-parented after its own parent
@@ -60,7 +62,8 @@ internal static class BoundedScript
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
 
-        bool finished = p.WaitForExit(bound)
+        bool exited = p.WaitForExit(bound);
+        bool finished = exited
             && outEof.Task.Wait(Remaining(bound, clock))
             && errEof.Task.Wait(Remaining(bound, clock));
 
@@ -73,13 +76,21 @@ internal static class BoundedScript
 
             string tail;
             lock (lines) tail = string.Join("\n", lines.TakeLast(20));
-            throw new XunitException(
-                $"{script} {string.Join(' ', args)} did not finish within {bound}; the process tree "
-                + "was killed. A child may have left a descendant holding its output pipe, as #454 "
-                + "records. A descendant re-parented after its parent exited, such as an MSBuild "
-                + "node, is out of a tree kill's reach and may linger.\n"
-                + $"Last output:\n{tail}\n"
-                + "A stray MSBuild node can be cleared with `dotnet build-server shutdown`.");
+            string run = $"{script} {string.Join(' ', args)} did not finish within {bound}: ";
+            throw new XunitException(exited
+                ? run + $"the script exited with code {p.ExitCode}, but its output never reached end of file. "
+                    + "A descendant of the script holds the script's own output pipe. It was re-parented "
+                    + "when the script exited, so no tree kill reaches it, and it may linger. #530 tracks "
+                    + "what holds such a pipe.\n"
+                    + $"Last output:\n{tail}"
+                : run + "the script was still running at the bound, and its process tree was killed. "
+                    + "Either a step is slow, such as a cold `dotnet tool restore`, or the script is in the "
+                    + "#454 shape: it waits for end of file from a child command that has exited while a "
+                    + "descendant of that child still holds the child's output pipe. #530 tracks what that "
+                    + "descendant is. A descendant re-parented after its parent exited, such as an MSBuild "
+                    + "node, is out of a tree kill's reach and may linger.\n"
+                    + $"Last output:\n{tail}\n"
+                    + "A stray MSBuild node can be cleared with `dotnet build-server shutdown`.");
         }
 
         // Both EOFs are in, so this cannot wait on a held pipe; it only lets the
