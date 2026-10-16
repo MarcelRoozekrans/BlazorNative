@@ -49,6 +49,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BlazorNative.Renderer.Tests" />
+    <InternalsVisibleTo Include="BlazorNative.Components" />
+    <InternalsVisibleTo Include="BlazorNative.Renderer" />
   </ItemGroup>
 
   <ItemGroup>
