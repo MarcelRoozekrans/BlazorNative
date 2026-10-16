@@ -144,9 +144,9 @@ raised it. The shell's own warnings and errors follow the same rule.
 A **debuggable** build, one with `FLAG_DEBUGGABLE` set, shows everything: the text of every
 line and the stack of every throwable.
 
-The switch is the shell log's `reveal` flag. The Android shell's main activity sets it in `onCreate` from the app's
-`FLAG_DEBUGGABLE`, **before** the stderr pump is installed, so even the earliest .NET line
-follows the rule.
+The switch is the shell log's `reveal` flag. The Android shell's main activity sets it in
+`onCreate` from the app's `FLAG_DEBUGGABLE`, **before** the stderr pump is installed, so
+even the earliest .NET line follows the rule.
 
 ## What a line looks like
 
