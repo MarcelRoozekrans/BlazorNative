@@ -83,8 +83,11 @@ public sealed class BnInput : BnLayoutItem, IForwardsUiEvent
     private Task HandleChange(ChangeEventArgs e)
         => ValueChanged.InvokeAsync(e.Value?.ToString() ?? "");
 
-    /// <summary>The app's ValueChanged delegate behind the change this box forwards, so
-    /// the slow-handler warning names the app's handler; null for any other event.</summary>
-    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName)
-        => eventName == "change" ? EventCallbackDelegate.Of(ValueChanged) : null;
+    /// <summary>The app's ValueChanged delegate when <paramref name="attached"/> is this
+    /// wrapper's own HandleChange, the change it forwards, so the slow-handler warning
+    /// names the app's handler; null for any other event or delegate.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+        => eventName == "change" && attached.Equals((Func<ChangeEventArgs, Task>)HandleChange)
+            ? EventCallbackDelegate.Of(ValueChanged)
+            : null;
 }

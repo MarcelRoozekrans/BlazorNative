@@ -1,4 +1,5 @@
 using BlazorNative.Components;
+using BlazorNative.Core;
 using Microsoft.AspNetCore.Components;
 
 namespace BlazorNative.Runtime.Tests;
@@ -9,8 +10,9 @@ namespace BlazorNative.Runtime.Tests;
 // WHAT THESE PINS DO NOT COVER:
 //  - A multicast or wrapped delegate. The facts use a single unwrapped method group, so
 //    Of returning the first-or-only target is not pinned for a combined delegate.
-//  - Wiring the hook into the renderer (NativeRenderer.HandlerCallSite.Resolve). That is
-//    Task 3's subject; nothing here proves the warning names the app's handler.
+//  - Wiring the hook into the renderer (NativeRenderer.HandlerCallSite.Resolve), and the
+//    positive half of each wrapper's own-handler check. SlowHandlerWarningTests pins both,
+//    through the delegate the renderer records from each wrapper's EventCallback.
 // The instantiations covered are string, bool, int and float: the ones the Bn wrappers use.
 public sealed class ForwardingHookTests
 {
@@ -63,5 +65,22 @@ public sealed class ForwardingHookTests
 
         Assert.True(EventCallbackDelegate.Of(callback)?.Method.Name == nameof(AppFloatMethod), "positive half: a float callback did not return the app's method");
         Assert.True(EventCallbackDelegate.Of(default(EventCallback<float>)) is null, "empty half: a default float callback did not return null");
+    }
+
+    /// <summary>A wrapper hands over the app's delegate only for its own forwarding
+    /// handler. Any other delegate attached to it, such as BnModal's content-box tap,
+    /// gets null even though the app's callback is set.</summary>
+    [Fact]
+    public void TheHook_IsNullForADelegateThatIsNotTheWrappersOwn()
+    {
+        var receiver = new Receiver();
+        var modal = new BnModal { VisibleChanged = EventCallback.Factory.Create<bool>(receiver, AppBoolMethod) };
+        var input = new BnInput { ValueChanged = EventCallback.Factory.Create<string>(receiver, AppMethod) };
+        Func<Task> other = () => Task.CompletedTask;
+
+        Assert.True(((IForwardsUiEvent)modal).ForwardedHandler("click", other) is null,
+            "BnModal returned the app's delegate for a click delegate that is not its HandleDismissRequest");
+        Assert.True(((IForwardsUiEvent)input).ForwardedHandler("change", other) is null,
+            "BnInput returned the app's delegate for a change delegate that is not its HandleChange");
     }
 }

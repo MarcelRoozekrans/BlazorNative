@@ -1733,10 +1733,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// merge every such handler in the app into one.</para>
     /// <para>When the method is FRAMEWORK code and its delegate's target is a wrapper that
     /// implements <see cref="IForwardsUiEvent"/> and returns the app's delegate for the
-    /// event, that delegate is resolved instead, by the same rule: an app method keys by
-    /// and names itself. A component <c>@bind-Value</c> forwards a lambda the Razor
-    /// compiler declares on the page, so it names the page. Otherwise a framework owner
-    /// key is combined with the tree-owner key.</para>
+    /// event and this recorded delegate, that delegate is resolved instead, by the same
+    /// rule: an app method keys by and names itself. A component <c>@bind-Value</c>
+    /// forwards a lambda the Razor compiler declares on the page, so it names the page;
+    /// <c>:get</c>/<c>:set</c> forwards the app's <c>:set</c> method. Otherwise a
+    /// framework owner key is combined with the tree-owner key.</para>
     /// <para>The fallback, when no delegate can be reached or its method cannot be
     /// resolved, is the tree owner: the component type, the attribute frame's sequence
     /// number and the event name. The delegate is only read here; its method, and the
@@ -1755,7 +1756,7 @@ public sealed class NativeRenderer : BlazorRenderer
                         if (!owner.Framework)
                             return ($"{owner.Declaring}::{owner.Method}#{EventName}", $"{owner.Declaring}.{owner.Method}");
                         if (Handler.Target is IForwardsUiEvent wrapper
-                            && wrapper.ForwardedHandler(EventName) is { } forwarded
+                            && wrapper.ForwardedHandler(EventName, Handler) is { } forwarded
                             && OwnerOf(forwarded) is { Framework: false } app)
                             return ($"{app.Declaring}::{app.Method}#{EventName}", $"{app.Declaring}.{app.Method}");
                         // A FRAMEWORK method is shared by every call site that uses it: each

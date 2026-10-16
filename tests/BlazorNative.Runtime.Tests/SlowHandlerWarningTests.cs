@@ -748,6 +748,40 @@ public sealed class SlowHandlerWarningTests
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
     }
 
+    /// <summary>Plain <c>@bind-Value</c>: the Razor compiler passes BnInput a lambda it
+    /// declares on the page, one per call site, so two plain-bound inputs on one page get
+    /// two warnings, each naming the page. The slowness is the bound property's setter.</summary>
+    [Fact]
+    public void TwoPlainBoundBnInputs_OnOnePage_GetTwoWarnings_NamingThePage()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-plain-a", "change"), Change("x")));
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-plain-b", "change"), Change("y")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-plain-a")); // anchor: both setters ran
+        Assert.Equal(1, SlowProbe.RunsOf("bind-plain-b"));
+        string[] lines = s.SlowLines();
+        Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
+            $"two plain @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones:"
+            + $"\n{string.Join("\n", lines)}");
+        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.", l));
+        Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+    }
+
+    /// <summary><c>@bind-Value:get/:set</c>: the Razor compiler passes BnInput the app's
+    /// <c>:set</c> method itself, so the warning names that method.</summary>
+    [Fact]
+    public void AGetSetBoundBnInput_NamesTheAppsSetMethod()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-get-set", "change"), Change("x")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bind-get-set")); // anchor: the :set method ran
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.SetSlow held", line);
+        Assert.DoesNotContain(typeof(BnInput).FullName!, line);
+    }
+
     [Fact]
     public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
     {
@@ -968,6 +1002,10 @@ public sealed class SlowHandlerWarningTests
             b.CloseComponent();
             b.OpenComponent<SlowBindPageTwo>(77);
             b.AddComponentParameter(78, nameof(SlowBindPageTwo.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // Plain @bind-Value and @bind-Value:get/:set, on one page.
+            b.OpenComponent<SlowBindPageForms>(79);
+            b.AddComponentParameter(80, nameof(SlowBindPageForms.Slow), (Action<string>)RunSlow);
             b.CloseComponent();
         }
 

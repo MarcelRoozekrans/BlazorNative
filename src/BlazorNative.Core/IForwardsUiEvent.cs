@@ -6,6 +6,8 @@ namespace BlazorNative.Core;
 /// </summary>
 internal interface IForwardsUiEvent
 {
-    /// <summary>The app's delegate behind <paramref name="eventName"/>, or null when there is none.</summary>
-    Delegate? ForwardedHandler(string eventName);
+    /// <summary>The app's delegate behind <paramref name="eventName"/>, when
+    /// <paramref name="attached"/>, the delegate the renderer recorded for the event, is the
+    /// component's own forwarding handler; otherwise null, as when the app supplied none.</summary>
+    Delegate? ForwardedHandler(string eventName, Delegate attached);
 }
