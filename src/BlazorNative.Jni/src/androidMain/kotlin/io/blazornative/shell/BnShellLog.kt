@@ -51,11 +51,17 @@ import io.blazornative.jni.BnPrivacy
 // deliberate keep, not an oversight — the tag is what `adb logcat -s
 // BlazorNative` (and `scripts/devloop.ps1`'s boot-marker wait) filters on.
 //
-// WHAT IS *NOT* GATED, AND MUST NOT BE. `Log.w` / `Log.e` stay bare, everywhere
-// in the shell. Warnings and errors ship in Release by design (BnLog's own rule,
-// design §4.3: the mapper's `ignored`/`skipped` lines are the only record that a
-// wire the app author wrote was silently dropped). The pin in
-// `AndroidLogDriftTests` therefore forbids `Log.i`/`Log.d`/`Log.v` ONLY.
+// WHAT IS *NOT* GATED, AND MUST NOT BE. `warn` and `error` are written at every
+// threshold; only `info`, `debug` and `verbose` are level-gated. Warnings and
+// errors ship in Release by design (BnLog's own rule, design §4.3: the mapper's
+// `ignored`/`skipped` lines are the only record that a wire the app author wrote
+// was silently dropped). The pin in `AndroidLogDriftTests` therefore forbids
+// `Log.i`/`Log.d`/`Log.v` ONLY.
+//
+// PRIVACY IS A SEPARATE AXIS FROM LEVEL. Every call takes a `BnPrivacy` whose
+// default is REDACTED. Unless [BnShellLog.reveal] is set, a REDACTED line is
+// written as `<private>`, a SAFE line keeps its text, and a throwable is dropped
+// from both.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -216,7 +222,7 @@ object BnShellLog {
             } else {
                 sink(priority, tag, if (privacy == BnPrivacy.SAFE) message else PRIVATE)
             }
-        } catch (t: Throwable) {
+        } catch (ignored: Throwable) {
             // A logger that faults its caller is worse than a quiet one — the
             // rule BnLog.Write and BnStderrPump.emit both already follow.
         }

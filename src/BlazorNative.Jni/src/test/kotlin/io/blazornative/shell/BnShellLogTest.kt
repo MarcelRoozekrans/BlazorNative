@@ -217,7 +217,7 @@ class BnShellLogTest {
         assertEquals(BnShellLog.PRIVATE, captured[0].third)
         assertEquals(BnLogFormat.ERROR, captured[0].first, "the level stays readable")
         assertEquals("BlazorNative", captured[0].second, "the tag stays readable")
-        assertTrue(capturedThrowables.all { it == null }, "a redacted line must not carry the throwable")
+        assertTrue(capturedThrowables.isEmpty(), "a redacted line must not carry the throwable")
     }
 
     @Test
@@ -227,8 +227,9 @@ class BnShellLogTest {
 
         BnShellLog.warn("BlazorNative", "[bridge] constant text", IllegalStateException("secret"), BnPrivacy.SAFE)
 
+        assertEquals(1, captured.size)
         assertEquals("[bridge] constant text", captured[0].third)
-        assertTrue(capturedThrowables.all { it == null })
+        assertTrue(capturedThrowables.isEmpty())
     }
 
     @Test
@@ -241,6 +242,8 @@ class BnShellLogTest {
         BnShellLog.warn("BlazorNative", "w", null, BnPrivacy.SAFE)
 
         assertEquals("node 7 faulted", captured[0].third, "the anchor: the unredacted path returns the input")
+        assertEquals(BnLogFormat.ERROR, captured[0].first)
+        assertEquals("BlazorNative", captured[0].second)
         assertSame(t, capturedThrowables[0])
         assertEquals(BnLogFormat.WARN, captured[1].first)
         assertEquals("w", captured[1].third)
@@ -277,6 +280,9 @@ class BnShellLogTest {
 
     @Test
     fun `warn and error are never gated by level`() {
+        // There is no Off level: ERROR (1) is the lowest threshold setLevelFromOrdinal
+        // accepts, so the error half cannot fail by gating. error is ungated by
+        // structure, because it calls writeUngated; this fact pins only warn.
         collect()
         BnShellLog.setLevelFromOrdinal(BnLogLevel.ERROR)
         BnShellLog.warn("t", "w", null, BnPrivacy.SAFE)

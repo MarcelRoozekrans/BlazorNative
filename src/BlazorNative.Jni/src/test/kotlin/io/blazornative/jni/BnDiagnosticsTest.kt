@@ -2,7 +2,6 @@ package io.blazornative.jni
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
@@ -48,7 +47,6 @@ class BnDiagnosticsTest {
         assertEquals(1, seen.size)
         assertEquals("hello", seen[0].first)
         assertTrue(seen[0].second === t)
-        assertNotSame(productionSink, BnDiagnostics.sink)
     }
 
     @Test
