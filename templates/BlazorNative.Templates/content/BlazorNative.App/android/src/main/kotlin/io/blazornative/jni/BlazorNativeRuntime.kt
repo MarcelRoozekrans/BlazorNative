@@ -47,7 +47,7 @@ class BlazorNativeRuntime(
     // since Phase 16.1 a .NET THREAD-POOL thread: a handler fault after it began a host call
     // or a fetch arrives as a FaultNotice that BridgeRegistrar hands to this sink on whatever .NET
     // thread sent it. A sink that touches UI must post to the main thread first.
-    private val onError: (String, Throwable) -> Unit = { msg, t -> BnDiagnostics.sink(msg, t) },
+    private val onError: (String, Throwable) -> Unit = { msg, t -> BnDiagnostics.sink(BnLogLevel.ERROR, msg, t) },
     // Phase 16.2 (#346): .NET's BackState notice — whether a back would be handled now.
     // Sent when the value changes, before every mount, and for a navigation BEFORE the
     // frames that show the new page. THREAD SET: whichever thread .NET sent it from —

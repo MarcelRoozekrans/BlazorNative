@@ -200,6 +200,15 @@ object BnShellLog {
         writeUngated(BnLogFormat.ERROR, tag, message, t, privacy)
 
     /**
+     * Writes a report from the shared JVM code's `BnDiagnostics.sink`, REDACTED,
+     * at the level it was reported with: a [BnLogLevel.WARN] report through
+     * [warn], anything else through [error]. Ungated, as both are.
+     */
+    @JvmStatic
+    fun diagnostic(tag: String, level: Int, message: String, t: Throwable?) =
+        if (level == BnLogLevel.WARN) warn(tag, message, t) else error(tag, message, t)
+
+    /**
      * Writes a line at a ready-made `android.util.Log` priority, ungated. The
      * stderr pump uses it, because the .NET side already applied the level.
      */

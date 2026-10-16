@@ -25,6 +25,17 @@ namespace BlazorNative.Runtime.Tests;
 // NON-VACUITY. Each tree scan asserts an absence, so each has a sibling fact
 // that drives the same matcher over a real shell file with one planted
 // violation, and the scan itself asserts that its sanctioned file still hits.
+//
+// DOES NOT COVER:
+//   · SAFE reached without the token, such as `BnPrivacy.valueOf("SAFE")` or
+//     `BnPrivacy.values()[i]`. The SAFE check finds the `SAFE` token, so a value
+//     computed at run time passes it.
+//   · SAFE inside BnShellLog.kt itself. The seam compares against SAFE, so the
+//     whole file is filtered out of the SAFE check; a SAFE passed inside it is
+//     not seen.
+//   · stderr writers other than `System.err`, such as `printStackTrace()`. There
+//     are none in the scanned trees today, and the System.err scan would not see
+//     one.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public sealed class LogPrivacyDriftTests
@@ -297,10 +308,12 @@ public sealed class LogPrivacyDriftTests
                 + "build redacts .NET's earliest boot lines.");
 
             Match sink = Regex.Match(onCreate,
-                @"\bBnDiagnostics\s*\.\s*sink\s*=\s*\{\s*(\w+)\s*,\s*(\w+)\s*->\s*BnShellLog\s*\.\s*error\s*\(\s*\w+\s*,\s*\1\s*,\s*\2\s*\)\s*\}");
+                @"\bBnDiagnostics\s*\.\s*sink\s*=\s*\{\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*->\s*"
+                + @"BnShellLog\s*\.\s*diagnostic\s*\(\s*\w+\s*,\s*\1\s*,\s*\2\s*,\s*\3\s*\)\s*\}");
             Assert.True(sink.Success && sink.Index < pump,
-                $"{where}'s onCreate must point BnDiagnostics.sink at BnShellLog.error before the "
-                + "pump, so the shared JVM code's diagnostics are redacted too.");
+                $"{where}'s onCreate must point BnDiagnostics.sink at BnShellLog.diagnostic, passing "
+                + "the report's level, before the pump, so the shared JVM code's diagnostics are "
+                + "redacted too and keep their level.");
         }
 
         // Nothing else in the shell writes the switch.
@@ -312,6 +325,44 @@ public sealed class LogPrivacyDriftTests
             "BnShellLog.reveal is written outside MainActivity:\n"
             + string.Join("\n", elsewhere.Select(h => $"  {h.File}:{h.Line}  {h.Text}")));
     }
+
+    // ── 6. The shared JVM code's reports keep their level ────────────────────
+
+    /// <summary>The <c>src/main</c> reports that were warnings on <c>System.err</c>
+    /// before #426, each with its file: they report at WARN, so the shell writes
+    /// them as warnings. Every other call reports at ERROR.</summary>
+    private static readonly (string File, int Calls)[] WarnReporters =
+    [
+        ("src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/ShellBridge.kt", 2),
+        ("src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/NativeFrameAdapter.kt", 1),
+    ];
+
+    [Fact]
+    public void TheSharedJvmCodesReports_KeepTheirLevel()
+    {
+        foreach ((string file, int expected) in WarnReporters)
+        {
+            foreach (string path in new[] { file, MirrorOf(file) })
+            {
+                var levels = Regex.Matches(Code(path), @"\bBnDiagnostics\s*\.\s*sink\s*\(\s*([\w.]+)\s*,")
+                    .Select(m => m.Groups[1].Value).ToList();
+                Assert.True(levels.Count == expected && levels.All(l => l == "BnLogLevel.WARN"),
+                    $"{path} reports through BnDiagnostics.sink at [{string.Join(", ", levels)}]; its "
+                    + $"{expected} report(s) were warnings before #426 and must stay BnLogLevel.WARN.");
+            }
+        }
+
+        // The shell routes a WARN report to warn: the one branch of diagnostic.
+        foreach (string dir in ShellDirs)
+            Assert.Matches(
+                @"fun\s+diagnostic\s*\(\s*tag\s*:\s*String\s*,\s*level\s*:\s*Int\s*,\s*message\s*:\s*String\s*,\s*t\s*:\s*Throwable\?\s*\)\s*=\s*"
+                + @"if\s*\(\s*level\s*==\s*BnLogLevel\.WARN\s*\)\s*warn\s*\(\s*tag\s*,\s*message\s*,\s*t\s*\)\s*else\s*error\s*\(\s*tag\s*,\s*message\s*,\s*t\s*\)",
+                Code(dir + LogSeam));
+    }
+
+    private static string MirrorOf(string shellPath)
+        => "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/"
+           + shellPath["src/BlazorNative.Jni/src/".Length..];
 
     // ── the SAFE call parser ─────────────────────────────────────────────────
 

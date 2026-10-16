@@ -26,27 +26,33 @@ class BnDiagnosticsTest {
         val bytes = ByteArrayOutputStream()
         try {
             System.setErr(PrintStream(bytes, true))
-            BnDiagnostics.sink("[X] something happened", null)
-            BnDiagnostics.sink("[X] failed", IllegalStateException("boom"))
+            BnDiagnostics.sink(BnLogLevel.WARN, "[X] something happened", null)
+            BnDiagnostics.sink(BnLogLevel.ERROR, "[X] failed", IllegalStateException("boom"))
         } finally {
             System.setErr(original)
         }
         val text = bytes.toString()
         assertTrue(text.contains("[X] something happened"), text)
         assertTrue(text.contains("[X] failed: java.lang.IllegalStateException: boom"), text)
+        // The level does not change the JVM default's output: the two lines are
+        // exactly what System.err.println wrote before the sink took a level.
+        assertEquals(
+            listOf("[X] something happened", "[X] failed: java.lang.IllegalStateException: boom"),
+            text.lines().filter { it.isNotEmpty() })
     }
 
     @Test
     fun `the sink is replaceable`() {
-        val seen = mutableListOf<Pair<String, Throwable?>>()
+        val seen = mutableListOf<Triple<Int, String, Throwable?>>()
         val t = RuntimeException("x")
-        BnDiagnostics.sink = { m, th -> seen += m to th }
+        BnDiagnostics.sink = { level, m, th -> seen += Triple(level, m, th) }
 
-        BnDiagnostics.sink("hello", t)
+        BnDiagnostics.sink(BnLogLevel.WARN, "hello", t)
 
         assertEquals(1, seen.size)
-        assertEquals("hello", seen[0].first)
-        assertTrue(seen[0].second === t)
+        assertEquals(BnLogLevel.WARN, seen[0].first)
+        assertEquals("hello", seen[0].second)
+        assertTrue(seen[0].third === t)
     }
 
     @Test

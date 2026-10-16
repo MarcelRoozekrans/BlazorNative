@@ -43,7 +43,7 @@
     "proxy for a path, one line hides a tree, and the single positive control running through",
     "that matcher lives in another package so it stays green. And rewriting a pin's own fact",
     "body, which no assertion anywhere survives. A walk over a strict SUPERSET of these roots",
-    "is also undetected, and that one fails SAFE for all three pins, which assert absences --",
+    "is also undetected, and that one fails SAFE for every consumer, which all assert absences --",
     "an extra tree can only add offenders. The residuals that survive measurement live beside",
     "the code in ShellSourceScan; trust those, not a summary.",
     "",

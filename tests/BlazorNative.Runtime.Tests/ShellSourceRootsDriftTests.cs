@@ -263,8 +263,8 @@ namespace BlazorNative.Runtime.Tests;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>THE ONE PARSE of src/shell-source-roots.json. Lives here rather than
-/// beside any one consumer so the three consuming pins -- AuthSemanticsDriftTests,
-/// AndroidLogDriftTests, NSLogDriftTests -- call it instead of growing a second
+/// beside any one consumer so the four consuming pins -- AuthSemanticsDriftTests,
+/// AndroidLogDriftTests, LogPrivacyDriftTests, NSLogDriftTests -- call it instead of growing a second
 /// copy of the parse, which is the precondition for exactly the twin divergence
 /// this roster exists to close (pin standard, Rule 8).</summary>
 internal static class ShellSourceRoots
@@ -1133,7 +1133,7 @@ public sealed class ShellSourceRootsDriftTests
             Assert.True(s.Roots.Length > 0,
                 $"set '{name}' declares an EMPTY `roots` array. Every pin that consumes it then "
                 + "walks nothing there and passes, while the totality fact still reports the set "
-                + "as accounted for by all three consumers — a tree that has left the repository's "
+                + "as accounted for by every consumer — a tree that has left the repository's "
                 + "attention with the roster still reading complete. If the tree is genuinely "
                 + "gone, delete the set and answer the totality question for every consumer; if it "
                 + "moved, re-point the roots deliberately.");
@@ -1562,7 +1562,7 @@ public sealed class ShellSourceRootsDriftTests
             + "\n\nA tree in no set is a tree the partition never asks about, so every consuming "
             + "pin is blind to it while " + ShellSourceRoots.ManifestPath + " still reads total. "
             + "That is #364 F1 one level out. Add a set for it and answer the totality question "
-            + "for all three consumers, or widen an existing set's roots — both are a few lines, "
+            + "for every consumer, or widen an existing set's roots — both are a few lines, "
             + "and neither is silent.");
     }
 
@@ -1573,7 +1573,7 @@ public sealed class ShellSourceRootsDriftTests
     /// nothing enforces is the bug class this repository has paid for most often,
     /// and for one phase this file carried it openly: the manifest disclosed, in
     /// its own $doc, that a consumer could declare it consumes `appleShell` while
-    /// scanning somewhere else entirely with everything green. The three pins now
+    /// scanning somewhere else entirely with everything green. The consuming pins now
     /// read their roots from <see cref="ShellSourceRoots.SetsFor"/>, so the claim
     /// and the behaviour are the same object — and this fact is what keeps them
     /// that way when someone re-grows a private array, which is precisely the
@@ -1606,7 +1606,7 @@ public sealed class ShellSourceRootsDriftTests
     /// consumer rather than reporting an unvisited root.
     ///
     /// IT READS COMMENT-STRIPPED SOURCE, for a reason found by mutation rather
-    /// than by design: every one of the three consumers now carries a doc comment
+    /// than by design: every consumer now carries a doc comment
     /// explaining why it calls the roster, and against RAW text those comments
     /// satisfied this fact all by themselves.</summary>
     [Fact]
@@ -1653,7 +1653,7 @@ public sealed class ShellSourceRootsDriftTests
 
             // COMMENT-STRIPPED, AND THIS WAS A LIVE HOLE RATHER THAN A PRECAUTION.
             // The first cut read the raw file, so ANY mention of the marker satisfied
-            // it — including the doc comments each of these three pins now carries
+            // it — including the doc comments each of these pins now carries
             // EXPLAINING why it calls the roster. MEASURED: replacing every real call
             // in AuthSemanticsDriftTests with a hard-coded array left this fact GREEN,
             // satisfied by its own header comment, with #364 F1 fully reopened at 15
@@ -1775,8 +1775,8 @@ public sealed class ShellSourceRootsDriftTests
     /// false of REARRANGEMENT, and three edits to the manifest alone proved it,
     /// every one nine facts green: swap `appleShell` and `appleTestBundle`, and
     /// the shipped iOS shell lands in the set the auth pin EXCLUDES; swap
-    /// `appleShell` and `androidJvmHost`, and it lands in the set all three
-    /// consumers exclude, with `language` asserted nowhere to stop a Swift tree
+    /// `appleShell` and `androidJvmHost`, and it lands in the set every
+    /// consumer excludes, with `language` asserted nowhere to stop a Swift tree
     /// posing as a Kotlin one; narrow `appleShell` to `BnHost/Fonts` and copy
     /// `BnHost` into `androidJvmHost`, and the consumed iOS set is a font folder.
     /// None hits zero. Deriving every list retires the class instead of naming it.

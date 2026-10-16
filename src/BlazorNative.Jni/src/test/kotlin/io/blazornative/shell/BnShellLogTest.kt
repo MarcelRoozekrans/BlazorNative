@@ -298,6 +298,29 @@ class BnShellLogTest {
     }
 
     @Test
+    fun `a WARN diagnostic reaches the shell as WARN, and an ERROR one as ERROR`() {
+        collect()
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.ERROR) // the quietest threshold: neither is gated
+
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.WARN, "rc 2 for request 7", null)
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.ERROR, "onError: boom", IllegalStateException("x"))
+
+        assertEquals(
+            listOf(
+                Triple(BnLogFormat.WARN, "BlazorNative", BnShellLog.PRIVATE),
+                Triple(BnLogFormat.ERROR, "BlazorNative", BnShellLog.PRIVATE),
+            ),
+            captured)
+
+        // Anchor: revealed, the same calls keep their text, so the levels above are
+        // the reports' own and not a constant.
+        collect()
+        BnShellLog.reveal = true
+        BnShellLog.diagnostic("BlazorNative", BnLogLevel.WARN, "rc 2 for request 7", null)
+        assertEquals(listOf(Triple(BnLogFormat.WARN, "BlazorNative", "rc 2 for request 7")), captured)
+    }
+
+    @Test
     fun `the pump forwards a record as private unrevealed and verbatim revealed`() {
         collect()
         val record = BnLogRecord(BnLogFormat.ERROR, "Exports", "faulted: secret stack")

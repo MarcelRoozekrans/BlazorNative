@@ -57,8 +57,9 @@ import kotlin.concurrent.thread
  *    design (only narration is gated). A boot crash is visible in logcat.
  *    Frame-level errors (adapter/consumer throws inside the JNA callback) route
  *    through onError → BnShellLog.error — JNA would otherwise swallow them to
- *    stderr. In a build that is not debuggable, the message and the throwable
- *    are written as `<private>`, as iOS writes them (#426).
+ *    stderr. In a build that is not debuggable, a REDACTED line's message is
+ *    written as `<private>` and its throwable is dropped, as iOS writes them
+ *    (#426); a SAFE literal keeps its text, and its throwable is dropped too.
  */
 class MainActivity : FragmentActivity() {
 
@@ -262,7 +263,7 @@ class MainActivity : FragmentActivity() {
         BnShellLog.reveal = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         // The sink is process-wide, so it captures a String, not this Activity.
         val shellTag = tag
-        BnDiagnostics.sink = { msg, t -> BnShellLog.error(shellTag, msg, t) }
+        BnDiagnostics.sink = { level, msg, t -> BnShellLog.diagnostic(shellTag, level, msg, t) }
         BnStderrLogcatPump.install()
 
         // ── #200: THE SHELL'S OWN NARRATION JOINS THE SAME GATE ──────────────
