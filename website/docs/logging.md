@@ -132,6 +132,22 @@ Note that iOS **redacts message payloads by default** in logs collected off-devi
 the clear. This is deliberate — it keeps app, user and exception data out of the unified
 log unless a call site explicitly marks it safe.
 
+### Android redacts the same way
+
+Android mirrors that rule. In a **non-debuggable** build (no `FLAG_DEBUGGABLE`), every
+shell log line and every .NET line forwarded through the stderr pump writes its **text as
+`<private>`**. A message the shell marks `SAFE`, which is a constant, keeps its text, and a
+throwable is dropped, so no stack trace reaches logcat. The **level and the category stay
+readable**, so you can still see that an error happened and which part of the framework
+raised it. The shell's own warnings and errors follow the same rule.
+
+A **debuggable** build, one with `FLAG_DEBUGGABLE` set, shows everything: the text of every
+line and the stack of every throwable.
+
+The switch is the shell log's `reveal` flag. The Android shell's main activity sets it in `onCreate` from the app's
+`FLAG_DEBUGGABLE`, **before** the stderr pump is installed, so even the earliest .NET line
+follows the rule.
+
 ## What a line looks like
 
 The default sink tags the level into the text so the shells' stderr pumps can map a line

@@ -150,12 +150,15 @@ A few things worth knowing about the warning before you see one:
 - **It never includes the payload.** The message names the handler, the event and the elapsed
   time — never the arguments the handler was called with, which can carry a user's own input.
 
-**Known limit.** A framework-forwarded handler — `BnInput`'s change handler is the example —
-runs its own method for every instance, so the warning ends up naming `BnInput` itself rather
-than the app code that is actually slow. Tracked as
-[#435](https://github.com/MarcelRoozekrans/BlazorNative/issues/435). If you see the warning name
-a BlazorNative component rather than your own code, this is why — the slow work is still yours,
-just wrapped by that control.
+**Framework controls are looked through.** When the slow handler is yours but a BlazorNative
+control invokes it, the warning names **your** handler, not the control. This holds for
+`BnInput`, `BnCheckbox`, `BnPicker`, `BnSlider`, `BnSwitch` and `BnModal`.
+
+A **bound** input names its **page** and a compiler-generated lambda, for example
+`Page.<BuildRenderTree>b__0_0`, because the Razor compiler turns `@bind-Value` into a lambda
+on the page. That covers plain `@bind-Value` too. Two bound inputs on one page each get their
+own warning. A friendlier name is tracked as
+[#522](https://github.com/MarcelRoozekrans/BlazorNative/issues/522).
 
 ## Back on Android, briefly
 
