@@ -29,9 +29,9 @@ namespace BlazorNative.Runtime.Tests;
 /// <item>The tree kill, where <c>pwsh</c> is the real executable. The stub's pwsh dies
 /// under a tree kill but not a plain one only where <c>pwsh</c> is the dotnet global-tool
 /// shim, with the real pwsh as its child, as on the dev host. Where <c>pwsh</c> is the
-/// real executable, as on Windows or a native pwsh install such as GitHub's ubuntu
-/// runners, a plain kill passes too, so there the tree kill is effectively
-/// unpinned.</item>
+/// real executable, as on Windows, a plain kill passes too, so there the tree kill is
+/// effectively unpinned. A native pwsh install, such as GitHub's ubuntu runners, is
+/// expected to behave like Windows here; that is not measured.</item>
 /// <item>What held the pipe in the real hangs. A reused MSBuild node is the leading
 /// suspect, not proven; #530 tracks it. This pins only that any such hang is
 /// bounded and named.</item>
@@ -102,8 +102,8 @@ public sealed class GeneratorRunTests
 
             // THE TREE: the stub's own pwsh is dead. Where `pwsh` is the dotnet global-tool
             // shim, as on the dev host, the stub is the shim's child, so this needs the tree
-            // kill. A native pwsh install, such as GitHub's ubuntu runners, behaves like
-            // Windows here.
+            // kill. A native pwsh install, such as GitHub's ubuntu runners, is expected to
+            // behave like Windows here; that is not measured.
             Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(15)),
                 $"the stub's pwsh (pid {pids["stub"]}) survived the bound's kill");
         }
@@ -119,13 +119,16 @@ public sealed class GeneratorRunTests
 
     private const string ExitedNoEof = "but its output never reached end of file";
 
-    /// <summary>The bound for the two case facts below. The sleeper-only case cannot
-    /// leave the still-running case however slow its start-up. The exited case needs
-    /// one pwsh start-up, the launcher's, before the bound; 10 s leaves room for that
-    /// on a loaded runner. Nothing here measures a runner's start-up time.</summary>
-    private static readonly TimeSpan SleeperBound = TimeSpan.FromSeconds(3);
+    /// <summary>The bounds for the two case facts below. The sleeper-only script never
+    /// exits, so its run lands in the still-running case whatever the bound; but its
+    /// anchor needs the sleeper's pwsh to start and record its pid before the bound
+    /// fires, one pwsh start-up. The exited case's anchor needs two pwsh start-ups in
+    /// sequence, the launcher's and then the sleeper's, before the bound. 15 s, as
+    /// <see cref="Bound"/>, leaves room for those on a loaded runner. Nothing here
+    /// measures a runner's start-up time.</summary>
+    private static readonly TimeSpan SleeperBound = TimeSpan.FromSeconds(15);
 
-    private static readonly TimeSpan ExitedBound = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ExitedBound = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// PIN, the still-running case: a script that is still running at the bound, here
