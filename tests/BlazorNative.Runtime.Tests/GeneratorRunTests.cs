@@ -23,17 +23,17 @@ namespace BlazorNative.Runtime.Tests;
 /// <list type="bullet">
 /// <item>The sleeper. It was re-parented when the launcher exited, so no tree kill
 /// can reach it, on Linux or Windows. This fact kills it in <c>finally</c>, and only
-/// it: by pid, without its tree, and only if it started after the fact did, so a
-/// recycled pid is never killed. The same limit applies to a re-parented MSBuild
+/// it: by pid, without its tree, and only if the process holding that pid started
+/// after the fact did, so it never kills a process older than the fact. The same limit applies to a re-parented MSBuild
 /// node, and the failure message says how to clear one.</item>
 /// <item>The tree kill, on Windows. The stub's pwsh dies under a tree kill but not a
 /// plain one only where <c>pwsh</c> is a launcher shim with the real pwsh as its
 /// child, as the dotnet global tool is on Linux. Where <c>pwsh</c> is the real
 /// executable, as on Windows, a plain kill passes too, so there the tree kill is
 /// effectively unpinned.</item>
-/// <item>What held the pipe in the real hangs. It is not established; the 17.5
-/// record shows the 2026-10-15 Linux hang ran with node reuse already off. This
-/// pins only that any such hang is bounded and named.</item>
+/// <item>What held the pipe in the real hangs. A reused MSBuild node is the leading
+/// suspect, not proven; #530 tracks it. This pins only that any such hang is
+/// bounded and named.</item>
 /// </list></para>
 /// </summary>
 public sealed class GeneratorRunTests
@@ -96,7 +96,7 @@ public sealed class GeneratorRunTests
         }
     }
 
-    // ── node reuse off in the generator: a #454 defence, not its fix ────────────
+    // ── node reuse off in the generator: #454's likely fix ──────────────────────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
     /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
@@ -148,14 +148,15 @@ public sealed class GeneratorRunTests
         => File.ReadAllText(Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1"));
 
     /// <summary>
-    /// PIN, a #454 defence: every MSBuild call in generate-reference.ps1 passes
+    /// PIN, #454's likely fix: every MSBuild call in generate-reference.ps1 passes
     /// -nodeReuse:false, and the script sets MSBUILDDISABLENODEREUSE=1 before the
-    /// first one, so no MSBuild worker node the publish starts outlives it. This pins
-    /// that the defence stays in place. It is not #454's fix: the bound in
-    /// <see cref="BoundedScript"/> is, and node reuse is not the established cause.
+    /// first one, so no MSBuild worker node the publish starts outlives it. The
+    /// 2026-10-15 Linux hang ran with node reuse on, and an outliving node is the
+    /// leading suspect for the held pipe. Whatever the cause, the bound in
+    /// <see cref="BoundedScript"/> turns a stall into a named failure.
     ///
-    /// <para>DOES NOT COVER: whether node reuse had any part in the hangs; the 17.5
-    /// record shows the 2026-10-15 Linux hang ran with it already off. Calls the recogniser does not see: one hidden behind a
+    /// <para>DOES NOT COVER: whether node reuse caused the hangs; it is not proven,
+    /// and #530 tracks it. Calls the recogniser does not see: one hidden behind a
     /// variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
     /// <c>Invoke-Expression "dotnet publish …"</c>; and one started through
     /// <c>Start-Process dotnet -ArgumentList publish</c>. For all of them the environment
@@ -171,8 +172,9 @@ public sealed class GeneratorRunTests
             "found no MSBuild call in scripts/generate-reference.ps1; the script's publish is "
             + "its whole point, so the recogniser is broken, not the script clean");
         Assert.True(withReuse.Count == 0,
-            "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on, dropping the #454 "
-            + "defence: a reused worker node can outlive the publish. Add -nodeReuse:false:\n  "
+            "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on (#454): a reused "
+            + "worker node can outlive the publish and is the leading suspect for a held pipe. "
+            + "Add -nodeReuse:false:\n  "
             + string.Join("\n  ", withReuse));
 
         var code = CodeLines(script);
@@ -258,10 +260,13 @@ public sealed class GeneratorRunTests
         return !IsAlive(pid);
     }
 
-    /// <summary>Kills the orphaned sleeper, and nothing else. The stub and the launcher
-    /// are already dead, and a dead pid can be recycled within seconds on Windows, so
-    /// they are never touched. The sleeper is killed alone, without a tree, and only if
-    /// the process now holding its pid started after this fact did.</summary>
+    /// <summary>Kills the orphaned sleeper, and nothing else. The launcher has exited,
+    /// and the stub is normally dead from the bound's kill; on a failure path, such as
+    /// a kill that threw or did not reach the stub, it may still be alive, and it then
+    /// exits on its own once the sleeper's pipe closes. Either pid may be recycled,
+    /// within seconds on Windows, so neither is touched. The sleeper is killed alone,
+    /// without a tree, and only if the process now holding its pid started after this
+    /// fact did, so it never kills a process older than the fact.</summary>
     private static void KillOwnSleeper(int pid, DateTime factStart)
     {
         try
