@@ -1731,10 +1731,17 @@ public sealed class NativeRenderer : BlazorRenderer
     /// app's <c>OnClick</c> from one line, and a <c>BnView</c>'s ChildContent renders
     /// into BnView's tree with the page's sequence numbers, so a tree-owner key would
     /// merge every such handler in the app into one.</para>
+    /// <para>When the method is FRAMEWORK code and its delegate's target is a wrapper that
+    /// implements <see cref="IForwardsUiEvent"/> and returns the app's delegate for the
+    /// event, that delegate is resolved instead, by the same rule: an app method keys by
+    /// and names itself. A component <c>@bind-Value</c> forwards a lambda the Razor
+    /// compiler declares on the page, so it names the page. Otherwise a framework owner
+    /// key is combined with the tree-owner key.</para>
     /// <para>The fallback, when no delegate can be reached or its method cannot be
     /// resolved, is the tree owner: the component type, the attribute frame's sequence
-    /// number and the event name. The delegate is only read here; its method is
-    /// resolved when a dispatch is already over budget, never on the render path.</para></summary>
+    /// number and the event name. The delegate is only read here; its method, and the
+    /// wrapper's forwarded delegate, are resolved when a dispatch is already over budget,
+    /// never on the render path.</para></summary>
     private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
     {
         public (string Key, string Owner) Resolve()
@@ -1743,18 +1750,21 @@ public sealed class NativeRenderer : BlazorRenderer
             {
                 try
                 {
-                    System.Reflection.MethodInfo method = Handler.Method;
-                    if (method.DeclaringType is { FullName: { } declaring } type)
+                    if (OwnerOf(Handler) is { } owner)
                     {
+                        if (!owner.Framework)
+                            return ($"{owner.Declaring}::{owner.Method}#{EventName}", $"{owner.Declaring}.{owner.Method}");
+                        if (Handler.Target is IForwardsUiEvent wrapper
+                            && wrapper.ForwardedHandler(EventName) is { } forwarded
+                            && OwnerOf(forwarded) is { Framework: false } app)
+                            return ($"{app.Declaring}::{app.Method}#{EventName}", $"{app.Declaring}.{app.Method}");
                         // A FRAMEWORK method is shared by every call site that uses it: each
-                        // @bind of one value type runs Blazor's own binder lambda, and a
+                        // element @bind of one value type runs Blazor's own binder lambda, and a
                         // BlazorNative.Components wrapper runs its own handler for every
                         // instance. Combined with the tree-owner key it stays per call site,
                         // and the warning names the component that holds the call site.
-                        if (IsFrameworkAssembly(type.Assembly))
-                            return ($"{declaring}::{method.Name}#{Component.FullName}#{Sequence}#{EventName}",
-                                Component.FullName ?? Component.Name);
-                        return ($"{declaring}::{method.Name}#{EventName}", $"{declaring}.{method.Name}");
+                        return ($"{owner.Declaring}::{owner.Method}#{Component.FullName}#{Sequence}#{EventName}",
+                            Component.FullName ?? Component.Name);
                     }
                 }
                 catch (NotSupportedException)
@@ -1763,6 +1773,17 @@ public sealed class NativeRenderer : BlazorRenderer
                 }
             }
             return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
+        }
+
+        /// <summary>The method <paramref name="handler"/> runs, and whether it is framework
+        /// code; null when its declaring type has no name. Can throw
+        /// <see cref="NotSupportedException"/> under NativeAOT.</summary>
+        private static (string Declaring, string Method, bool Framework)? OwnerOf(Delegate handler)
+        {
+            System.Reflection.MethodInfo method = handler.Method;
+            return method.DeclaringType is { FullName: { } declaring } type
+                ? (declaring, method.Name, IsFrameworkAssembly(type.Assembly))
+                : null;
         }
     }
 

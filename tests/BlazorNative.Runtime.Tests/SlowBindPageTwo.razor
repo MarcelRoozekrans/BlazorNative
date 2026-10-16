@@ -1,0 +1,15 @@
+@* Phase 17.4 (#435): one page holding TWO BnInputs, each bound with @bind-Value and
+   its own slow :after method, for SlowHandlerWarningTests' narrowed known limit. *@
+<BnInput Placeholder="bind-one-a" @bind-Value="_a" @bind-Value:after="AfterA" />
+<BnInput Placeholder="bind-one-b" @bind-Value="_b" @bind-Value:after="AfterB" />
+
+@code {
+    private string _a = "";
+    private string _b = "";
+
+    /// <summary>Runs the slow part, tagged with the input it came from.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+    private void AfterA() => Slow("bind-one-a");
+    private void AfterB() => Slow("bind-one-b");
+}

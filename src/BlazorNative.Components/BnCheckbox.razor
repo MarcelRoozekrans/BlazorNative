@@ -53,6 +53,7 @@
     ─────────────────────────────────────────────────────────────────────────
 *@
 @inherits BnLayoutItem
+@implements IForwardsUiEvent
 <checkbox value="@(Checked ? "true" : "false")"
           enabled="@(Enabled ? null : "false")"
           @attributes="ItemAttributes"
@@ -72,6 +73,11 @@
 
     private Task HandleChange(ChangeEventArgs e)
         => CheckedChanged.InvokeAsync(ParseBoolPayload(e.Value?.ToString(), "checkbox"));
+
+    /// <summary>The app's CheckedChanged delegate behind the change this control forwards, so the
+    /// slow-handler warning names the app's handler; null for any other event.</summary>
+    Delegate? IForwardsUiEvent.ForwardedHandler(string eventName)
+        => eventName == "change" ? EventCallbackDelegate.Of(CheckedChanged) : null;
 
     /// <summary>Strict wire parse — exactly <c>"true"</c>/<c>"false"</c>
     /// (ordinal; the shells emit these two literals and nothing else). A
