@@ -26,11 +26,12 @@ namespace BlazorNative.Runtime.Tests;
 /// it: by pid, without its tree, and only if the process holding that pid started
 /// after the fact did, so it never kills a process older than the fact. The same limit applies to a re-parented MSBuild
 /// node, and the failure message says how to clear one.</item>
-/// <item>The tree kill, on Windows. The stub's pwsh dies under a tree kill but not a
-/// plain one only where <c>pwsh</c> is a launcher shim with the real pwsh as its
-/// child, as the dotnet global tool is on Linux. Where <c>pwsh</c> is the real
-/// executable, as on Windows, a plain kill passes too, so there the tree kill is
-/// effectively unpinned.</item>
+/// <item>The tree kill, where <c>pwsh</c> is the real executable. The stub's pwsh dies
+/// under a tree kill but not a plain one only where <c>pwsh</c> is the dotnet global-tool
+/// shim, with the real pwsh as its child, as on the dev host. Where <c>pwsh</c> is the
+/// real executable, as on Windows or a native pwsh install such as GitHub's ubuntu
+/// runners, a plain kill passes too, so there the tree kill is effectively
+/// unpinned.</item>
 /// <item>What held the pipe in the real hangs. A reused MSBuild node is the leading
 /// suspect, not proven; #530 tracks it. This pins only that any such hang is
 /// bounded and named.</item>
@@ -93,8 +94,10 @@ public sealed class GeneratorRunTests
             Assert.Contains("did not finish within", ex.Message);
             Assert.Contains("#454", ex.Message);
 
-            // THE TREE: the stub's own pwsh is dead. `pwsh` on Linux is the global-tool
-            // shim, and the stub is the shim's child, so this needs the tree kill.
+            // THE TREE: the stub's own pwsh is dead. Where `pwsh` is the dotnet global-tool
+            // shim, as on the dev host, the stub is the shim's child, so this needs the tree
+            // kill. A native pwsh install, such as GitHub's ubuntu runners, behaves like
+            // Windows here.
             Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(15)),
                 $"the stub's pwsh (pid {pids["stub"]}) survived the bound's kill");
         }

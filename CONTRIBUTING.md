@@ -81,8 +81,8 @@ advisory lanes (nightly / on-merge / manual dispatch).
 
 - **The reference generator is bounded.** The .NET suite's reference-drift tests run
   `scripts/generate-reference.ps1` once per package, each run under a 5-minute bound. The
-  slowest generation measured was about 3 s, with MSBuild node reuse off, which the script sets, so the
-  bound is generous. A run that does not finish
+  slowest generation measured on Linux was about 3 s, with MSBuild node reuse off, which the script
+  sets, so the bound is generous there. Windows generation time is not captured on CI. A run that does not finish
   fails with `did not finish within 00:05:00`, and no longer hangs the suite. That failure means
   something held the publish's output pipe after the publish ended: the script's output never
   reached end of file. The process tree is killed, but a process the publish left behind

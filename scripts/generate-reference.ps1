@@ -129,8 +129,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # NODE REUSE OFF, for every MSBuild call below: the likely fix for #454. In the
-# hangs the publish had exited, yet something still held its output pipe, so this
-# script's `| Out-Host` never saw EOF. The 2026-10-15 Linux hang ran with node
+# 2026-10-15 Linux hang the publish had exited, yet something still held its output
+# pipe, so this script's `| Out-Host` never saw EOF. The hung pwsh's dump holds the
+# emitted Runtime "publishing" line, the publish's own final "->" output line and
+# its arguments, and no emitted "xmldoc2md ->" line; no dump is of the publish. The 2026-10-15 Linux hang ran with node
 # reuse on: no MSBUILDDISABLENODEREUSE in the environment of any of the three
 # dumped processes, and persistent MSBuild nodes running. A worker node that
 # outlives the publish is the leading suspect; it is not proven, and #530 tracks

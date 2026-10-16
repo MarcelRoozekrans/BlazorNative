@@ -9,8 +9,8 @@
 #   sleeper   holds that stdout open for 600 s.
 #
 # Each role appends "<role> <$PID>" to -PidFile. $PID is read inside each
-# process, so it names the real pwsh, never the dotnet global-tool shim that
-# `pwsh` resolves to on Linux.
+# process, so it names the real pwsh, never the dotnet global-tool shim, where
+# `pwsh` resolves to one, as on the dev host.
 #
 # The sleeper is started with Process.Start, UseShellExecute off and no
 # redirection, so it is handed the launcher's standard handles. GeneratorRunTests'

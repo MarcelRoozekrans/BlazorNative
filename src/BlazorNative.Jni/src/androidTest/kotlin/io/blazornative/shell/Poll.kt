@@ -14,9 +14,9 @@ internal const val DESTROYED_WHILE_POLLED =
  * [deadlineMs] has passed.
  *
  * An activity destroyed under the poll, whatever destroyed it, would otherwise surface as
- * ActivityScenario's bare NullPointerException, which does not name the state. So the state is
- * checked before each `onActivity`, and an NPE with the activity really destroyed is reworded.
- * Any other exception rethrows.
+ * ActivityScenario's bare NullPointerException, which does not name the state. So an NPE out of
+ * `onActivity` is caught, and reworded only if the scenario's state is then DESTROYED; an NPE on
+ * a live activity rethrows as it was. Any other exception rethrows.
  */
 internal fun pollUntil(
     scenario: ActivityScenario<MainActivity>,
@@ -27,7 +27,6 @@ internal fun pollUntil(
     val deadline = System.currentTimeMillis() + deadlineMs
     while (System.currentTimeMillis() < deadline) {
         val ok = AtomicReference(false)
-        if (scenario.state == Lifecycle.State.DESTROYED) throw AssertionError(DESTROYED_WHILE_POLLED)
         try {
             scenario.onActivity { act -> ok.set(predicate(act)) }
         } catch (e: NullPointerException) {
