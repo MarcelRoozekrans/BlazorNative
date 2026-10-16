@@ -30,9 +30,9 @@ namespace BlazorNative.Runtime.Tests;
 //   · SAFE reached without the token, such as `BnPrivacy.valueOf("SAFE")` or
 //     `BnPrivacy.values()[i]`. The SAFE check finds the `SAFE` token, so a value
 //     computed at run time passes it.
-//   · SAFE inside BnShellLog.kt itself. The seam compares against SAFE, so the
-//     whole file is filtered out of the SAFE check; a SAFE passed inside it is
-//     not seen.
+//   · SAFE inside BnShellLog.kt or BnDiagnostics.kt. The SAFE check filters
+//     both files out wholesale: the seam compares against SAFE and the enum
+//     declares it. A SAFE passed inside either is not seen.
 //   · stderr writers other than `System.err`, such as `printStackTrace()`. There
 //     are none in the scanned trees today, and the System.err scan would not see
 //     one.
@@ -330,7 +330,8 @@ public sealed class LogPrivacyDriftTests
 
     /// <summary>The <c>src/main</c> reports that were warnings on <c>System.err</c>
     /// before #426, each with its file: they report at WARN, so the shell writes
-    /// them as warnings. Every other call reports at ERROR.</summary>
+    /// them as warnings. Every other <c>BnDiagnostics.sink</c> call in the scanned
+    /// trees must report at ERROR, which the fact below asserts.</summary>
     private static readonly (string File, int Calls)[] WarnReporters =
     [
         ("src/BlazorNative.Jni/src/main/kotlin/io/blazornative/jni/ShellBridge.kt", 2),
@@ -352,6 +353,26 @@ public sealed class LogPrivacyDriftTests
             }
         }
 
+        // Every other report is an ERROR. Scanned across lines, because a call wraps.
+        var warnFiles = WarnReporters.SelectMany(w => new[] { w.File, MirrorOf(w.File) })
+            .ToHashSet(StringComparer.Ordinal);
+        ShellSourceScan.Hit[] calls = ShellSourceScan
+            .ForPatternAcrossLines(Consumer, null, KotlinSource, @"\bBnDiagnostics\s*\.\s*sink\s*\(\s*[^,()]*")
+            .HitsCoveringEveryDeclaredRoot();
+        var others = calls.Where(h => !warnFiles.Contains(h.File)).ToList();
+        Assert.True(others.Count >= MinErrorReports,
+            $"found {others.Count} BnDiagnostics.sink calls outside the WARN reporters; the default "
+            + $"onError in both copies and PreviewHost's three make at least {MinErrorReports}, so the "
+            + "scan has stopped seeing them and the check below proves nothing.");
+        var notError = others
+            .Where(h => !Regex.IsMatch(h.Token, @"sink\s*\(\s*BnLogLevel\s*\.\s*ERROR\s*$"))
+            .ToList();
+        Assert.True(notError.Count == 0,
+            "BnDiagnostics.sink CALLS NOT AT ERROR outside the WARN reporters:\n"
+            + string.Join("\n", notError.Select(h => $"  {h.File}:{h.Line}  {h.Text}"))
+            + "\n\nOnly the reports that were warnings before #426, listed in WarnReporters, report "
+            + "at WARN. Add a new warning there deliberately.");
+
         // The shell routes a WARN report to warn: the one branch of diagnostic.
         foreach (string dir in ShellDirs)
             Assert.Matches(
@@ -359,6 +380,9 @@ public sealed class LogPrivacyDriftTests
                 + @"if\s*\(\s*level\s*==\s*BnLogLevel\.WARN\s*\)\s*warn\s*\(\s*tag\s*,\s*message\s*,\s*t\s*\)\s*else\s*error\s*\(\s*tag\s*,\s*message\s*,\s*t\s*\)",
                 Code(dir + LogSeam));
     }
+
+    /// <summary>The default onError in both copies, plus PreviewHost's three.</summary>
+    private const int MinErrorReports = 5;
 
     private static string MirrorOf(string shellPath)
         => "templates/BlazorNative.Templates/content/BlazorNative.App/android/src/"

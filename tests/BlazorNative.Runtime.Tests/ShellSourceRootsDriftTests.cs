@@ -61,7 +61,7 @@ namespace BlazorNative.Runtime.Tests;
 //  3. THE ROSTER NOW BINDS, AND WHAT IS LEFT OF THE OLD LIMIT IS NARROWER AND
 //     WORTH READING RATHER THAN SKIMMING. This entry used to say the roster
 //     recorded what a pin CLAIMS and nothing more, because no pin read it.
-//     All three now take their roots from `ShellSourceRoots.SetsFor` and
+//     Every consumer now takes its roots from `ShellSourceRoots.SetsFor`, and
 //     `EveryConsumer_ReadsItsRootsFromTheRoster` reds if one stops, so the
 //     claim and the behaviour are one object — that is #364 F1 and F2 closed
 //     as a consequence of the roster rather than as two patches.

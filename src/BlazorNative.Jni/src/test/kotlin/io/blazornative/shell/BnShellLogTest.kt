@@ -312,8 +312,9 @@ class BnShellLogTest {
             ),
             captured)
 
-        // Anchor: revealed, the same calls keep their text, so the levels above are
-        // the reports' own and not a constant.
+        // Anchor: revealed, the same WARN call keeps its text. That rules out PRIVATE
+        // coming from the capture or from diagnostic itself rather than from
+        // redaction; the first assertion already tells WARN from ERROR.
         collect()
         BnShellLog.reveal = true
         BnShellLog.diagnostic("BlazorNative", BnLogLevel.WARN, "rc 2 for request 7", null)
