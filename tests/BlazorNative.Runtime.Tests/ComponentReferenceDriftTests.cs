@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using BlazorNative.Components;
 using Microsoft.AspNetCore.Components;
 using BlazorNative.Tests.Shared;
+using Xunit.Sdk;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -32,7 +33,9 @@ public sealed class ComponentReferenceFixture : IDisposable
     public string OutputDirectory { get; }
     public string GeneratorLog { get; }
 
-    public ComponentReferenceFixture()
+    /// <param name="sink">Takes the generation's timing line; it prints when xUnit
+    /// diagnostic messages are on.</param>
+    public ComponentReferenceFixture(IMessageSink sink)
     {
         OutputDirectory = Path.Combine(
             Path.GetTempPath(), "bn-docs-reference-" + Guid.NewGuid().ToString("N"));
@@ -47,34 +50,24 @@ public sealed class ComponentReferenceFixture : IDisposable
         string script = Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1");
         Assert.True(File.Exists(script), $"generator script not found: {script}");
 
-        var psi = new ProcessStartInfo("pwsh")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = BnRepo.Root(),
-        };
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-File");
-        psi.ArgumentList.Add(script);
         // #173: the generator now covers more than one package, so a bare
         // -OutputPath is ambiguous — name the package. This fixture asserts the
         // Components pipeline specifically (ComponentBase, the .razor pins), so it
         // publishes and generates ONLY Components into its temp dir. The sibling
         // ReferenceDriftTests does the same for each other generated package.
-        psi.ArgumentList.Add("-Package");
-        psi.ArgumentList.Add("Components");
-        psi.ArgumentList.Add("-OutputPath");
-        psi.ArgumentList.Add(OutputDirectory);
+        //
+        // BOUNDED (#454), with the sibling fixtures' bound: a held output pipe
+        // fails, named, instead of hanging the suite.
+        var clock = Stopwatch.StartNew();
+        GeneratorRun run = BoundedScript.RunBounded(
+            script, ["-Package", "Components", "-OutputPath", OutputDirectory],
+            ReferenceFixtureBase.GenerationBound);
+        GeneratorLog = run.Log;
+        sink.OnMessage(new DiagnosticMessage(
+            $"generate-reference.ps1 -Package Components: {clock.Elapsed.TotalSeconds:F1} s, exit {run.ExitCode}"));
 
-        using var p = Process.Start(psi)!;
-        string stdout = p.StandardOutput.ReadToEnd();
-        string stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        GeneratorLog = stdout + stderr;
-
-        Assert.True(p.ExitCode == 0,
-            $"generate-reference.ps1 failed (exit {p.ExitCode}):\n{GeneratorLog}");
+        Assert.True(run.ExitCode == 0,
+            $"generate-reference.ps1 failed (exit {run.ExitCode}):\n{GeneratorLog}");
     }
 
     public void Dispose()

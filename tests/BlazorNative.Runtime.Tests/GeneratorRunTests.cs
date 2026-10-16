@@ -1,0 +1,242 @@
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+using BlazorNative.Tests.Shared;
+using Xunit.Sdk;
+
+namespace BlazorNative.Runtime.Tests;
+
+/// <summary>
+/// PIN for <see cref="BoundedScript.RunBounded"/>, #454: a script whose output pipe is
+/// held open by a descendant FAILS, NAMED, within the bound. It does not hang.
+///
+/// <para>The stub, TestData/hold-stdout.ps1, has the 2026-10-15 dumps' shape. The
+/// stub's pwsh runs a native command piped to Out-Host, the way generate-reference.ps1
+/// runs <c>dotnet publish</c>. That command, the launcher, starts a sleeper which
+/// inherits its stdout, and then exits. The stub is left waiting for an EOF that never
+/// comes, exactly the pipeline thread the dump shows.</para>
+///
+/// <para>ANCHOR, in the same fact: before the run returns, the launcher has exited and
+/// both the stub and the sleeper are alive. So the pipe really is held when the bound
+/// fires, and the named failure is the bound's work, not a crash.</para>
+///
+/// <para>DOES NOT COVER:
+/// <list type="bullet">
+/// <item>The sleeper. It was re-parented when the launcher exited, so no tree kill
+/// can reach it, on Linux or Windows. This fact kills it in <c>finally</c>. The same
+/// limit applies to a re-parented MSBuild node, and the failure message says how to
+/// clear one.</item>
+/// <item>Whether node reuse caused the real hangs. That is what the soak in the
+/// 17.5 record measures; this pins only that any such hang is bounded.</item>
+/// </list></para>
+/// </summary>
+public sealed class GeneratorRunTests
+{
+    /// <summary>Read from the repo tree through <see cref="BnRepo"/>, as PinPopulationTests
+    /// requires of every test that reaches it, so the stub needs no copy step.</summary>
+    private static string Stub => Path.Combine(
+        BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "TestData", "hold-stdout.ps1");
+
+    [Fact]
+    public async Task AChildThatLeavesItsPipeHeld_FailsNamedWithinTheBound_AndLeavesNoProcess()
+    {
+        Assert.True(File.Exists(Stub), $"the stub is missing: {Stub}");
+        string pidFile = Path.Combine(
+            Path.GetTempPath(), "bn-454-stub-" + Guid.NewGuid().ToString("N") + ".pids");
+
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            Task<GeneratorRun> run = Task.Run(() =>
+                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile], TimeSpan.FromSeconds(5)));
+
+            // ANCHOR: the launcher is gone, the stub and the sleeper are alive, and the
+            // run has not returned. Polled, because each role is a pwsh start-up.
+            Dictionary<string, int> pids = new();
+            while (!run.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                pids = ReadPids(pidFile);
+                if (pids.Count == 3 && !IsAlive(pids["launcher"])) break;
+                await Task.Delay(100);
+            }
+            Assert.True(pids.Count == 3,
+                $"the stub recorded {pids.Count} of its 3 roles before the run returned; "
+                + "the held-pipe shape never formed");
+            Assert.False(IsAlive(pids["launcher"]), "the launcher never exited");
+            Assert.False(run.IsCompleted,
+                "the run returned before the anchor held, so the bound was not what ended it");
+            Assert.True(IsAlive(pids["stub"]), "the stub's pwsh is not alive: nothing is waiting on the pipe");
+            Assert.True(IsAlive(pids["sleeper"]), "the sleeper is not alive: nothing holds the pipe");
+
+            // THE BOUND: a named failure, within 15 s of the start.
+            TimeSpan left = TimeSpan.FromSeconds(15) - clock.Elapsed;
+            Task first = await Task.WhenAny(run, Task.Delay(left > TimeSpan.Zero ? left : TimeSpan.Zero));
+            Assert.True(first == run,
+                $"RunBounded did not return within 15 s of the start ({clock.Elapsed}): a held pipe hangs it");
+            var ex = await Assert.ThrowsAsync<XunitException>(() => run);
+            Assert.Contains("did not finish within", ex.Message);
+            Assert.Contains("#454", ex.Message);
+
+            // THE TREE: the stub's own pwsh is dead. `pwsh` on Linux is the global-tool
+            // shim, and the stub is the shim's child, so this needs the tree kill.
+            Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(5)),
+                $"the stub's pwsh (pid {pids["stub"]}) survived the bound's kill");
+        }
+        finally
+        {
+            foreach (int pid in ReadPids(pidFile).Values) KillIfAlive(pid);
+            try { File.Delete(pidFile); } catch (IOException) { /* temp file */ }
+        }
+    }
+
+    // ── node reuse off in the generator (#454) ──────────────────────────────────
+
+    /// <summary>An MSBuild call in command position: at the start of a statement, or
+    /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>&amp;</c>. A string that only
+    /// names one, such as a <c>throw "dotnet publish failed"</c>, is not a call.</summary>
+    private static readonly Regex MsBuildCall = new(
+        @"(?:^|[;|{}(&])\s*(?:dotnet\s+(?:publish|build|msbuild|pack|test|restore|clean|run)|msbuild(?:\.exe)?)(?![\w.-])",
+        RegexOptions.IgnoreCase);
+
+    private static readonly Regex NodeReuseEnv = new(
+        @"^\s*\$env:MSBUILDDISABLENODEREUSE\s*=\s*'1'\s*$", RegexOptions.IgnoreCase);
+
+    /// <summary>The script's code lines, numbered: the comment-help block and
+    /// whole-line comments are dropped, so prose that names a command is not a call.</summary>
+    private static List<(int Line, string Text)> CodeLines(string script)
+    {
+        var code = new List<(int, string)>();
+        bool inBlock = false;
+        string[] lines = script.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string t = lines[i].Trim();
+            if (inBlock) { if (t.Contains("#>", StringComparison.Ordinal)) inBlock = false; continue; }
+            if (t.StartsWith("<#", StringComparison.Ordinal))
+            {
+                inBlock = !t.Contains("#>", StringComparison.Ordinal);
+                continue;
+            }
+            if (t.Length == 0 || t.StartsWith('#')) continue;
+            code.Add((i + 1, lines[i].TrimEnd('\r')));
+        }
+        return code;
+    }
+
+    /// <summary>Every MSBuild call line, and the subset that lacks -nodeReuse:false.</summary>
+    private static (List<string> Calls, List<string> WithReuse) MsBuildCalls(string script)
+    {
+        var calls = CodeLines(script).Where(l => MsBuildCall.IsMatch(l.Text))
+            .Select(l => $"{l.Line}: {l.Text.Trim()}").ToList();
+        var withReuse = calls
+            .Where(c => !c.Contains("-nodeReuse:false", StringComparison.OrdinalIgnoreCase)).ToList();
+        return (calls, withReuse);
+    }
+
+    private static string GeneratorScript()
+        => File.ReadAllText(Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1"));
+
+    /// <summary>
+    /// PIN, #454's root-cause fix: every MSBuild call in generate-reference.ps1 passes
+    /// -nodeReuse:false, and the script sets MSBUILDDISABLENODEREUSE=1 before the
+    /// first one, so no reused worker node outlives the publish.
+    ///
+    /// <para>DOES NOT COVER: whether node reuse caused the hangs; the 17.5 record's
+    /// soak measures that. An MSBuild call hidden behind a variable or splat, such as
+    /// <c>&amp; $tool publish</c>, is not recognised as a call; the environment
+    /// variable still covers it.</para>
+    /// </summary>
+    [Fact]
+    public void GenerateReference_RunsEveryMSBuildCallWithNodeReuseOff()
+    {
+        string script = GeneratorScript();
+        var (calls, withReuse) = MsBuildCalls(script);
+
+        Assert.True(calls.Count > 0,
+            "found no MSBuild call in scripts/generate-reference.ps1; the script's publish is "
+            + "its whole point, so the recogniser is broken, not the script clean");
+        Assert.True(withReuse.Count == 0,
+            "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on (#454). A reused "
+            + "worker node can outlive the publish and hold its output pipe. Add -nodeReuse:false:\n  "
+            + string.Join("\n  ", withReuse));
+
+        var code = CodeLines(script);
+        int env = code.FindIndex(l => NodeReuseEnv.IsMatch(l.Text));
+        int first = code.FindIndex(l => MsBuildCall.IsMatch(l.Text));
+        Assert.True(env >= 0,
+            "scripts/generate-reference.ps1 no longer sets $env:MSBUILDDISABLENODEREUSE = '1' (#454)");
+        Assert.True(env < first,
+            $"scripts/generate-reference.ps1 sets MSBUILDDISABLENODEREUSE at line {code[env].Line}, "
+            + $"after its first MSBuild call at line {code[first].Line}");
+    }
+
+    /// <summary>NON-VACUITY for the pin above: a planted call without the switch is
+    /// caught, so is one after <c>&amp;</c>, the same call with the switch is not, and
+    /// a comment or a string that names one is ignored.</summary>
+    [Fact]
+    public void GenerateReference_NodeReusePin_CatchesAPlantedCall()
+    {
+        string script = GeneratorScript();
+
+        var planted = MsBuildCalls(script + "\ndotnet build $project -c Release | Out-Host\n");
+        Assert.Contains(planted.WithReuse, c => c.Contains("dotnet build $project", StringComparison.Ordinal));
+
+        var switched = MsBuildCalls(script + "\ndotnet build $project -c Release -nodeReuse:false | Out-Host\n");
+        Assert.Empty(switched.WithReuse);
+
+        var commented = MsBuildCalls(script + "\n# dotnet build $project\n");
+        Assert.Empty(commented.WithReuse);
+
+        var named = MsBuildCalls(script + "\nthrow \"dotnet build failed\"\n");
+        Assert.Empty(named.WithReuse);
+
+        var piped = MsBuildCalls(script + "\nGet-Item x; & msbuild app.proj\n");
+        Assert.Contains(piped.WithReuse, c => c.Contains("msbuild app.proj", StringComparison.Ordinal));
+    }
+
+    private static Dictionary<string, int> ReadPids(string pidFile)
+    {
+        var pids = new Dictionary<string, int>(StringComparer.Ordinal);
+        string[] lines;
+        try { lines = File.ReadAllLines(pidFile); }
+        catch (IOException) { return pids; }   // absent, or mid-write
+        foreach (string line in lines)
+        {
+            string[] parts = line.Trim().Split(' ');
+            if (parts.Length == 2 && int.TryParse(parts[1], out int pid)) pids[parts[0]] = pid;
+        }
+        return pids;
+    }
+
+    private static bool IsAlive(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            return !p.HasExited;
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    private static async Task<bool> DiesWithin(int pid, TimeSpan limit)
+    {
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < limit)
+        {
+            if (!IsAlive(pid)) return true;
+            await Task.Delay(100);
+        }
+        return !IsAlive(pid);
+    }
+
+    private static void KillIfAlive(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            if (!p.HasExited) p.Kill(entireProcessTree: true);
+        }
+        catch (ArgumentException) { /* already gone */ }
+        catch (InvalidOperationException) { /* exited meanwhile */ }
+    }
+}
