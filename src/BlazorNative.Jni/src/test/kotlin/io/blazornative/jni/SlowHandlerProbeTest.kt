@@ -39,7 +39,7 @@ import java.util.Collections
  * rule and the cap, all pinned on .NET by SlowHandlerWarningTests; the Android and iOS
  * builds, whose NativeAOT metadata policy is the same compiler's but not measured here.
  * The session is the process-global one every JVM test shares, so this assumes no other
- * test has already warned about these two methods; none clicks this probe.
+ * test has already warned about these methods; none clicks this probe.
  */
 class SlowHandlerProbeTest {
 

@@ -22,8 +22,10 @@ namespace BlazorNative.SampleApp;
 //     │                         EventCallback accessor under NativeAOT
 //     ├─ BnCheckbox          → CheckedChanged = SlowCheck, the same sleep. BnCheckbox wraps
 //     │                         it in its own HandleChange, so the warning names the app's
-//     │                         method only through the IForwardsUiEvent hook, whose
-//     │                         generic [UnsafeAccessor] this proves under NativeAOT
+//     │                         method only through the IForwardsUiEvent hook. This
+//     │                         proves the hook's generic [UnsafeAccessor] under
+//     │                         NativeAOT for the bool instantiation only, BnCheckbox's;
+//     │                         see SlowHandlerProbeTest's DOES NOT COVER for the rest
 //     ├─ BnButton "Report"   → restores the previous BnLog sink, and re-renders the echo
 //     └─ BnText echo: "slow-warnings:<n>" then one "\n<line>" per warning
 //
@@ -35,6 +37,9 @@ namespace BlazorNative.SampleApp;
 // generic [UnsafeAccessor], can name the app's method. Whether Delegate.Method
 // resolves and the accessor binds under NativeAOT is a property of the published
 // dll, so JVM SlowHandlerProbeTest drives this page through it and reads the echo.
+// For the accessor that is the bool instantiation only: ILC compiles the string one
+// through shared canonical code and the int and float ones separately, and none of
+// those runs here.
 //
 // WHY THE ECHO READS A SINK. The warning goes to BnLog, which the JVM lane cannot
 // read from the native process's stderr. The page installs a BnLog.Sink when it
