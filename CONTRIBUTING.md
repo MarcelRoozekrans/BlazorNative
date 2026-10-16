@@ -77,6 +77,24 @@ The four surfaces and where each is asserted are tabulated in the README's **Tes
 surface** section. Only `build-test` (.NET + JVM) gates a PR; Android and iOS are
 advisory lanes (nightly / on-merge / manual dispatch).
 
+### When a test run stalls, or does not rerun
+
+- **The reference generator is bounded.** The .NET suite's reference-drift tests run
+  `scripts/generate-reference.ps1` once per package, each run under a 5-minute bound. The
+  slowest generation measured was about 3 s, so the bound is generous. A run that does not finish
+  fails with `did not finish within 00:05:00`, and no longer hangs the suite. That failure means
+  something held the publish's output pipe after the publish ended: the script's output never
+  reached end of file. The process tree is killed, but a process the publish left behind
+  and that lost its parent, such as an MSBuild worker node, is out of that kill's reach. The
+  failure message says so. [#530](https://github.com/MarcelRoozekrans/BlazorNative/issues/530) tracks
+  finding out what the holder is. The script turns MSBuild node reuse off, which is the likely
+  fix, not a proven one.
+- **A stray MSBuild node:** `dotnet build-server shutdown` stops it.
+- **The JVM tests rerun when the native library changes.** The Gradle test and run tasks declare
+  `BlazorNative.Runtime.dll` in the win-x64 publish directory as an input, by content. After you
+  republish it, `testDebugUnitTest` runs again. A `touch` that leaves the content unchanged
+  does not rerun them, and neither does a publish that produces the same bytes.
+
 ---
 
 ## Project conventions
