@@ -3839,10 +3839,12 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-16-phase-17.4-record.md`](../plans/2026-10-16-phase-17.4-record.md)
 **Completed:** 2026-10-16 · [PR #523](https://github.com/MarcelRoozekrans/BlazorNative/pull/523). Android writes no app text to logcat in a non-debuggable build, mirroring iOS's `.private`. That covers all 58 shell log sites, the pumped .NET lines and the shared JVM code's diagnostics, through one `BnShellLog` seam. A drift pin holds both shells' rules together. The slow-handler warning names the app's handler behind six Bn wrappers, through an internal hook; the delegate accessor is proven under NativeAOT for the bool instantiation. Naming a diagnostic never faults a dispatch. Executed subagent-driven, with a final review whose one Important finding was fixed. .NET 1332 → 1362, JVM 193 → 206, Android 242 → 243. #426 and #435 closed; #522 filed.
 
-#### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: pending]
+#### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: active]
 **Goal:** No local run can hang silently, test a stale native library, or fail with a bare message.
 **Surface:** Infra
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-16-phase-17.5-design.md`](../superpowers/specs/2026-10-16-phase-17.5-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-16-phase-17.5-test-infra-honesty.md`](../superpowers/plans/2026-10-16-phase-17.5-test-infra-honesty.md)
 
 #### Phase 17.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence. **No tag**, per `CONVENTIONS.md`.
