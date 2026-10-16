@@ -31,8 +31,9 @@ namespace BlazorNative.Runtime.Tests;
 /// child, as the dotnet global tool is on Linux. Where <c>pwsh</c> is the real
 /// executable, as on Windows, a plain kill passes too, so there the tree kill is
 /// effectively unpinned.</item>
-/// <item>Whether node reuse caused the real hangs. That is what the soak in the
-/// 17.5 record measures; this pins only that any such hang is bounded.</item>
+/// <item>What held the pipe in the real hangs. It is not established; the 17.5
+/// record shows the 2026-10-15 Linux hang ran with node reuse already off. This
+/// pins only that any such hang is bounded and named.</item>
 /// </list></para>
 /// </summary>
 public sealed class GeneratorRunTests
@@ -95,7 +96,7 @@ public sealed class GeneratorRunTests
         }
     }
 
-    // ── node reuse off in the generator (#454) ──────────────────────────────────
+    // ── node reuse off in the generator: a #454 defence, not its fix ────────────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
     /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
@@ -147,12 +148,14 @@ public sealed class GeneratorRunTests
         => File.ReadAllText(Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1"));
 
     /// <summary>
-    /// PIN, #454's root-cause fix: every MSBuild call in generate-reference.ps1 passes
+    /// PIN, a #454 defence: every MSBuild call in generate-reference.ps1 passes
     /// -nodeReuse:false, and the script sets MSBUILDDISABLENODEREUSE=1 before the
-    /// first one, so no reused worker node outlives the publish.
+    /// first one, so no MSBuild worker node the publish starts outlives it. This pins
+    /// that the defence stays in place. It is not #454's fix: the bound in
+    /// <see cref="BoundedScript"/> is, and node reuse is not the established cause.
     ///
-    /// <para>DOES NOT COVER: whether node reuse caused the hangs; the 17.5 record's
-    /// soak measures that. Calls the recogniser does not see: one hidden behind a
+    /// <para>DOES NOT COVER: whether node reuse had any part in the hangs; the 17.5
+    /// record shows the 2026-10-15 Linux hang ran with it already off. Calls the recogniser does not see: one hidden behind a
     /// variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
     /// <c>Invoke-Expression "dotnet publish …"</c>; and one started through
     /// <c>Start-Process dotnet -ArgumentList publish</c>. For all of them the environment
@@ -168,8 +171,8 @@ public sealed class GeneratorRunTests
             "found no MSBuild call in scripts/generate-reference.ps1; the script's publish is "
             + "its whole point, so the recogniser is broken, not the script clean");
         Assert.True(withReuse.Count == 0,
-            "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on (#454). A reused "
-            + "worker node can outlive the publish and hold its output pipe. Add -nodeReuse:false:\n  "
+            "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on, dropping the #454 "
+            + "defence: a reused worker node can outlive the publish. Add -nodeReuse:false:\n  "
             + string.Join("\n  ", withReuse));
 
         var code = CodeLines(script);
