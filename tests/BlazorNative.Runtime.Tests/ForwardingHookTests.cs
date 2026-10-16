@@ -76,11 +76,14 @@ public sealed class ForwardingHookTests
         var receiver = new Receiver();
         var modal = new BnModal { VisibleChanged = EventCallback.Factory.Create<bool>(receiver, AppBoolMethod) };
         var input = new BnInput { ValueChanged = EventCallback.Factory.Create<string>(receiver, AppMethod) };
-        Func<Task> other = () => Task.CompletedTask;
+        // Each probe has the SAME delegate type as the wrapper's own handler, so a check
+        // that compared types alone would accept it: only identity tells them apart.
+        Func<Task> notDismiss = () => Task.CompletedTask;
+        Func<ChangeEventArgs, Task> notChange = _ => Task.CompletedTask;
 
-        Assert.True(((IForwardsUiEvent)modal).ForwardedHandler("click", other) is null,
-            "BnModal returned the app's delegate for a click delegate that is not its HandleDismissRequest");
-        Assert.True(((IForwardsUiEvent)input).ForwardedHandler("change", other) is null,
-            "BnInput returned the app's delegate for a change delegate that is not its HandleChange");
+        Assert.True(((IForwardsUiEvent)modal).ForwardedHandler("click", notDismiss) is null,
+            "BnModal returned the app's delegate for a Func<Task> that is not its HandleDismissRequest");
+        Assert.True(((IForwardsUiEvent)input).ForwardedHandler("change", notChange) is null,
+            "BnInput returned the app's delegate for a Func<ChangeEventArgs, Task> that is not its HandleChange");
     }
 }
