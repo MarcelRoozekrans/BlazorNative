@@ -112,7 +112,7 @@ class BnModalDemoAndroidTest {
 
     /** The closed mount, settled: five root-column children, real bounds. */
     private fun pollForPage(scenario: ActivityScenario<MainActivity>, timeoutMs: Long = 60_000): Boolean =
-        pollUntil(scenario, timeoutMs) { act ->
+        pollUntilIdle(scenario, timeoutMs) { act ->
             val p = page(act)
             p != null && p.childCount == 5 && p.height > 0 &&
                 widgetRoot(act)?.childCount == 1
@@ -121,7 +121,7 @@ class BnModalDemoAndroidTest {
     /** The SHOW settled: overlay attached last, content box with its four
      * children, echo painted. */
     private fun pollForOpen(scenario: ActivityScenario<MainActivity>, timeoutMs: Long = 10_000): Boolean =
-        pollUntil(scenario, timeoutMs) { act ->
+        pollUntilIdle(scenario, timeoutMs) { act ->
             val box = contentBox(act)
             box != null && box.height > 0 && page(act)?.childCount == 6 &&
                 (echo(act)?.text?.toString() ?: "").isNotEmpty()
@@ -129,26 +129,19 @@ class BnModalDemoAndroidTest {
 
     /** The HIDE settled: the overlay gone, the page column back to five. */
     private fun pollForClosed(scenario: ActivityScenario<MainActivity>, timeoutMs: Long = 10_000): Boolean =
-        pollUntil(scenario, timeoutMs) { act ->
+        pollUntilIdle(scenario, timeoutMs) { act ->
             widgetRoot(act)?.childCount == 1 && page(act)?.childCount == 5
         }
 
-    private fun pollUntil(
+    /** [pollUntil] at this page's 150 ms cadence, then a wait for the main looper to go idle. */
+    private fun pollUntilIdle(
         scenario: ActivityScenario<MainActivity>,
         deadlineMs: Long,
         predicate: (MainActivity) -> Boolean,
     ): Boolean {
-        val deadline = System.currentTimeMillis() + deadlineMs
-        while (System.currentTimeMillis() < deadline) {
-            val ok = AtomicReference(false)
-            scenario.onActivity { act -> ok.set(predicate(act)) }
-            if (ok.get()) {
-                instr.waitForIdleSync()
-                return true
-            }
-            Thread.sleep(150)
-        }
-        return false
+        val ok = pollUntil(scenario, deadlineMs, sleepMs = 150, predicate)
+        if (ok) instr.waitForIdleSync()
+        return ok
     }
 
     private fun tapButton(scenario: ActivityScenario<MainActivity>, label: String) {
@@ -331,7 +324,7 @@ class BnModalDemoAndroidTest {
             tapAt(sw, sw.width / 2f, sw.height / 2f)
         }
         assertTrue("the in-modal switch round-trip never re-rendered the echo",
-            pollUntil(scenario, 10_000) { act -> echo(act)?.text?.toString() == ECHO_TOGGLED })
+            pollUntilIdle(scenario, 10_000) { act -> echo(act)?.text?.toString() == ECHO_TOGGLED })
 
         // …and the re-render REPLACED text in place: the modal is still open,
         // the same overlay, the switch now visually ON via the value echo.

@@ -134,17 +134,6 @@ class FaultNoticeLogAndroidTest {
         assertTrue("Button '$label' not found on screen", clicked.get())
     }
 
-    private fun pollUntil(scenario: ActivityScenario<MainActivity>, deadlineMs: Long, predicate: (MainActivity) -> Boolean): Boolean {
-        val deadline = System.currentTimeMillis() + deadlineMs
-        while (System.currentTimeMillis() < deadline) {
-            val ok = AtomicReference(false)
-            scenario.onActivity { act -> ok.set(predicate(act)) }
-            if (ok.get()) return true
-            Thread.sleep(250)
-        }
-        return false
-    }
-
     private fun pollTrue(deadlineMs: Long, predicate: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + deadlineMs
         while (System.currentTimeMillis() < deadline) {

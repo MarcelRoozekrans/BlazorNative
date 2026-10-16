@@ -216,7 +216,9 @@ final class BnGeolocationTests: BnHostTestCase {
         let bridge = AppleShellBridge()
         let rc = bridge.hostCallBegin(40, 99 /* not a wired op */, "{}")
         XCTAssertEqual(rc, 0, "begin returns synchronously even for an unknown op")
-        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error])
+        XCTAssertEqual(captured.map({ $0.status }), [BnHostCallStatus.error],
+            "an unknown op must complete Error, status 5, not OK, status 0: " +
+            "hostCallBegin(40, op 99) must reach the default arm's completeUnknownOp")
     }
 
     // ── Delegate retention pinned as a property (the 5.3/7.3 lesson, for CoreLocation) ──

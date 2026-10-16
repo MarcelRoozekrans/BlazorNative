@@ -199,7 +199,7 @@ class BnImagePolishDemoAndroidTest {
             awaitTerminated(scenario, ALL_BUT_SLOW)
             assertTrue("the error round-trip never re-rendered the echo — the dispatch " +
                 "crossed the wire, .NET counted it, and the re-render must come back",
-                pollUntil(scenario, 15_000) { act -> echoText(act) == ECHO_AFTER_ONE })
+                pollUntil(scenario, 15_000, sleepMs = 100) { act -> echoText(act) == ECHO_AFTER_ONE })
 
             scenario.onActivity { act ->
                 // THE OUTCOMES, against the URLs the WIRE carried — the drift pin on the
@@ -420,21 +420,6 @@ class BnImagePolishDemoAndroidTest {
         throw AssertionError("only ${seen.get()} of $count image requests terminated within " +
             "30s. A timeout here FAILS: most of this page's cases assert that NOTHING " +
             "MOVED, and all of those pass on a device that fetched nothing.")
-    }
-
-    private fun pollUntil(
-        scenario: ActivityScenario<MainActivity>,
-        timeoutMs: Long,
-        predicate: (MainActivity) -> Boolean,
-    ): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        val ok = AtomicReference(false)
-        while (System.currentTimeMillis() < deadline) {
-            scenario.onActivity { act -> ok.set(predicate(act)) }
-            if (ok.get()) return true
-            Thread.sleep(100)
-        }
-        return false
     }
 
     /** Polls until the mount frame has been applied AND laid out: six sections under the
