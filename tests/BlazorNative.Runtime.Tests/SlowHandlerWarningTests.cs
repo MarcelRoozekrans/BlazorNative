@@ -51,8 +51,10 @@ namespace BlazorNative.Runtime.Tests;
 //     reached, or its method cannot be resolved, the key falls back to the tree
 //     owner: component type, frame sequence and event. Under that fallback a
 //     RenderFragment from a parent renders into the CHILD's tree with the PARENT's
-//     sequence numbers, so handlers can merge. Fails quiet. The fallback is not
-//     reached by any pin here; whether the NativeAOT build resolves the method is
+//     sequence numbers, so handlers can merge. Fails quiet. One pin reaches the
+//     fallback, through a wrapper hook that throws, and pins that the dispatch still
+//     completes and the warning names the tree owner; the merging itself is not
+//     pinned. Whether the NativeAOT build resolves the method and the hook is
 //     measured on the JVM lane, by SlowHandlerProbeTest. The 32-warning cap per
 //     session is the other quiet path, and it is pinned;
 //   - a handler whose method is the FRAMEWORK's: Blazor's own (every element @bind runs
@@ -700,6 +702,27 @@ public sealed class SlowHandlerWarningTests
         Assert.Contains($"in {typeof(BnCheckbox).FullName} held", line);
     }
 
+    /// <summary>Naming a slow handler can never fault its dispatch. A wrapper whose hook
+    /// throws something other than <see cref="NotSupportedException"/>, as
+    /// <see cref="EventCallbackDelegate"/>'s accessor would with a
+    /// <see cref="MissingFieldException"/> if ILC could not bind it, still completes: the
+    /// dispatch returns 0, the app's handler ran, and the warning names the tree owner,
+    /// the wrapper's own type, never the app's method. Red when Resolve lets the
+    /// exception escape.</summary>
+    [Fact]
+    public void AHookThatThrows_NeverFaultsTheDispatch_AndTheWarningFallsBackToTheTreeOwner()
+    {
+        using var s = new Session();
+        int handler = s.HandlerOnNode("checkbox", "change", nth: 2);
+
+        Assert.Equal(0, Dispatch(handler, Change("true")));
+
+        Assert.Equal(1, SlowProbe.RunsOf("bn-check-throw")); // anchor: the app handler ran
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(ThrowingHookCheckbox).FullName} held", line);
+        Assert.DoesNotContain("BnCheckThrowSlow", line);
+    }
+
     /// <summary>A bound wrapper names the page that binds it. Under the .NET 10 Razor
     /// compiler, <c>@bind-Value</c> and <c>@bind-Value:after</c> pass the wrapper a lambda
     /// the compiler declares on the page, and <c>:get</c>/<c>:set</c> passes the app's
@@ -893,6 +916,7 @@ public sealed class SlowHandlerWarningTests
         private void BnSlideSlow(float _) => Run("bn-slide", SlowMs);
         private void BnSwitchSlow(bool _) => Run("bn-switch", SlowMs);
         private void BnModalSlow(bool _) => Run("bn-modal", SlowMs);
+        private void BnCheckThrowSlow(bool _) => Run("bn-check-throw", SlowMs);
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
@@ -992,6 +1016,11 @@ public sealed class SlowHandlerWarningTests
             // The control: a second BnCheckbox with no app callback at all.
             b.OpenComponent<BnCheckbox>(72);
             b.CloseComponent();
+            // A BnCheckbox whose hook throws, with a slow app callback.
+            b.OpenComponent<ThrowingHookCheckbox>(81);
+            b.AddComponentParameter(82, nameof(BnCheckbox.CheckedChanged),
+                EventCallback.Factory.Create<bool>(this, BnCheckThrowSlow));
+            b.CloseComponent();
             // @bind-Value with a slow :after method: two pages with one input each, and
             // one page with two.
             b.OpenComponent<SlowBindPageA>(73);
@@ -1012,6 +1041,16 @@ public sealed class SlowHandlerWarningTests
         public void Dispose() => Bridge.NativeEvents -= OnNativeEvent;
 
         internal static void RunSlow(string tag) => Run(tag, SlowMs);
+    }
+
+    /// <summary>A BnCheckbox whose hook throws <see cref="MissingFieldException"/>, the
+    /// exception an unbound <c>[UnsafeAccessor]</c> raises. It re-implements the hook, so
+    /// the renderer, which reaches the hook through BnCheckbox's own HandleChange, calls
+    /// this one.</summary>
+    private sealed class ThrowingHookCheckbox : BnCheckbox, IForwardsUiEvent
+    {
+        Delegate? IForwardsUiEvent.ForwardedHandler(string eventName, Delegate attached)
+            => throw new MissingFieldException("EventCallback`1", "Delegate");
     }
 
     // Two page types whose BuildRenderTree is the same line for line: a BnView whose

@@ -26,7 +26,16 @@ import java.util.Collections
  * Owner keys give three warnings, one per method. The fallback would give ONE, naming
  * BnButton.
  *
- * DOES NOT COVER: the ChildContent shape, the budget, the once-per-handler
+ * The probe's BnCheckbox wraps its slow CheckedChanged in BnCheckbox's own HandleChange, so
+ * the warning names the app's SlowCheck only through the IForwardsUiEvent hook, which reads
+ * the EventCallback's delegate through a generic `[UnsafeAccessor]`. The .NET suite runs
+ * that accessor on CoreCLR only; the second test proves it binds in the published dll. If
+ * it did not, the renderer would fall back to the tree owner and the warning would name
+ * BnCheckbox.
+ *
+ * DOES NOT COVER: the other forwarding wrappers, BnInput, BnPicker, BnSlider, BnSwitch and
+ * BnModal, whose accessor instantiations are string, int, float and bool: only BnCheckbox's
+ * bool one runs here. The ChildContent shape, the budget, the once-per-handler
  * rule and the cap, all pinned on .NET by SlowHandlerWarningTests; the Android and iOS
  * builds, whose NativeAOT metadata policy is the same compiler's but not measured here.
  * The session is the process-global one every JVM test shares, so this assumes no other
@@ -76,6 +85,43 @@ class SlowHandlerProbeTest {
                     "resolve in the NativeAOT dll or the EventCallback accessor missed it, and the key fell " +
                     "back to the tree owner. Got: $warnings")
             assertTrue(warnings.none { it.contains("BnButton") }, "a warning named BnButton: $warnings")
+        } finally {
+            runtime.retire()
+        }
+    }
+
+    @Test
+    fun a_slow_bncheckbox_callback_warns_naming_the_apps_method_not_the_wrapper() {
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) }, onError = { _, _ -> })
+        runtime.start(componentName = "SlowHandlerProbe", platformOs = "test-host", bridge = NoopBridge)
+        try {
+            val mount = frames.first()
+            val checkbox = checkNotNull(
+                mount.patches.filterIsInstance<RenderPatch.CreateNode>().singleOrNull { it.nodeType == "checkbox" }
+            ) { "expected exactly one checkbox in the probe; got ${mount.patches}" }.nodeId
+            val change = checkNotNull(
+                mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
+                    .singleOrNull { it.nodeId == checkbox && it.eventName == "change" }
+            ) { "the probe's checkbox had no change handler; got ${mount.patches}" }.handlerId
+            val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
+            // Anchor: the echo starts empty, so any line below came from this change.
+            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+
+            assertEquals(0, runtime.dispatchEventBlocking(change, "change", payload = "true"),
+                "the slow checkbox change did not complete. A hook that throws in the NativeAOT dll " +
+                    "must fall back, never fault the dispatch")
+            assertEquals(0, runtime.dispatchEventBlocking(report, "click"))
+
+            val lines = latestEcho(frames).split("\n")
+            val warnings = lines.drop(1)
+            assertEquals("slow-warnings:${warnings.size}", lines[0], "the echo's count and lines disagree: $lines")
+            assertEquals(1, warnings.size, "one slow checkbox change gave ${warnings.size} warnings, not 1: $warnings")
+            assertTrue(warnings[0].contains("SlowHandlerProbe.SlowCheck"),
+                "the warning did not name the app's SlowHandlerProbe.SlowCheck. A warning naming BnCheckbox " +
+                    "means the hook's [UnsafeAccessor] did not bind in the NativeAOT dll and the key fell " +
+                    "back to the tree owner. Got: $warnings")
+            assertTrue(warnings.none { it.contains("BnCheckbox") }, "a warning named BnCheckbox: $warnings")
         } finally {
             runtime.retire()
         }

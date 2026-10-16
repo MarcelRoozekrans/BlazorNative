@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1359 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1360 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (205 passed / 0 failed — the assertion is the step near the end of this
+#     (206 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2359,7 +2359,10 @@ jobs:
       # 1358 -> 1359 (17.4, +1, 2026-10-16): Runtime 1184 -> 1185. LogPrivacyDriftTests gains
       # TheSharedJvmCodesReports_KeepTheirLevel — the completers and the frame adapter's skip
       # report at WARN, in both copies, and the shell routes a WARN report to warn.
-      - name: .NET tests (assert 1359 passed / 0 skipped)
+      # 1359 -> 1360 (17.4, +1, 2026-10-16): Runtime 1185 -> 1186. SlowHandlerWarningTests gains
+      # AHookThatThrows_NeverFaultsTheDispatch_… — a wrapper hook that throws falls back to the tree
+      # owner, and the dispatch still completes.
+      - name: .NET tests (assert 1360 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2377,8 +2380,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1359 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1359 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1360 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1360 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
@@ -2776,7 +2779,9 @@ jobs:
       #    System.err.
       # 204 -> 205 (17.4, +1, 2026-10-16): BnShellLogTest — a WARN diagnostic from the shared
       #    JVM code reaches the shell as WARN, and an ERROR one as ERROR.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 205 passed / 0 failed)
+      # 205 -> 206 (17.4, +1, 2026-10-16): SlowHandlerProbeTest — a slow BnCheckbox callback in the
+      #    published NativeAOT dll warns naming the app's method, so the hook's [UnsafeAccessor] binds.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 206 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2790,8 +2795,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 205 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 205 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 206 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 206 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

@@ -20,15 +20,21 @@ namespace BlazorNative.SampleApp;
 //     │                         is compiler-generated, and Blazor stores it as a boxed
 //     │                         EventCallback, so it proves both the lambda shape and the
 //     │                         EventCallback accessor under NativeAOT
+//     ├─ BnCheckbox          → CheckedChanged = SlowCheck, the same sleep. BnCheckbox wraps
+//     │                         it in its own HandleChange, so the warning names the app's
+//     │                         method only through the IForwardsUiEvent hook, whose
+//     │                         generic [UnsafeAccessor] this proves under NativeAOT
 //     ├─ BnButton "Report"   → restores the previous BnLog sink, and re-renders the echo
 //     └─ BnText echo: "slow-warnings:<n>" then one "\n<line>" per warning
 //
 // WHY. The warning keys a dispatch by the method its delegate runs. BnButton
 // forwards every app's OnClick from one line, so a key built from the tree that
 // holds the attribute would merge SlowOne and SlowTwo into one warning naming
-// BnButton. Whether Delegate.Method resolves under NativeAOT is a property of the
-// published dll, so JVM SlowHandlerProbeTest drives this page through it and
-// reads the echo.
+// BnButton. BnCheckbox goes further and wraps the app's callback in its own
+// handler, so only its hook, which reads the EventCallback's delegate through a
+// generic [UnsafeAccessor], can name the app's method. Whether Delegate.Method
+// resolves and the accessor binds under NativeAOT is a property of the published
+// dll, so JVM SlowHandlerProbeTest drives this page through it and reads the echo.
 //
 // WHY THE ECHO READS A SINK. The warning goes to BnLog, which the JVM lane cannot
 // read from the native process's stderr. The page installs a BnLog.Sink when it
@@ -80,6 +86,8 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
     private void SlowOne() => Thread.Sleep(SlowMs);
 
     private void SlowTwo() => Thread.Sleep(SlowMs);
+
+    private void SlowCheck(bool _) => Thread.Sleep(SlowMs);
 #pragma warning restore BN0004
 
     private void Report() => RestoreSink();
@@ -121,6 +129,11 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
                 Thread.Sleep(SlowMs);
 #pragma warning restore BN0004
             }));
+        b.CloseComponent();
+
+        b.OpenComponent<BnCheckbox>(28);
+        b.AddComponentParameter(29, nameof(BnCheckbox.CheckedChanged),
+            EventCallback.Factory.Create<bool>(this, SlowCheck));
         b.CloseComponent();
 
         b.OpenComponent<BnButton>(30);

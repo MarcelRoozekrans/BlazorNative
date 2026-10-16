@@ -1738,8 +1738,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// forwards a lambda the Razor compiler declares on the page, so it names the page;
     /// <c>:get</c>/<c>:set</c> forwards the app's <c>:set</c> method. Otherwise a
     /// framework owner key is combined with the tree-owner key.</para>
-    /// <para>The fallback, when no delegate can be reached or its method cannot be
-    /// resolved, is the tree owner: the component type, the attribute frame's sequence
+    /// <para>The fallback, when no delegate can be reached, its method cannot be
+    /// resolved, or resolving it throws, is the tree owner: the component type, the attribute frame's sequence
     /// number and the event name. The delegate is only read here; its method, and the
     /// wrapper's forwarded delegate, are resolved when a dispatch is already over budget,
     /// never on the render path.</para></summary>
@@ -1768,9 +1768,15 @@ public sealed class NativeRenderer : BlazorRenderer
                             Component.FullName ?? Component.Name);
                     }
                 }
-                catch (NotSupportedException)
+                catch (Exception)
                 {
-                    // A method with no reflection metadata under NativeAOT: fall back.
+                    // Naming a diagnostic must never fault the dispatch it names: this runs
+                    // after the dispatch scope has closed, so anything thrown here would
+                    // escape as the dispatch's failure. A method with no reflection metadata
+                    // under NativeAOT throws NotSupportedException; a wrapper's hook can throw
+                    // anything, such as MissingFieldException from an accessor ILC could not
+                    // bind. Every one falls back to the tree owner. Pinned by
+                    // SlowHandlerWarningTests.AHookThatThrows_NeverFaultsTheDispatch_….
                 }
             }
             return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
