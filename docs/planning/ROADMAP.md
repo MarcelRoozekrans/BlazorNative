@@ -3829,11 +3829,13 @@ decision: the session generation rested on a premise the code does not match.*
 **Record:** [`docs/plans/2026-10-15-phase-17.3-record.md`](../plans/2026-10-15-phase-17.3-record.md)
 **Completed:** 2026-10-15 · [PR #510](https://github.com/MarcelRoozekrans/BlazorNative/pull/510). A second shell mount replaces the root as one render-thread unit, disposing the old page without a removal frame. A recreated shell, whose saved route is the session's, keeps its page and back stack; a fresh launch starts at its own route. Navigation from a replaced root's code is dropped, from its UI events and its lifecycle code alike. A frame-callback registration while a page is mounted holds delivery until that shell's mount, by owner decision; the ABI documentation says so. A retired runtime drops frames and waits out a callback in flight. `RecreationTests` 9 facts, `RecreationAndroidTest` 4, `RetireLateContinuationTest` 2; M1–M11, J1–J2 and L1–L5 recorded, including three pins that were vacuous at first. .NET 1323 → 1332, JVM 192 → 193, Android 238 → 242. #511 filed: recreation during boot.
 
-#### Phase 17.4: Fault-path parity (#426, #435) [status: pending]
+#### Phase 17.4: Fault-path parity (#426, #435) [status: active]
 **Goal:** Android redacts the FaultNotice message the way iOS does. The slow-handler warning names
 the app's handler through a forwarding hook.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-16-phase-17.4-design.md`](../superpowers/specs/2026-10-16-phase-17.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-16-phase-17.4-fault-path-parity.md`](../superpowers/plans/2026-10-16-phase-17.4-fault-path-parity.md)
 
 #### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: pending]
 **Goal:** No local run can hang silently, test a stale native library, or fail with a bare message.
