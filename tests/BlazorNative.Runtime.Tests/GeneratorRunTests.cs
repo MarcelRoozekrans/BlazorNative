@@ -43,6 +43,15 @@ public sealed class GeneratorRunTests
     private static string Stub => Path.Combine(
         BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "TestData", "hold-stdout.ps1");
 
+    /// <summary>The bound given to <see cref="BoundedScript.RunBounded"/>, and the outer
+    /// window the fact waits for the run in. The held-pipe shape needs three pwsh
+    /// start-ups in sequence, stub, launcher and sleeper, before the anchor can hold;
+    /// these leave room for that on a loaded runner. Nothing here measures a runner's
+    /// start-up time.</summary>
+    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(15);
+
+    private static readonly TimeSpan Outer = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task AChildThatLeavesItsPipeHeld_FailsNamedWithinTheBound_AndLeavesNoProcess()
     {
@@ -55,12 +64,12 @@ public sealed class GeneratorRunTests
         {
             var clock = Stopwatch.StartNew();
             Task<GeneratorRun> run = Task.Run(() =>
-                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile], TimeSpan.FromSeconds(5)));
+                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile], Bound));
 
             // ANCHOR: the launcher is gone, the stub and the sleeper are alive, and the
             // run has not returned. Polled, because each role is a pwsh start-up.
             Dictionary<string, int> pids = new();
-            while (!run.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(15))
+            while (!run.IsCompleted && clock.Elapsed < Outer)
             {
                 pids = ReadPids(pidFile);
                 if (pids.Count == 3 && !IsAlive(pids["launcher"])) break;
@@ -75,18 +84,18 @@ public sealed class GeneratorRunTests
             Assert.True(IsAlive(pids["stub"]), "the stub's pwsh is not alive: nothing is waiting on the pipe");
             Assert.True(IsAlive(pids["sleeper"]), "the sleeper is not alive: nothing holds the pipe");
 
-            // THE BOUND: a named failure, within 15 s of the start.
-            TimeSpan left = TimeSpan.FromSeconds(15) - clock.Elapsed;
+            // THE BOUND: a named failure, within the outer window of the start.
+            TimeSpan left = Outer - clock.Elapsed;
             Task first = await Task.WhenAny(run, Task.Delay(left > TimeSpan.Zero ? left : TimeSpan.Zero));
             Assert.True(first == run,
-                $"RunBounded did not return within 15 s of the start ({clock.Elapsed}): a held pipe hangs it");
+                $"RunBounded did not return within {Outer.TotalSeconds} s of the start ({clock.Elapsed}): a held pipe hangs it");
             var ex = await Assert.ThrowsAsync<XunitException>(() => run);
             Assert.Contains("did not finish within", ex.Message);
             Assert.Contains("#454", ex.Message);
 
             // THE TREE: the stub's own pwsh is dead. `pwsh` on Linux is the global-tool
             // shim, and the stub is the shim's child, so this needs the tree kill.
-            Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(5)),
+            Assert.True(await DiesWithin(pids["stub"], TimeSpan.FromSeconds(15)),
                 $"the stub's pwsh (pid {pids["stub"]}) survived the bound's kill");
         }
         finally
