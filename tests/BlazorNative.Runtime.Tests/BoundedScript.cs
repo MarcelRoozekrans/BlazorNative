@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using BlazorNative.Tests.Shared;
 using Xunit.Sdk;
@@ -67,6 +68,8 @@ internal static class BoundedScript
         {
             try { p.Kill(entireProcessTree: true); }
             catch (InvalidOperationException) { /* it exited; only the pipe was held */ }
+            catch (AggregateException) { /* a tree member could not be killed; still named below */ }
+            catch (Win32Exception) { /* the kill was refused; still named below */ }
 
             string tail;
             lock (lines) tail = string.Join("\n", lines.TakeLast(20));

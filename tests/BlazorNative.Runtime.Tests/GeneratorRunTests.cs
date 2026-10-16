@@ -22,9 +22,15 @@ namespace BlazorNative.Runtime.Tests;
 /// <para>DOES NOT COVER:
 /// <list type="bullet">
 /// <item>The sleeper. It was re-parented when the launcher exited, so no tree kill
-/// can reach it, on Linux or Windows. This fact kills it in <c>finally</c>. The same
-/// limit applies to a re-parented MSBuild node, and the failure message says how to
-/// clear one.</item>
+/// can reach it, on Linux or Windows. This fact kills it in <c>finally</c>, and only
+/// it: by pid, without its tree, and only if it started after the fact did, so a
+/// recycled pid is never killed. The same limit applies to a re-parented MSBuild
+/// node, and the failure message says how to clear one.</item>
+/// <item>The tree kill, on Windows. The stub's pwsh dies under a tree kill but not a
+/// plain one only where <c>pwsh</c> is a launcher shim with the real pwsh as its
+/// child, as the dotnet global tool is on Linux. Where <c>pwsh</c> is the real
+/// executable, as on Windows, a plain kill passes too, so there the tree kill is
+/// effectively unpinned.</item>
 /// <item>Whether node reuse caused the real hangs. That is what the soak in the
 /// 17.5 record measures; this pins only that any such hang is bounded.</item>
 /// </list></para>
@@ -43,6 +49,7 @@ public sealed class GeneratorRunTests
         string pidFile = Path.Combine(
             Path.GetTempPath(), "bn-454-stub-" + Guid.NewGuid().ToString("N") + ".pids");
 
+        DateTime factStart = DateTime.Now;
         try
         {
             var clock = Stopwatch.StartNew();
@@ -83,7 +90,7 @@ public sealed class GeneratorRunTests
         }
         finally
         {
-            foreach (int pid in ReadPids(pidFile).Values) KillIfAlive(pid);
+            if (ReadPids(pidFile).TryGetValue("sleeper", out int sleeper)) KillOwnSleeper(sleeper, factStart);
             try { File.Delete(pidFile); } catch (IOException) { /* temp file */ }
         }
     }
@@ -91,10 +98,14 @@ public sealed class GeneratorRunTests
     // ── node reuse off in the generator (#454) ──────────────────────────────────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
-    /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>&amp;</c>. A string that only
-    /// names one, such as a <c>throw "dotnet publish failed"</c>, is not a call.</summary>
+    /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
+    /// with the command optionally quoted. <c>dotnet</c> and <c>msbuild</c> may carry
+    /// <c>.exe</c>. A string that only names one, such as a
+    /// <c>throw "dotnet publish failed"</c>, is not a call.</summary>
     private static readonly Regex MsBuildCall = new(
-        @"(?:^|[;|{}(&])\s*(?:dotnet\s+(?:publish|build|msbuild|pack|test|restore|clean|run)|msbuild(?:\.exe)?)(?![\w.-])",
+        @"(?:(?:^|[;|{}(=])\s*(?<q>)|&\s*(?<q>['""]?))"
+        + @"(?:dotnet(?:\.exe)?\k<q>\s+(?:publish|build|msbuild|pack|test|restore|clean|run)|msbuild(?:\.exe)?\k<q>)"
+        + @"(?![\w.-])",
         RegexOptions.IgnoreCase);
 
     private static readonly Regex NodeReuseEnv = new(
@@ -141,8 +152,10 @@ public sealed class GeneratorRunTests
     /// first one, so no reused worker node outlives the publish.
     ///
     /// <para>DOES NOT COVER: whether node reuse caused the hangs; the 17.5 record's
-    /// soak measures that. An MSBuild call hidden behind a variable or splat, such as
-    /// <c>&amp; $tool publish</c>, is not recognised as a call; the environment
+    /// soak measures that. Calls the recogniser does not see: one hidden behind a
+    /// variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
+    /// <c>Invoke-Expression "dotnet publish …"</c>; and one started through
+    /// <c>Start-Process dotnet -ArgumentList publish</c>. For all of them the environment
     /// variable still covers it.</para>
     /// </summary>
     [Fact]
@@ -170,8 +183,9 @@ public sealed class GeneratorRunTests
     }
 
     /// <summary>NON-VACUITY for the pin above: a planted call without the switch is
-    /// caught, so is one after <c>&amp;</c>, the same call with the switch is not, and
-    /// a comment or a string that names one is ignored.</summary>
+    /// caught, and so is one after <c>&amp;</c>, quoted, assigned or spelled
+    /// <c>dotnet.exe</c>. The same call with the switch is not caught, and a comment
+    /// or a string that names one is ignored.</summary>
     [Fact]
     public void GenerateReference_NodeReusePin_CatchesAPlantedCall()
     {
@@ -191,6 +205,18 @@ public sealed class GeneratorRunTests
 
         var piped = MsBuildCalls(script + "\nGet-Item x; & msbuild app.proj\n");
         Assert.Contains(piped.WithReuse, c => c.Contains("msbuild app.proj", StringComparison.Ordinal));
+
+        var assigned = MsBuildCalls(script + "\n$out = dotnet publish $project -c Release\n");
+        Assert.Contains(assigned.WithReuse, c => c.Contains("$out = dotnet publish", StringComparison.Ordinal));
+
+        var exe = MsBuildCalls(script + "\ndotnet.exe build $project\n");
+        Assert.Contains(exe.WithReuse, c => c.Contains("dotnet.exe build", StringComparison.Ordinal));
+
+        var quoted = MsBuildCalls(script + "\n& 'dotnet' publish $project\n");
+        Assert.Contains(quoted.WithReuse, c => c.Contains("& 'dotnet' publish", StringComparison.Ordinal));
+
+        var assignedString = MsBuildCalls(script + "\n$msg = \"dotnet build failed\"\n");
+        Assert.Empty(assignedString.WithReuse);
     }
 
     private static Dictionary<string, int> ReadPids(string pidFile)
@@ -229,14 +255,19 @@ public sealed class GeneratorRunTests
         return !IsAlive(pid);
     }
 
-    private static void KillIfAlive(int pid)
+    /// <summary>Kills the orphaned sleeper, and nothing else. The stub and the launcher
+    /// are already dead, and a dead pid can be recycled within seconds on Windows, so
+    /// they are never touched. The sleeper is killed alone, without a tree, and only if
+    /// the process now holding its pid started after this fact did.</summary>
+    private static void KillOwnSleeper(int pid, DateTime factStart)
     {
         try
         {
             using var p = Process.GetProcessById(pid);
-            if (!p.HasExited) p.Kill(entireProcessTree: true);
+            if (!p.HasExited && p.StartTime >= factStart) p.Kill();
         }
         catch (ArgumentException) { /* already gone */ }
         catch (InvalidOperationException) { /* exited meanwhile */ }
+        catch (System.ComponentModel.Win32Exception) { /* not ours to read, so not ours to kill */ }
     }
 }
