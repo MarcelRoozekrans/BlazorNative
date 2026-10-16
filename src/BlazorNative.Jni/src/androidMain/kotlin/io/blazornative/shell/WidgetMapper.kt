@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -33,6 +32,7 @@ import coil.imageLoader
 import coil.request.Disposable
 import coil.request.ImageRequest
 import coil.size.Size
+import io.blazornative.jni.BnPrivacy
 import io.blazornative.jni.ItemsJson
 import io.blazornative.jni.RenderFrame
 import io.blazornative.jni.RenderPatch
@@ -428,9 +428,11 @@ class WidgetMapper(
         // resolves in both the repo shell and any generated app. Called once (lazy).
         val fontId = context.resources.getIdentifier("inter_regular", "font", context.packageName)
         (if (fontId != 0) ResourcesCompat.getFont(context, fontId) else null) ?: run {
-            Log.w(TAG, "Inter (res/font/inter_regular) did not resolve — falling back to " +
-                "Typeface.DEFAULT (Roboto). FONT PARITY IS BROKEN: check res/font/inter_regular.ttf " +
-                "(see BnFontAndroidTest).")
+            BnShellLog.warn(
+                TAG,
+                "Inter (res/font/inter_regular) did not resolve — falling back to Typeface.DEFAULT (Roboto). FONT PARITY IS BROKEN: check res/font/inter_regular.ttf (see BnFontAndroidTest).",
+                privacy = BnPrivacy.SAFE,
+            )
             Typeface.DEFAULT
         }
     }
@@ -687,7 +689,7 @@ class WidgetMapper(
         if (handlerId != null) {
             dispatchClick(handlerId)
         } else {
-            Log.w(TAG, "back consumed by modal ${topmost.key}, but it has no click wire " +
+            BnShellLog.warn(TAG, "back consumed by modal ${topmost.key}, but it has no click wire " +
                 "attached — the dismissal request has nowhere to go (a hand-rolled modal " +
                 "wire; BnModal always attaches it)")
         }
@@ -924,7 +926,7 @@ class WidgetMapper(
      */
     private fun handleAttachEvent(p: RenderPatch.AttachEvent) {
         val view = nodes[p.nodeId] ?: run {
-            Log.w(TAG, "AttachEvent '${p.eventName}' for unknown nodeId ${p.nodeId}: ignored")
+            BnShellLog.warn(TAG, "AttachEvent '${p.eventName}' for unknown nodeId ${p.nodeId}: ignored")
             return
         }
         when (p.eventName) {
@@ -1017,7 +1019,7 @@ class WidgetMapper(
                 // verified finding this arm is built on:
                 is Spinner -> {
                     val state = pickerStates[p.nodeId] ?: run {
-                        Log.w(TAG, "AttachEvent 'change' for picker ${p.nodeId} has no state: ignored")
+                        BnShellLog.warn(TAG, "AttachEvent 'change' for picker ${p.nodeId} has no state: ignored")
                         return
                     }
                     // Last-wins re-attach, the 4.2 watcher discipline: swap the
@@ -1049,7 +1051,7 @@ class WidgetMapper(
                         }
                     }
                 }
-                else -> Log.w(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is " +
+                else -> BnShellLog.warn(TAG, "AttachEvent 'change' ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName} — not a change-bearing widget")
             }
             "focus", "blur" -> {
@@ -1078,7 +1080,7 @@ class WidgetMapper(
                 // contract is NORMATIVE; iOS mirrors the CONFLATION, not this
                 // listener). Only a viewport can scroll:
                 if (view !is ScrollView) {
-                    Log.w(TAG, "AttachEvent 'scroll' ignored: node ${p.nodeId} is " +
+                    BnShellLog.warn(TAG, "AttachEvent 'scroll' ignored: node ${p.nodeId} is " +
                         "${view::class.simpleName}, not ScrollView")
                     return
                 }
@@ -1105,13 +1107,13 @@ class WidgetMapper(
             // WHERE the failure flows. Last-wins re-attach, the 4.2 watcher discipline.
             "error" -> {
                 val state = imageStates[p.nodeId] ?: run {
-                    Log.w(TAG, "AttachEvent 'error' ignored: node ${p.nodeId} is " +
+                    BnShellLog.warn(TAG, "AttachEvent 'error' ignored: node ${p.nodeId} is " +
                         "${view::class.simpleName}, not an image node")
                     return
                 }
                 state.errorHandlerId = p.handlerId
             }
-            else -> Log.w(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
+            else -> BnShellLog.warn(TAG, "AttachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
     }
 
@@ -1136,7 +1138,7 @@ class WidgetMapper(
                     return
                 }
                 val view = nodes[p.nodeId] ?: run {
-                    Log.w(TAG, "DetachEvent 'click' for unknown nodeId ${p.nodeId}: ignored")
+                    BnShellLog.warn(TAG, "DetachEvent 'click' for unknown nodeId ${p.nodeId}: ignored")
                     return
                 }
                 view.setOnClickListener(null)
@@ -1166,7 +1168,7 @@ class WidgetMapper(
                             // dead wire (the 7.2 detach discipline).
                             pickerStates[p.nodeId]?.handlerId = null
                         }
-                        else -> Log.w(TAG, "DetachEvent 'change' for node ${p.nodeId} has no live watcher: ignored")
+                        else -> BnShellLog.warn(TAG, "DetachEvent 'change' for node ${p.nodeId} has no live watcher: ignored")
                     }
                 }
             }
@@ -1175,7 +1177,7 @@ class WidgetMapper(
                 // clear ONE side of the pair; drop the entry AND the view's
                 // focus listener only when both sides are gone.
                 val entry = focusEntries[p.nodeId] ?: run {
-                    Log.w(TAG, "DetachEvent '${p.eventName}' for node ${p.nodeId} has no live focus entry: ignored")
+                    BnShellLog.warn(TAG, "DetachEvent '${p.eventName}' for node ${p.nodeId} has no live focus entry: ignored")
                     return
                 }
                 if (p.eventName == "focus") entry.focusHandlerId = null
@@ -1195,7 +1197,7 @@ class WidgetMapper(
                 // rc-0 at-most-once contract, same as click).
                 val removed = scrollWires.remove(p.nodeId)
                 if (removed == null) {
-                    Log.w(TAG, "DetachEvent 'scroll' for node ${p.nodeId} has no live wire: ignored")
+                    BnShellLog.warn(TAG, "DetachEvent 'scroll' for node ${p.nodeId} has no live wire: ignored")
                     return
                 }
                 (nodes[p.nodeId] as? ScrollView)?.setOnScrollChangeListener(null)
@@ -1205,12 +1207,12 @@ class WidgetMapper(
             // finds no handler and DROPs at the decision ([imageErrorDispatchAction]).
             "error" -> {
                 val state = imageStates[p.nodeId] ?: run {
-                    Log.w(TAG, "DetachEvent 'error' for node ${p.nodeId} has no image state: ignored")
+                    BnShellLog.warn(TAG, "DetachEvent 'error' for node ${p.nodeId} has no image state: ignored")
                     return
                 }
                 state.errorHandlerId = null
             }
-            else -> Log.w(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
+            else -> BnShellLog.warn(TAG, "DetachEvent '${p.eventName}' not supported (forward compat): skipped")
         }
     }
 
@@ -1343,7 +1345,7 @@ class WidgetMapper(
                 // (the raw-element hatch can put `scrollTo` on anything). DATA,
                 // not a crash — the shell's standing rule for a patch it cannot
                 // honour.
-                Log.w(TAG, "ScrollTo: node $nodeId is not a ScrollView — ignoring")
+                BnShellLog.warn(TAG, "ScrollTo: node $nodeId is not a ScrollView — ignoring")
                 continue
             }
 
@@ -1480,7 +1482,7 @@ class WidgetMapper(
             // oracle (the 6.3 method), never a transcribed constant.
             "activityindicator" -> ProgressBar(context).apply { isIndeterminate = true }
             else     -> {
-                Log.w(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
+                BnShellLog.warn(TAG, "Unknown nodeType ${p.nodeType} — falling back to TextView")
                 // Font parity Gate B (#126): the fallback is a text leaf too — same Inter.
                 // Gate C: and the same includeFontPadding = false (see the `text` arm).
                 TextView(context).apply {
@@ -1889,7 +1891,7 @@ class WidgetMapper(
 
     private fun handleUpdateProp(p: RenderPatch.UpdateProp) {
         val view = nodes[p.nodeId] ?: run {
-            Log.w(TAG, "UpdateProp for unknown nodeId ${p.nodeId}: ignored")
+            BnShellLog.warn(TAG, "UpdateProp for unknown nodeId ${p.nodeId}: ignored")
             return
         }
         when (p.name) {
@@ -1897,7 +1899,7 @@ class WidgetMapper(
                 if (view is EditText) {
                     view.hint = p.value
                     yoga.markDirty(view) // the hint sizes an empty EditText
-                } else Log.w(TAG, "UpdateProp placeholder ignored: $view is not EditText")
+                } else BnShellLog.warn(TAG, "UpdateProp placeholder ignored: $view is not EditText")
             }
             // Phase 3.4 (DoD #5): the bound input's write-back half of the bind
             // loop. Runs inside [applyBatch], so the [applyingBatch] guard
@@ -1951,41 +1953,41 @@ class WidgetMapper(
                 is CompoundButton -> when (p.value) {
                     "true" -> view.isChecked = true
                     "false", null -> view.isChecked = false
-                    else -> Log.w(TAG, "UpdateProp value ignored on node ${p.nodeId}: " +
+                    else -> BnShellLog.warn(TAG, "UpdateProp value ignored on node ${p.nodeId}: " +
                         "'${p.value}' is not the checkbox wire grammar (exactly \"true\"/\"false\")")
                 }
                 // Phase 7.3 — slider: store the RAW wire float, re-derive the int
                 // geometry (the precision contract, [SliderState]).
                 is SeekBar -> {
                     val state = sliderStates[p.nodeId] ?: run {
-                        Log.w(TAG, "UpdateProp value for slider ${p.nodeId} has no state: ignored")
+                        BnShellLog.warn(TAG, "UpdateProp value for slider ${p.nodeId} has no state: ignored")
                         return
                     }
                     val v = p.value?.let { parseWireFloat(it) } ?: run {
-                        Log.w(TAG, "UpdateProp value ignored on slider ${p.nodeId}: " +
+                        BnShellLog.warn(TAG, "UpdateProp value ignored on slider ${p.nodeId}: " +
                             "'${p.value}' is not an invariant float")
                         return
                     }
                     state.value = v
                     applySlider(view, state)
                 }
-                else -> Log.w(TAG, "UpdateProp value ignored: $view is not a value-bearing widget")
+                else -> BnShellLog.warn(TAG, "UpdateProp value ignored: $view is not a value-bearing widget")
             }
             // Phase 7.3 — the slider's declared range/step (BnSlider always
             // declares min/max; step only when set — null resets to continuous).
             "min", "max", "step" -> {
                 if (view !is SeekBar) {
-                    Log.w(TAG, "UpdateProp ${p.name} ignored: node ${p.nodeId} is " +
+                    BnShellLog.warn(TAG, "UpdateProp ${p.name} ignored: node ${p.nodeId} is " +
                         "${view::class.simpleName}, not SeekBar")
                     return
                 }
                 val state = sliderStates[p.nodeId] ?: run {
-                    Log.w(TAG, "UpdateProp ${p.name} for slider ${p.nodeId} has no state: ignored")
+                    BnShellLog.warn(TAG, "UpdateProp ${p.name} for slider ${p.nodeId} has no state: ignored")
                     return
                 }
                 val parsed = p.value?.let {
                     parseWireFloat(it) ?: run {
-                        Log.w(TAG, "UpdateProp ${p.name} ignored on slider ${p.nodeId}: " +
+                        BnShellLog.warn(TAG, "UpdateProp ${p.name} ignored on slider ${p.nodeId}: " +
                             "'${p.value}' is not an invariant float")
                         return
                     }
@@ -2000,12 +2002,12 @@ class WidgetMapper(
             // Phase 7.3 — the picker's two props (the state-owner precedent).
             "items" -> {
                 if (view is Spinner) handleItems(p.nodeId, view, p.value)
-                else Log.w(TAG, "UpdateProp items ignored: node ${p.nodeId} is " +
+                else BnShellLog.warn(TAG, "UpdateProp items ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName}, not Spinner")
             }
             "selectedIndex" -> {
                 if (view is Spinner) handleSelectedIndex(p.nodeId, view, p.value)
-                else Log.w(TAG, "UpdateProp selectedIndex ignored: node ${p.nodeId} is " +
+                else BnShellLog.warn(TAG, "UpdateProp selectedIndex ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName}, not Spinner")
             }
             // Phase 7.4 — the scrim's paint. A PROP, not a style, by design: SetStyle
@@ -2017,11 +2019,11 @@ class WidgetMapper(
             // ignored, the backgroundColor arm's posture.
             "scrimColor" -> {
                 val modal = modalOverlays[p.nodeId] ?: run {
-                    Log.w(TAG, "UpdateProp scrimColor ignored: node ${p.nodeId} is not a modal")
+                    BnShellLog.warn(TAG, "UpdateProp scrimColor ignored: node ${p.nodeId} is not a modal")
                     return
                 }
                 val color = p.value?.let { parseColorOrNull(it) } ?: run {
-                    Log.w(TAG, "UpdateProp scrimColor ignored on modal ${p.nodeId}: " +
+                    BnShellLog.warn(TAG, "UpdateProp scrimColor ignored on modal ${p.nodeId}: " +
                         "'${p.value}' is not a parseable color")
                     return
                 }
@@ -2035,7 +2037,7 @@ class WidgetMapper(
             // and not the partitioned SetStyle routing table (BnImage.cs's header).
             "src" -> {
                 if (view is ImageView) handleSrc(p.nodeId, view, p.value)
-                else Log.w(TAG, "UpdateProp src ignored: node ${p.nodeId} is " +
+                else BnShellLog.warn(TAG, "UpdateProp src ignored: node ${p.nodeId} is " +
                     "${view::class.simpleName}, not ImageView")
             }
             // Phase 7.5 (design decision 1) — the image's placeholder COLOR. A PROP, not a
@@ -2045,12 +2047,12 @@ class WidgetMapper(
             // PAINT-ONLY by construction: it writes the drawable, never Yoga.
             "placeholderColor" -> {
                 if (view !is ImageView) {
-                    Log.w(TAG, "UpdateProp placeholderColor ignored: node ${p.nodeId} is " +
+                    BnShellLog.warn(TAG, "UpdateProp placeholderColor ignored: node ${p.nodeId} is " +
                         "${view::class.simpleName}, not ImageView")
                     return
                 }
                 val state = imageStates[p.nodeId] ?: run {
-                    Log.w(TAG, "UpdateProp placeholderColor for image ${p.nodeId} has no " +
+                    BnShellLog.warn(TAG, "UpdateProp placeholderColor for image ${p.nodeId} has no " +
                         "state: ignored")
                     return
                 }
@@ -2063,7 +2065,7 @@ class WidgetMapper(
                     return
                 }
                 val color = parseColorOrNull(p.value) ?: run {
-                    Log.w(TAG, "UpdateProp placeholderColor ignored on image ${p.nodeId}: " +
+                    BnShellLog.warn(TAG, "UpdateProp placeholderColor ignored on image ${p.nodeId}: " +
                         "'${p.value}' is not a parseable color") // the backgroundColor posture
                     return
                 }
@@ -2084,7 +2086,7 @@ class WidgetMapper(
             // by construction (iOS does not — Gate 3 owes `clipsToBounds = true`).
             "contentMode" -> {
                 if (view !is ImageView) {
-                    Log.w(TAG, "UpdateProp contentMode ignored: node ${p.nodeId} is " +
+                    BnShellLog.warn(TAG, "UpdateProp contentMode ignored: node ${p.nodeId} is " +
                         "${view::class.simpleName}, not ImageView")
                     return
                 }
@@ -2103,7 +2105,7 @@ class WidgetMapper(
                     ImageContentMode.CENTER -> ImageView.ScaleType.CENTER
                 }
             }
-            else -> Log.w(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
+            else -> BnShellLog.warn(TAG, "UpdateProp '${p.name}' not yet supported (Phase 3+ extends)")
         }
     }
 
@@ -2314,7 +2316,7 @@ class WidgetMapper(
     ) {
         recordImageResult(ImageResult(nodeId, url, ImageOutcome.ERROR))
         clearIfMine(nodeId, generation, view)
-        Log.w(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
+        BnShellLog.warn(TAG, "image load failed for node $nodeId ($url): ${error.javaClass.simpleName}: " +
             "${error.message} — the node stays 0 × 0 and reserves nothing")
         decideAndDispatchError(nodeId, generation, view, url)
     }
@@ -2428,7 +2430,7 @@ class WidgetMapper(
         what: String,
     ): Boolean {
         if (!isLiveImageRequest(imageGenerations[nodeId], generation, nodes[nodeId], view)) {
-            Log.w(TAG, "stale image $what for node $nodeId ($url) dropped: the node was " +
+            BnShellLog.warn(TAG, "stale image $what for node $nodeId ($url) dropped: the node was " +
                 "removed, or its src was written again. Nothing painted.")
             return false
         }
@@ -2453,7 +2455,7 @@ class WidgetMapper(
     private fun naturalSizeOf(nodeId: Int, url: String, drawable: Drawable): YogaLayout.NaturalSize {
         val bitmap = (drawable as? BitmapDrawable)?.bitmap
         if (bitmap != null) return YogaLayout.NaturalSize(bitmap.width, bitmap.height)
-        Log.w(TAG, "image for node $nodeId ($url) decoded to a ${drawable::class.simpleName}, " +
+        BnShellLog.warn(TAG, "image for node $nodeId ($url) decoded to a ${drawable::class.simpleName}, " +
             "not a BitmapDrawable: it has NO natural size this shell knows how to read in the " +
             "contract's unit (one FILE PIXEL is one dp/pt), so it measures 0 × 0 and reserves " +
             "nothing. Animated/vector formats are ledgered — they need a design, not a guess.")
@@ -2551,7 +2553,7 @@ class WidgetMapper(
      */
     private fun handleItems(nodeId: Int, spinner: Spinner, json: String?) {
         val state = pickerStates[nodeId] ?: run {
-            Log.w(TAG, "UpdateProp items for picker $nodeId has no state: ignored")
+            BnShellLog.warn(TAG, "UpdateProp items for picker $nodeId has no state: ignored")
             return
         }
         // null = the attribute was removed; BnPicker never does (it writes "[]"),
@@ -2559,7 +2561,7 @@ class WidgetMapper(
         val items = if (json == null) emptyList() else try {
             ItemsJson.parse(json)
         } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "UpdateProp items for picker $nodeId is MALFORMED — rendering an " +
+            BnShellLog.warn(TAG, "UpdateProp items for picker $nodeId is MALFORMED — rendering an " +
                 "EMPTY picker rather than a wrong one: ${e.message}")
             emptyList()
         }
@@ -2588,12 +2590,12 @@ class WidgetMapper(
      */
     private fun handleSelectedIndex(nodeId: Int, spinner: Spinner, value: String?) {
         val state = pickerStates[nodeId] ?: run {
-            Log.w(TAG, "UpdateProp selectedIndex for picker $nodeId has no state: ignored")
+            BnShellLog.warn(TAG, "UpdateProp selectedIndex for picker $nodeId has no state: ignored")
             return
         }
         val requested = value?.toIntOrNull()
         if (value != null && requested == null) {
-            Log.w(TAG, "UpdateProp selectedIndex ignored on picker $nodeId: " +
+            BnShellLog.warn(TAG, "UpdateProp selectedIndex ignored on picker $nodeId: " +
                 "'$value' is not an invariant int")
             return
         }
@@ -2645,7 +2647,7 @@ class WidgetMapper(
      */
     private fun handleSetStyle(p: RenderPatch.SetStyle) {
         if (nodes[p.nodeId] == null) {
-            Log.w(TAG, "SetStyle for unknown nodeId ${p.nodeId}: ignored")
+            BnShellLog.warn(TAG, "SetStyle for unknown nodeId ${p.nodeId}: ignored")
             return
         }
         // Phase 7.4 — **SetStyle on a `modal` node is diagnosed-and-ignored**
@@ -2693,7 +2695,7 @@ class WidgetMapper(
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
                 yoga.markDirty(tv) // a bigger font is a bigger intrinsic size
             }
-            else -> Log.w(TAG, "SetStyle '${p.property}' not yet supported (Phase 3+ extends)")
+            else -> BnShellLog.warn(TAG, "SetStyle '${p.property}' not yet supported (Phase 3+ extends)")
         }
     }
 
@@ -2709,7 +2711,7 @@ class WidgetMapper(
         s.removeSuffix("sp").removeSuffix("dp").removeSuffix("px").toFloatOrNull()
 
     private fun logIgnore(prop: String, detail: String?) {
-        Log.w(TAG, "SetStyle $prop ignored: $detail")
+        BnShellLog.warn(TAG, "SetStyle $prop ignored: $detail")
     }
 
     private companion object {

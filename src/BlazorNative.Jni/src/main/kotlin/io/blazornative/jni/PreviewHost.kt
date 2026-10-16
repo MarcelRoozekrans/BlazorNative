@@ -68,7 +68,7 @@ fun main(args: Array<String>) {
             onFrame = snapshot::apply,
             onError = { msg, t ->
                 frameFault = true
-                System.err.println("[PreviewHost] $msg: $t")
+                BnDiagnostics.sink("[PreviewHost] $msg", t)
             },
         )
         val bootLines = runtime.start(componentName = component, platformOs = "preview-host")
@@ -85,12 +85,12 @@ fun main(args: Array<String>) {
         println("[TIME] mount    ${ms(tInit, tMounted)} ms")
         println("[TIME] total    ${ms(tStart, System.nanoTime())} ms")
         if (frameFault) {
-            System.err.println("[PreviewHost] tree is PARTIAL — a frame was dropped during mount (detail above)")
+            BnDiagnostics.sink("[PreviewHost] tree is PARTIAL — a frame was dropped during mount (detail above)", null)
             exitProcess(1)
         }
         exitProcess(0)
     } catch (t: Throwable) {
-        System.err.println("[PreviewHost] FAILED to mount '$component': $t")
+        BnDiagnostics.sink("[PreviewHost] FAILED to mount '$component'", t)
         exitProcess(1)
     }
 }

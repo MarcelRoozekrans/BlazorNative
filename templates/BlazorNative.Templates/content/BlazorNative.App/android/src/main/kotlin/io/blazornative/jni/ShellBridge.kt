@@ -609,10 +609,11 @@ object BridgeFetchCompleter {
         when (rc) {
             0 -> {} // delivered
             1 -> {} // unknown/already-completed id — benign cancellation race, ignore
-            else -> System.err.println(
+            else -> BnDiagnostics.sink(
                 "[BridgeFetchCompleter] blazornative_fetch_complete($requestId) returned $rc — " +
                     "invalid call or internal bridge failure; check the runtime's stderr " +
-                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)"
+                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)",
+                null,
             )
         }
         return rc
@@ -667,10 +668,11 @@ object BridgeHostCallCompleter {
         when (rc) {
             0 -> {} // delivered
             1 -> {} // unknown/already-completed id — benign cancellation race, ignore
-            else -> System.err.println(
+            else -> BnDiagnostics.sink(
                 "[BridgeHostCallCompleter] blazornative_host_call_complete($requestId) returned $rc — " +
                     "invalid call or internal bridge failure; check the runtime's stderr " +
-                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)"
+                    "for detail (logcat `BlazorNative/…` on Android since Phase 11.4 Gate B)",
+                null,
             )
         }
         return rc

@@ -980,9 +980,9 @@ public sealed class ShellSourceRootsDriftTests
     /// against 131 files "theatre"; this is the opposite end of the same rule.</summary>
     private const int DeclaredSetCount = 7;
 
-    /// <summary>The three pins that declare a coverage position. A cardinality
+    /// <summary>The four pins that declare a coverage position. A cardinality
     /// floor rather than <c>&gt; 0</c>, for the reason limit 5 gives.</summary>
-    private const int DeclaredConsumerCount = 3;
+    private const int DeclaredConsumerCount = 4;
 
     /// <summary>The three containers walked when looking for undeclared source
     /// trees. Same shape, same reason — and this is the one the re-review caught:

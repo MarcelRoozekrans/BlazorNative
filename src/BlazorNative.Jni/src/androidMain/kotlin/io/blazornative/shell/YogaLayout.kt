@@ -3,7 +3,6 @@ package io.blazornative.shell
 import android.content.Context
 import android.graphics.Rect
 import android.util.AttributeSet
-import android.util.Log
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
@@ -1221,7 +1220,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     }
 
     private fun logIgnore(property: String, detail: String?) {
-        Log.w(TAG, "SetStyle $property ignored: $detail")
+        BnShellLog.warn(TAG, "SetStyle $property ignored: $detail")
     }
 
     /**
@@ -1241,7 +1240,7 @@ class YogaLayout(private val context: Context, private val root: ViewGroup) {
     private fun diagnose(nodeId: Int, kind: String, message: String) {
         if (!diagnosedKeys.add(nodeId to kind)) return
         diagnosed.add(nodeId to message)
-        Log.w(TAG, message)
+        BnShellLog.warn(TAG, message)
     }
 
     companion object {

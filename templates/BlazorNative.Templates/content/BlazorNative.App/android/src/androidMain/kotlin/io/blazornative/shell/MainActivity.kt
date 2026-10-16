@@ -1,10 +1,10 @@
 package io.blazornative.shell
 
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
@@ -24,9 +24,11 @@ import androidx.fragment.app.FragmentActivity
 // Delete it and the generated app does not compile: "Unresolved reference 'R'".
 import com.example.starterapp.R
 import io.blazornative.jni.BlazorNativeRuntime
+import io.blazornative.jni.BnDiagnostics
 import io.blazornative.jni.BnHostEvent
 import io.blazornative.jni.BnLogLevel
 import io.blazornative.jni.BnPlatformKind
+import io.blazornative.jni.BnPrivacy
 import kotlin.concurrent.thread
 
 /**
@@ -64,10 +66,12 @@ import kotlin.concurrent.thread
  *  - [runtime] is an Activity FIELD deliberately: it strongly holds the JNA
  *    frame callback; if it were a local, GC could collect the callback's
  *    trampoline while native code still points at it.
- *  - All throwables are caught → Log.e, which ships in Release by design (only
- *    narration is gated). A boot crash is visible in logcat. Frame-level errors
- *    (adapter/consumer throws inside the JNA callback) route through
- *    onError → Log.e — JNA would otherwise swallow them to stderr.
+ *  - All throwables are caught → BnShellLog.error, which ships in Release by
+ *    design (only narration is gated). A boot crash is visible in logcat.
+ *    Frame-level errors (adapter/consumer throws inside the JNA callback) route
+ *    through onError → BnShellLog.error — JNA would otherwise swallow them to
+ *    stderr. In a build that is not debuggable, the message and the throwable
+ *    are written as `<private>`, as iOS writes them (#426).
  */
 class MainActivity : FragmentActivity() {
 
@@ -243,10 +247,11 @@ class MainActivity : FragmentActivity() {
 
         // ── Phase 11.4 Gate B (#155/#164): THE STDERR → LOGCAT PUMP ──────────
         //
-        // FIRST STATEMENT IN onCreate, AND THE ORDER IS THE POINT — not tidiness.
-        // Everything the .NET runtime, the BCL and NativeAOT itself diagnose goes
+        // INSTALLED FIRST IN onCreate, after only the #426 statements just above
+        // the call, AND THE ORDER IS THE POINT — not tidiness. Everything the .NET runtime, the BCL and NativeAOT itself diagnose goes
         // to process fd 2, which Android sends to /dev/null. BnStderrLogcatPump
-        // dup2()s a pipe over fd 2 and forwards each line to android.util.Log.
+        // dup2()s a pipe over fd 2 and forwards each line to logcat through
+        // BnShellLog.
         //
         // It MUST be installed before `blazornative_init` runs — i.e. before the
         // dlopen that NativeBindings.INSTANCE triggers inside runtime.start() on
@@ -261,6 +266,16 @@ class MainActivity : FragmentActivity() {
         // Ahead of SoLoader too, so a native-loader failure is visible as well.
         // Idempotent: Activity recreation re-enters onCreate and the second call
         // is a no-op — fd 2 is already ours and one reader thread is enough.
+        //
+        // #426: the reveal switch and the diagnostics sink are set before the
+        // pump, so its first forwarded line already follows the reveal rule. A
+        // debuggable build shows every line's text; any other build writes
+        // `<private>`, as iOS does. LogPrivacyDriftTests holds the order and the
+        // condition.
+        BnShellLog.reveal = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        // The sink is process-wide, so it captures a String, not this Activity.
+        val shellTag = tag
+        BnDiagnostics.sink = { msg, t -> BnShellLog.error(shellTag, msg, t) }
         BnStderrLogcatPump.install()
 
         // ── #200: THE SHELL'S OWN NARRATION JOINS THE SAME GATE ──────────────
@@ -328,7 +343,7 @@ class MainActivity : FragmentActivity() {
         mapper.onBackEnabledChanged = { enabled -> backCallback.isEnabled = enabled }
         onBackPressedDispatcher.addCallback(this, backCallback)
 
-        val onError: (String, Throwable) -> Unit = { msg, t -> Log.e(tag, msg, t) }
+        val onError: (String, Throwable) -> Unit = { msg, t -> BnShellLog.error(tag, msg, t) }
         runtime = BlazorNativeRuntime(
             onFrame = { frame -> mapper.apply(frame) },
             onError = onError,
@@ -417,11 +432,11 @@ class MainActivity : FragmentActivity() {
                 // is what devloop already watched.
                 lines.forEach { BnShellLog.info(tag, it) }
             } catch (t: Throwable) {
-                // Log.e, NOT the gate: errors ship in Release by design. This was
+                // BnShellLog.error, NOT the gate: errors ship in Release by design. This was
                 // also mirrored into the on-screen panel ("FAIL: …") before #204
                 // removed it; logcat carries the whole throwable, which the panel
                 // never did.
-                Log.e(tag, "Boot failed", t)
+                BnShellLog.error(tag, "Boot failed", t, BnPrivacy.SAFE)
             }
         }
     }
@@ -617,7 +632,7 @@ class MainActivity : FragmentActivity() {
         val route = parseDeepLinkRoute(intent) ?: return
         if (!booted) return // nothing mounted yet — a (rare) pre-boot tap is dropped
         // #200: narration (Info). A refused re-route is reported through onError
-        // (Log.e), which ships in Release.
+        // (BnShellLog.error), which ships in Release.
         BnShellLog.info(tag, "[deep-link] warm re-route → $route")
         // Phase 9.1 — BnHostEvent.Navigate is the reserved host event for WARM
         // notification tap-through, dispatched here with the route as the
@@ -713,8 +728,11 @@ class MainActivity : FragmentActivity() {
         return try {
             val id = resources.getIdentifier("blazornative_routes", "raw", packageName)
             if (id == 0) {
-                Log.w(tag, "deep-link routes (res/raw/blazornative_routes.json) did not " +
-                    "resolve — deep links fall back to the default component")
+                BnShellLog.warn(
+                    tag,
+                    "deep-link routes (res/raw/blazornative_routes.json) did not resolve — deep links fall back to the default component",
+                    privacy = BnPrivacy.SAFE,
+                )
                 return emptyMap()
             }
             val json = resources.openRawResource(id).bufferedReader().use { it.readText() }
@@ -723,8 +741,12 @@ class MainActivity : FragmentActivity() {
                 for (key in obj.keys()) put(key, obj.getString(key))
             }
         } catch (t: Throwable) {
-            Log.e(tag, "failed to read res/raw/blazornative_routes.json — deep links fall " +
-                "back to the default component", t)
+            BnShellLog.error(
+                tag,
+                "failed to read res/raw/blazornative_routes.json — deep links fall back to the default component",
+                t,
+                BnPrivacy.SAFE,
+            )
             emptyMap()
         }
     }
@@ -755,7 +777,7 @@ class MainActivity : FragmentActivity() {
         intent?.getStringExtra(EXTRA_LOG_LEVEL)?.let { name ->
             val fromExtra = BnLogLevel.fromName(name)
             if (fromExtra != BnLogLevel.UNSET) return fromExtra
-            Log.w(tag, "$EXTRA_LOG_LEVEL='$name' is not a BnLogLevel name " +
+            BnShellLog.warn(tag, "$EXTRA_LOG_LEVEL='$name' is not a BnLogLevel name " +
                 "(Error/Warn/Info/Debug/Verbose) — falling back to the manifest/default")
         }
 
@@ -769,13 +791,13 @@ class MainActivity : FragmentActivity() {
             val name = activityMeta ?: appMeta ?: return BnLogLevel.UNSET
             val level = BnLogLevel.fromName(name)
             if (level == BnLogLevel.UNSET) {
-                Log.w(tag, "<meta-data android:name=\"$LOG_LEVEL_META_DATA\" " +
+                BnShellLog.warn(tag, "<meta-data android:name=\"$LOG_LEVEL_META_DATA\" " +
                     "android:value=\"$name\"/> is not a BnLogLevel name " +
                     "(Error/Warn/Info/Debug/Verbose) — using the runtime default")
             }
             level
         } catch (t: Throwable) {
-            Log.w(tag, "could not read $LOG_LEVEL_META_DATA — using the runtime default", t)
+            BnShellLog.warn(tag, "could not read $LOG_LEVEL_META_DATA — using the runtime default", t)
             BnLogLevel.UNSET
         }
     }
