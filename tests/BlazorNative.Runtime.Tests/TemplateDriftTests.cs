@@ -509,6 +509,9 @@ public sealed class TemplateDriftTests
             // BOTH copies against the emitter, so the template's cannot go stale on
             // its own.
             "android/src/main/kotlin/io/blazornative/jni/BnWireVocabulary.g.kt",
+            // #426: BnPrivacy and the diagnostics sink that src/main's System.err
+            // sites go through. BlazorNativeRuntime and ShellBridge reference them.
+            "android/src/main/kotlin/io/blazornative/jni/BnDiagnostics.kt",
             "android/src/main/kotlin/io/blazornative/jni/BnLogFormat.kt",
             "android/src/main/kotlin/io/blazornative/jni/ItemsJson.kt",
             "android/src/main/kotlin/io/blazornative/jni/NativeBindings.kt",

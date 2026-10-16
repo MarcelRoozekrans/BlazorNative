@@ -4,6 +4,7 @@ import android.system.Os
 import android.util.Log
 import io.blazornative.jni.BnLogFormat
 import io.blazornative.jni.BnLogRecord
+import io.blazornative.jni.BnPrivacy
 import io.blazornative.jni.BnStderrPump
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -219,7 +220,11 @@ object BnStderrLogcatPump {
      * `BlazorNative/<category>` (`BlazorNative/native` for anything the BCL,
      * NativeAOT or a third party wrote unprefixed — see
      * [BnLogFormat.FALLBACK_CATEGORY]). */
-    private fun toLogcat(record: BnLogRecord) {
-        Log.println(record.priority, "$TAG_PREFIX/${record.category}", record.message)
+    private fun toLogcat(record: BnLogRecord) = forward(record)
+
+    /** Writes a pumped .NET line through [BnShellLog], REDACTED: no .NET line
+     * is a shell-side constant. Internal so a JVM test can reach it. */
+    internal fun forward(record: BnLogRecord) {
+        BnShellLog.relay(record.priority, "$TAG_PREFIX/${record.category}", record.message, BnPrivacy.REDACTED)
     }
 }
