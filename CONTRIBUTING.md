@@ -81,7 +81,8 @@ advisory lanes (nightly / on-merge / manual dispatch).
 
 - **The reference generator is bounded.** The .NET suite's reference-drift tests run
   `scripts/generate-reference.ps1` once per package, each run under a 5-minute bound. The
-  slowest generation measured was about 3 s, so the bound is generous. A run that does not finish
+  slowest generation measured was about 3 s, with MSBuild node reuse off, which the script sets, so the
+  bound is generous. A run that does not finish
   fails with `did not finish within 00:05:00`, and no longer hangs the suite. That failure means
   something held the publish's output pipe after the publish ended: the script's output never
   reached end of file. The process tree is killed, but a process the publish left behind
@@ -93,7 +94,8 @@ advisory lanes (nightly / on-merge / manual dispatch).
 - **The JVM tests rerun when the native library changes.** The Gradle test and run tasks declare
   `BlazorNative.Runtime.dll` in the win-x64 publish directory as an input, by content. After you
   republish it, `testDebugUnitTest` runs again. A `touch` that leaves the content unchanged
-  does not rerun them, and neither does a publish that produces the same bytes.
+  does not rerun them: measured with a placeholder file, the run after the `touch` was UP-TO-DATE.
+  A publish that produces the same bytes does not rerun them either.
 
 ---
 
