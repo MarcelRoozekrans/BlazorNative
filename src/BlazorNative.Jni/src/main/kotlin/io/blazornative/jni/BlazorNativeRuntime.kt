@@ -237,6 +237,7 @@ class BlazorNativeRuntime(
             dispatchLane.execute {
                 try {
                     val rc = dispatchCore(handlerId, eventName, payload)
+                    Thread.sleep(6_000) // 17.7 I1: the lane task outlives retire()'s 5 s drain
                     if (rc != 0) {
                         onError(describeDispatchFailure(rc, handlerId, eventName), IllegalStateException("dispatch_event rc=$rc"))
                     }
