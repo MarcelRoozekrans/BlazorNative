@@ -21,16 +21,16 @@ beside it.
 | # | DoD item | Verdict |
 |---|---|---|
 | 1 | All planned phases complete | **MET**: 17.1–17.5 complete on `980abdbf`; 17.6 is this audit |
-| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET, provisional** on the CI cell Task 5 fills: Android 245/0 and iOS 288/0 on `980abdbf` at attempt 1; 5 of 5 local .NET runs 1372/0; local JVM 150 of 150 pure-Kotlin tests pass, and 56 JNA tests cannot load the library on Linux (#491) |
+| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET**: CI `build-test` on the PR head `a4e741f3`, .NET 1372/0/0 and JVM 206/0/0; Android 245/0 and iOS 288/0 on `980abdbf`, all at attempt 1; 5 of 5 local .NET runs 1372/0 |
 | 3 | #464 is fixed as decided | **MET** |
 | 4 | #494 is closed | **MET NARROWLY**: one entry #494 lists, the cancellation fact's rc assertion, has no red; the test and the 17.1 record name why |
-| 5 | #440 is fixed | **MET NARROWLY**: a denied biometric prompt completes a secure-storage request from the main thread, not from a background executor. #506 adjacent, not contradicting |
-| 6 | #425 is fixed: a mount replaces the root | **MET NARROWLY**: `MainActivity` retires only a booted runtime (#511), and no device test reds without its `retire()` (17.3 L1, named) |
+| 5 | #440 is fixed | **MET NARROWLY**: a denied biometric prompt completes a secure-storage request from the main thread, not from a background executor (#537). #506 adjacent, not contradicting |
+| 6 | #425 is fixed: a mount replaces the root | **MET NARROWLY**: `MainActivity` retires only a booted runtime (#511), and no device test reds without its `retire()` (17.3 L1, named; #538) |
 | 7 | #426 is fixed | **MET** |
 | 8 | #435 is fixed by a forwarding hook | **MET NARROWLY**: for a bound input the warning names a compiler lambda, and with `:after` not the app's method (#522) |
 | 9 | #454, #424 and #458 are fixed | **MET NARROWLY**: the stall names the script, its arguments and the last output, not the stalled command inside it (#530) |
 | 10 | No ABI change | **MET**: 0.20.0's BREAKING change is behaviour, not ABI |
-| 11 | Every new pin conforms to the pin standard, mutations recorded with anchors, register row written in its phase | **NOT MET**: 18 of 85 M17 pins have no recorded red, 9 of them unnamed; two register cells overstate |
+| 11 | Every new pin conforms to the pin standard, mutations recorded with anchors, register row written in its phase | **NOT MET** (#538): 18 of 85 M17 pins have no recorded red; 26 more pins have an anchor no recorded mutation enters; three register cells claim more than their record |
 
 ---
 
@@ -50,17 +50,20 @@ git show origin/main:docs/planning/ROADMAP.md | grep -n "Phase 17\."
 
 17.1 to 17.5 read `complete` on `980abdbf`, and MILESTONE.md's `## Phases` agrees
 (`git show origin/main:docs/planning/MILESTONE.md | grep -n "Phase 17"`, lines 84–88). Each phase's
-PR closed its issues; see items 3–9. 17.6 is this audit. It reads `pending` on `980abdbf` and
+PR closed its issues; see items 3–9. One `## Phases` summary is contradicted by this audit: line 84
+says 17.1 left "all #494 anchors redded", and item 4 finds one #494 entry with no red. The status
+is right; the summary claim is wrong, and #538 tracks its correction. 17.6 is this audit. It reads `pending` on `980abdbf` and
 `active` on the audit branch (`docs/planning/ROADMAP.md:3851`).
 
-## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET, provisional**
+## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET**
 
 > All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's `headSha`
 > compared against the PR head
 
 | lane | run | attempt | `headSha` | result | source |
 |---|---|---|---|---|---|
-| .NET and JVM, CI | **[filled in Task 5 from the PR's ci.yml build-test run]** | | | | |
+| .NET, CI | `ci.yml` [39033490187](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39033490187), `pull_request` on this audit's PR, job `build-test` | 1 | `a4e741f3` | **1372 / 0 / 0**: Renderer 147, Analyzers 27, Runtime 1198 | `dotnet test totals across 3 projects: passed=1372 skipped=0 failed=0` |
+| JVM, CI | the same run and job, `gradlew testDebugUnitTest` on Windows | 1 | `a4e741f3` | **206 / 0 / 0**, 34 suites, the JNA tests included | `JVM test totals across 34 suites: tests=206 failures=0 errors=0 skipped=0` |
 | Android | `android-instrumented.yml` [39024547287](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39024547287), dispatched on `main` | 1 | `980abdbf` | **245 / 0 / 0** | `Instrumented totals across 1 suite(s): tests=245 failures=0 errors=0 skipped=0` |
 | iOS | `ios.yml` [39025235604](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39025235604), dispatched on `main` | 1 | `980abdbf` | **288 / 0** | `XCTest cases: passed=288 failed=0`, job `simulator iossimulator-arm64`; job `device ios-arm64`, build and link only, also green |
 
@@ -71,9 +74,17 @@ gh run view <id> --json status,conclusion,headSha,attempt,jobs
 gh run view <id> --log | grep -E "Instrumented totals|XCTest cases"
 ```
 
-The lanes ran one at a time, Android first. Each `headSha` equals `980abdbf`. The DoD says "the PR
-head": the audit PR's head differs from `980abdbf` only under `docs/`, so no lane input changed.
-Neither lane needed a rerun.
+```bash
+gh run watch 39033490187 --exit-status                                   # exit 0, conclusion success
+gh run view 39033490187 --json conclusion,headSha,attempt,event,jobs     # success, a4e741f3, 1, pull_request
+gh run view 39033490187 --job 117398581412 --log | grep -E "dotnet test totals|JVM test totals|Passed!  -"
+git diff --stat origin/main a4e741f3 -- ':!docs'                          # empty
+```
+
+The device lanes ran one at a time, Android first, dispatched on `main`. Each `headSha` equals
+`980abdbf`. The DoD says "the PR head". The audit PR's head `a4e741f3` differs from `980abdbf` only
+under `docs/`: `git diff --stat origin/main a4e741f3 -- ':!docs'` prints nothing. So no lane input
+changed between the dispatched lanes' commit and the PR head that CI ran on. No lane needed a rerun.
 
 **Local .NET, five runs of the full suite** on a detached worktree of `980abdbf`:
 
@@ -92,14 +103,15 @@ timeout 1500 dotnet test BlazorNative.sln -c Debug --nologo --blame-hang --blame
 1372 passed per run, 0 skipped. The only blame output was the benign "All tests finished running,
 Sequence file will not be generated." No hang dump.
 
-**The environment.** `MSBUILDDISABLENODEREUSE=1` was set in the shell that launched all five runs
-(`env | grep -c MSBUILDDISABLENODEREUSE` = 1), and every test process inherits it. The design asked
-for it to be read from each run's own process; it was read from the launching shell instead. Either
-way, these runs had MSBuild node reuse **off**, so they say nothing about #530's leading suspect,
+**The environment, a deviation from the design.** Design Approach 4 says each run's environment is
+read from the run's own process. This audit read it from the shell that launched all five runs
+instead: `MSBUILDDISABLENODEREUSE=1` was set there (`env | grep -c MSBUILDDISABLENODEREUSE` = 1),
+and every test process inherits it. The deviation does not change the grade, which rests on CI and
+the lanes. Either way, these runs had MSBuild node reuse **off**, so they say nothing about #530's leading suspect,
 which is a reused node holding the publish's pipe. This host is Linux; #454 was seen twice on
 Windows and once on Linux (the 17.2 record, `docs/plans/2026-10-15-phase-17.2-record.md:10-17`).
 
-**Local JVM**, not binding: CI's `build-test` is the JVM evidence, filled in by Task 5.
+**Local JVM**, not binding: CI's `build-test`, above, is the JVM evidence.
 
 ```bash
 export JAVA_HOME=$HOME/bn-tools/jdk-25 ANDROID_HOME=$HOME/bn-android
@@ -116,9 +128,9 @@ passed, 56 failed**, gradle exit 1, summed from `build/test-results/testDebugUni
   missing library. These are the JNA tests. `build.gradle.kts:250-252` points `jna.library.path` at
   the win-x64 publish folder, which a Linux host cannot build. That is **#491**, open and adjacent.
 
-**Provisional grade.** Both device lanes are green on HEAD at attempt 1, and the .NET suite is
-green five times out of five. Item 2 is **MET** if the PR's `ci.yml` `build-test` is green on .NET
-and JVM, which Task 5 records in the cell above.
+**Grade: MET.** CI's `build-test` is green on the PR head, with .NET 1372/0 and JVM 206/0, the JNA
+tests included. Both device lanes are green on a commit whose only difference from that head is
+docs. All of them passed at attempt 1, and the local .NET suite passed five times out of five.
 
 ## 3. #464 is fixed as decided — **MET**
 
@@ -172,8 +184,17 @@ grep -n "anotherDispatchs\|ReferenceEquals(s_flowingScope.Value, scope)\|scope.S
 changed by 118 lines since 17.1's squash `00976fd7`, so M1 was **re-run on `980abdbf` today**:
 `if (!anotherDispatchs)` → `if (true)` reds both, the first with `rc was 2: B's own synchronous part
 did not fault. A's fault was charged to B's window, which is #464.` and the second with `no
-FaultNotice for A's fault.` The begun-call mark's pin, `ACallBegunByAnInlineContinuation_…` (`:989`),
-went red under the same re-run. The file was restored and `git status` was clean.
+FaultNotice for A's fault.` M1 mutates capture, not the mark. It also reds
+`ACallBegunByAnInlineContinuation_…` (`:989`), but only because A's fault is lost, so it does not
+prove the mark's own check. **17.1's M2 was therefore re-run on HEAD too.** It is the mark
+without its flowing check: `NativeRenderer.cs:1641`
+`if (t_syncScope is { Fault: null } scope && ReferenceEquals(s_flowingScope.Value, scope))` →
+`if (t_syncScope is { Fault: null } scope)`. With
+`dotnet test tests/BlazorNative.Runtime.Tests -c Debug --filter "FullyQualifiedName~FaultNoticeTests"`,
+34 facts, **1 of 34 went red**: `ACallBegunByAnInlineContinuation_DoesNotMarkTheWindow`, `rc was 0:
+the call A's continuation began marked B, so B's own synchronous fault became rc 0. Only B's own
+synchronous part may mark B.` That matches R1 :53. Each mutation ran in a detached worktree of
+`980abdbf` and was restored, and `git status --short` was empty after each.
 
 **GitHub:** `gh issue view 464 --json state,closedAt,closedByPullRequestsReferences`: `CLOSED`,
 2026-10-15T04:15:30Z, closed by PR #503, the 17.1 PR.
@@ -232,7 +253,11 @@ and its rc 0 half is pinned by `AChildsBegunCall_DuringTheReRender_MarksTheDispa
 (`:796`). M7 reds it (R1 :77), and M7 was re-run today. One stale note remains. The comment still
 sits in the 16.7 section's DOES NOT COVER block and still says "The ORDER is pinned", without
 naming `:796`. The item's words ask for the claim to be pinned, and it is. The comment is a Rule 5
-nit for the gap phase to fix in passing.
+nit, filed with the other M17 pin work as #538.
+
+**A record claim this contradicts.** MILESTONE.md's `## Phases` summary for 17.1, line 84, says
+"all #494 anchors redded". The cancellation entry above has no red, so that summary overstates.
+#538 tracks its correction.
 
 ```bash
 git show 23ffc4ab:tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs | sed -n 400,412p   # the old text
@@ -313,7 +338,9 @@ BiometricManager work on main, so the harm #440 named, work inside the begin on 
 is fixed. But the item's words are "every secure-storage path … complete … from a background
 executor", and the denied auth path does not. No record names this, and no pin covers it. It was
 found by reading, not measured. The biometrics `authenticate` action completes from the prompt
-too, but the item names only `check`.
+too, `:759-764`, but the item names only `check`. Filed as **#537**: hop the denied completion to
+the executor, or accept main and reword the contract. Both copies have it, the reference shell
+and the byte-identical template.
 
 **#506 is adjacent, not contradicting.** An auth-bound `set` frees its executor while its prompt is
 up, so later requests on the same key run before its encrypt. The item asks that the begin return
@@ -383,7 +410,9 @@ setting the orientation. The 17.3 design calls them "the rotation test".
    `docs/plans/2026-10-15-phase-17.3-record.md:111`). The record gives the reason: with the .NET
    unmount, the old root renders nothing, so the retired runtime has nothing to drop on these
    paths. The JVM pins in (b) prove the drop; no device test proves the wiring. The record names
-   this, with a reason.
+   this, with a reason. Filed with the other M17 pin work as **#538**: a gap phase either finds a
+   device test that reds without `retire()` at `MainActivity.kt:470` and the template's `:483`,
+   or drops the claim with that reason.
 
 Also, one of the four device tests, `:90`, has no recorded red at all. That is item 11's finding 1,
 graded there.
@@ -391,7 +420,22 @@ graded there.
 ## 7. #426 is fixed — **MET**
 
 > Android redacts the FaultNotice message the way iOS does, and a twin pin holds the two shells'
-> redaction together.
+> redaction together. *Builder's call:* iOS's `privacy: .redacted` is not tied to a build
+> configuration, so 17.4's design measures what iOS actually redacts, and when, before it settles
+> where Android's redaction lives, the library or the template's `onError`.
+
+**The builder's call was taken.** The 17.4 design,
+`docs/superpowers/specs/2026-10-16-phase-17.4-design.md:18-33`, "What iOS actually does, measured",
+records it:
+- **What:** every message is `.redacted` unless its text is a compile-time constant (`:22`).
+- **When:** in every build configuration, with `.private` text shown only under an attached
+  debugger (`:25`).
+- **The owner's decision:** mirror iOS fully (`:33`). Android's condition is "debuggable" in
+  place of "debugger attached", recorded as a builder's call with its reason (`:48`).
+- **Where:** in the library, a `BnShellLog` seam, not the template's `onError`.
+
+The measurement is a reading of `BnLog.swift`, not a device log capture. That is what the design
+calls measured.
 
 **GitHub:** `gh issue view 426 …`: `CLOSED`, 2026-10-16T13:42:56Z, closed by PR #523.
 
@@ -625,7 +669,7 @@ phase's squash:
 
 | lines | written by | rows |
 |---|---|---|
-| `:489`–`:497` | `00976fd7` 17.1 | the 17.1 sub-table, one row per 17.1 fact |
+| `:489`–`:500` | `00976fd7` 17.1 | the 17.1 sub-table, one row per 17.1 fact, and its closing paragraph |
 | `:535` | `6aa68096` 17.3 | JVM `RetireLateContinuationTest.kt` |
 | `:546`, `:547` | `41af910c` 17.4 | `SlowHandlerWarningTests`, `SlowHandlerProbeTest.kt` |
 | `:550` | `31af87ce` 17.2 | `AndroidHostCallContractTest.kt` |
@@ -806,18 +850,24 @@ None of these is open.
 
 ### 11d. The grade
 
-**NOT MET.** The item has three clauses, and two of them fail on M17's own pins.
+**NOT MET.** The item has three clauses, and two of them fail on M17's own pins. Every finding
+below is filed in one issue, **#538**.
 
-**"Its mutations are recorded, including its anchors."** 18 of the 85 pins have no recorded red on
-their own assertions.
+**"Its mutations are recorded, including its anchors."**
 
-- **Nine are named** in their register cell as not run, so they would be MET NARROWLY by the 16.8
-  precedent:
-  - `BnShellLogTest.kt` `:224`, `:236`, `:268`, `:282`, `:294`: compile-error red only, PS :556
-    "Named, not run";
-  - `BnDiagnosticsTest.kt` `:24`, `:45`: compile-error red only, PS :557 "named, not run";
-  - `SlowHandlerProbeTest.kt:94`: PS :547 "Not mutated, named";
-  - `NativeRuntimeInputDriftTests.cs:66`: PS :562 "Named, not run".
+**1. 18 of the 85 pins have no recorded red** on their own assertions. Under the audit's rule, a pin
+with no recorded red on current code is **NOT MET**, whether or not it is named. The "MET NARROWLY"
+reading is for a *partial*: a pin with a red that does not cover all of it, whose record names the
+rest with a reason. These 18 have no red at all.
+
+- **Nine are named** in their register cell as not run. The name does not rescue them:
+  - `BnShellLogTest.kt` `:224`, `:236`, `:268`, `:282` and `:294`. Their only "red" is a compile
+    error. PS :556 says "Named, not run" and gives no reason.
+  - `BnDiagnosticsTest.kt` `:24` and `:45`. Compile error only, PS :557 "named, not run".
+  - `SlowHandlerProbeTest.kt:94`. PS :547 says "Not mutated, named: it cannot run on Linux". That
+    reason no longer holds: this audit redded two JNA pins on CI through draft PR #535, rows 26 and
+    27.
+  - `NativeRuntimeInputDriftTests.cs:66`. PS :562 says "Named, not run" and gives no reason.
 - **Nine are unnamed.** No record and no register cell says they lack a red:
   1. `AT/RecreationAndroidTest.kt:90`, `a_recreated_activity_stays_on_its_page_and_back_goes_to_the_parent`.
      L1 and L3 left it green (R3 :111, :115), and L4 and L5 red other tests. PS :552 lists the reds
@@ -841,29 +891,65 @@ their own assertions.
 
   PS :555 names none of findings 3–6 as a gap.
 
-- **Two anchors have no red,** although their facts' main assertions do:
-  - row 16's `CanGoBack` anchor, `RT/RecreationTests.cs:170`;
-  - row 22's anchors, `AT/RecreationAndroidTest.kt:49`.
+**2. 26 more pins have an anchor that no recorded mutation enters**, although each has a red on its
+main assertion. This is the exact gap #494 was filed for in 16.7's pins.
 
-  The clause says "including its anchors", and this is the exact gap #494 was filed for in 16.7's
-  pins. PS :551 says "A1 to A3 enter the anchors", which reads as all of them; `CanGoBack` is not
-  among the three.
+How it was measured: `grep -n -i anchor` over every M17 test file, then each anchor checked against
+its record's A rows, and against the scope and timing of every mutation that could reach it. A
+mutation recorded before a fact was added does not count for that fact. Lines are on HEAD:
+
+| rows | anchor, file:line | why no recorded mutation enters it |
+|---|---|---|
+| 6 | `RT/FaultNoticeTests.cs:1066`, `RanInsideB` | the fact was added in 17.1's final wave, after A1 and A4 ran (R1 :57, :60, :140) |
+| 12 | `AT/AndroidHostCallContractTest.kt:161`, "the getWithAuth never reached the prompt" | 17.2's only A row, A1, gates the work in pins 8 and 9 (R2 :59) |
+| 13, 19, 21 | `RT/RecreationTests.cs:101`, `ClickAndHold`'s geolocation-begin anchor, called at `:112`, `:263` and `:338` | 17.3's A1–A3 enter only `ContinuationRan`, `ReachedNavigate` and `Instances` (R3 :54-56) |
+| 15 | `RT/RecreationTests.cs:155`, "the first mount delivered no frame" | the same |
+| 16 | `:177`, `CanGoBack` | the same; R3 :23 says only that it passed |
+| 17 | `:208`, `CanGoBack` | the same |
+| 18 | `:237`, `CanGoBack` | the same |
+| 20 | `:296` and `:304`, on `InitAwaitingProbe` | A2 sets `ReachedNavigate` on `AwaitingProbe`, a different probe |
+| 21 | `:347`, "the old page's late continuation never rendered" | the same as `:155` |
+| 22 | `AT/RecreationAndroidTest.kt:59` and `:73` | no L row enters them (R3 :111-117) |
+| 24 | `AT/RecreationAndroidTest.kt:121`, "the swap to settings never completed" | the same |
+| 26 | `JT/jni/RetireLateContinuationTest.kt:57`, "no frame reached the retired runtime" | J1's vacuous first run passed it, and J1's red is after it (R3 :110) |
+| 27 | `JT/jni/RetireLateContinuationTest.kt:94`, "the mount frame never reached onFrame" | J2 reds after it (R3 :118) |
+| 30, 31, 32, 33 | `RT/SlowHandlerWarningTests.cs:638`, `RunsOf(tag) == 1` in `AssertNamesTheAppsHandler`, for BnPicker, BnSlider, BnSwitch and BnModal (`:656-680`) | A1 drops only BnInput's invocation and A2 only BnCheckbox's (R4 :90, :110) |
+| 35 | `RT/SlowHandlerWarningTests.cs:720`, `RunsOf("bn-check-throw")` | added in the final wave, after A2 (R4 :189) |
+| 38 | `RT/SlowHandlerWarningTests.cs:784`, `RunsOf("bind-plain-a")` | added in review round 1, after A1 (R4 :48) |
+| 39 | `RT/SlowHandlerWarningTests.cs:802`, `RunsOf("bind-get-set")` | the same |
+| 66 | `JT/shell/BnShellLogTest.kt:315-319`, the revealed WARN line keeps its text | J1 changes only the unrevealed branch; N2 reds the first assertion, before it (R4 :153, :171) |
+| 72 | `AT/FaultNoticeLogAndroidTest.kt:93` and `:96` | L1a enters only the `reveal` anchor, `:88` (R4 :178) |
+| 74 | `RT/GeneratorRunTests.cs:160`, "the sleeper never recorded itself" | 17.5's A1 stops the launcher starting the sleeper, which is row 73's shape (R5 :99) |
+| 75 | `RT/GeneratorRunTests.cs:210-214`, the stub's two roles and "the run returned before the anchor held" | the same |
+| 83 | `AT/PollAndroidTest.kt:34`, "the scenario must be DESTROYED before the poll" | L1, L1a and L2 mutate `Poll.kt`, not the test's own precondition (R5 :162-164) |
+
+That is 26 pins. Rows 23, 61 and 71 also have unentered anchors (`AT/RecreationAndroidTest.kt:94`,
+`JT/shell/BnShellLogTest.kt:244` and `JT/jni/SlowHandlerProbeTest.kt:108`). They already count among
+the 18 pins with no red at all.
 
 **"Its register row or census cell is written in the phase that adds it."** Every row exists and
-was written in its own phase (11a). Two cells overstate what their phase recorded:
-- **PS :553**, `ForwardingHookTests`: "M5 reds the null guard." R4 :109's M5 drops the *renderer's*
-  null guard in `Resolve` and reds `SlowHandlerWarningTests.AWrapperWithNoAppCallback_StillKeysByItsCallSite`.
-  It does not red `ForwardingHookTests.EventCallbackDelegate_IsNullForAnEmptyCallback` (`:38`), the
-  fact in this cell's class that tests a null. Read in this cell, the sentence claims a red the
-  record does not have.
-- **PS :557**, `BnDiagnosticsTest.kt`: "The members test reds if a third privacy value is added."
-  No record row and no run shows that red.
+was written in its own phase (11a). Three cells claim more than their record:
+- **PS :553**, `ForwardingHookTests`, **ambiguous**: "M5 reds the null guard." M5 has a red, R4
+  :109, but in another class, `SlowHandlerWarningTests.AWrapperWithNoAppCallback_StillKeysByItsCallSite`.
+  That red comes from the *renderer's* null guard in `Resolve`. Nothing reds this class's own null
+  fact, `RT/ForwardingHookTests.cs:38`. Read in this cell, the sentence implies a red the class does
+  not have.
+- **PS :554**, `SlowHandlerWarningTests`' 17.4 facts: "every wrapper fact asserts `RunsOf == 1`, and
+  A1 and A2 red that anchor." A1 and A2 red it only for BnInput and BnCheckbox. Rows 30–33 above
+  have no anchor red.
+- **PS :557**, `BnDiagnosticsTest.kt`: "The members test reds if a third privacy value is added." No
+  record row and no run shows that red.
+
+Two more cells read broader than their rows:
+- PS :551, "A1 to A3 enter the anchors", leaves out the seven `RecreationTests` anchors above.
+- PS :547 gives a reason, Linux, that this audit's CI route removes.
 
 **Why the 16.8 fallback is not available.** In 16.8 §10c, the auditor named 16.7's unnamed partials
 in the audit report and graded the item MET NARROWLY. This item was written to close that door. It
 requires the cell to be written "in the phase that adds it", and the 16.8 re-audit is named as the
-source of that lesson. An unnamed partial cannot be named now and count. So the nine unnamed pins
-and the two overstating cells fail the item's words, and the item is **NOT MET**.
+source of that lesson. An unnamed partial cannot be named now and count. And a pin with no red is
+NOT MET whether it is named or not. So the 18 pins, the 26 pins' unentered anchors and the three
+cells fail the item's words, and the item is **NOT MET**.
 
 **Lesser notes, not counted as findings:**
 - row 35's red is red-first only;
@@ -878,12 +964,15 @@ and the two overstating cells fail the item's words, and the item is **NOT MET**
 
 ## Carried forward
 
-Open, judged and carried. Each line says whether the issue narrows a DoD item, and which.
+Open, judged and carried. Each line says whether the issue narrows a DoD item, and which. #537 and
+#538 were filed by this audit.
 
 | issue | title | judgement |
 |---|---|---|
+| #538 | m17 pins: no recorded red for 18 pins and many anchors, and register cells that claim more than their record | **fails item 11.** Also carries item 6's L1 wiring gap, the stale comment at `FaultNoticeTests.cs:408-412`, and the `MILESTONE.md:84` summary claim |
+| #537 | android: a denied biometric prompt completes a secure-storage host call on the main thread | **narrows item 5.** It needs a decision: hop, or accept and reword |
 | #500 | A re-render or queued work from another dispatch's continuation is charged to the window it runs in | **item 3: adjacent, not contradicting.** Item 3 is about a fault that A's *own code* raises. #500 is about a render or post-dispatch action A queues, which the contract assigns to the window that runs it (`Exports.cs:482-483`). It needs a decision |
-| #506 | Android secure storage: an auth-bound set's encrypt runs after later requests on the same key | **item 5: adjacent, not contradicting.** The item does not speak to order across a prompt. It needs a decision |
+| #506 | Android secure storage: an auth-bound set's encrypt runs after later requests on the same key | **item 5: adjacent, not contradicting.** The item does not speak to order across a prompt. It needs a decision. It does not cover #537's thread question, so #537 is separate |
 | #511 | Android: an Activity recreated during boot can leave the new Activity blank | **narrows item 6.** `MainActivity` retires only a booted runtime |
 | #522 | Slow-handler warning names a compiler lambda for a bound input | **narrows item 8.** With `:after`, the app's method is not named. It needs a decision. The plan put it against item 7; it concerns the slow-handler warning, not redaction |
 | #530 | reference generator: something outlives dotnet publish and holds its output pipe | **narrows item 9.** The stall names the script, not the stalled command |
@@ -892,12 +981,15 @@ Open, judged and carried. Each line says whether the issue narrows a DoD item, a
 ## What M17 taught
 
 - **A register cell written in its phase is not therefore true.** 17.4 wrote its cells in-phase,
-  as the M16 lesson asked. Two of them still claim reds the record does not have (PS :553, :557).
+  as the M16 lesson asked. Three of them still claim more than their record (PS :553, :554, :557).
   The 16.8 lesson made the cells exist; it did not make them get checked against the record's rows.
 - **"Named, not run" became an idiom, and a compile error was counted as a red.** Nine 17.4/17.5
   pins rest on a disclosure and nothing else. Seven of the JVM ones had only the Task 4 compile
   error as their "red" (R4 :52-53). A compile error shows the seam was missing. It does not show
   that any assertion can fail.
+- **Anchors are still the last thing anyone mutates.** The M16 re-audit said so, and #494 fixed it
+  for 16.7's pins. M17 left 26 pins with an anchor no mutation enters. Most were added after the
+  phase's A rows ran, or share a helper whose other callers the A row did not reach.
 - **Green-before-the-fix facts never got their mutation.** Three `LogPrivacyDriftTests` facts were
   green before 17.4's fix (R4 :76), and that is where they stayed. A fact that cannot red first
   needs a mutation by design, and this phase recorded none for them.
@@ -912,38 +1004,47 @@ Open, judged and carried. Each line says whether the issue narrows a DoD item, a
 
 ## Verdict
 
-**FAIL.** Item 11 is NOT MET, so M17 cannot close. Five items are MET: 1, 2, 3, 7 and 10. Item 2
-is provisional on the PR's `ci.yml` run, which Task 5 records. Five are MET NARROWLY, each with its
-reason:
+**FAIL.** Item 11 is NOT MET, so M17 cannot close. Five items are MET: 1, 2, 3, 7 and 10. Five are
+MET NARROWLY, each with its reason:
 - **item 4:** one #494 entry, the cancellation rc assertion, is named rather than redded;
-- **item 5:** a denied prompt completes a secure-storage request on main, found by reading;
-- **item 6:** #511, and no device test reds without `MainActivity`'s `retire()` (17.3 L1, named);
+- **item 5:** a denied prompt completes a secure-storage request on main, found by reading (#537);
+- **item 6:** #511, and no device test reds without `MainActivity`'s `retire()` (17.3 L1, named;
+  #538);
 - **item 8:** #522;
 - **item 9:** #530.
 
-Item 11 fails on M17's own words. 18 of 85 new pins have no recorded red, and nine of those are
-named nowhere. Two anchors have no red. Two register cells claim reds the records do not show. The
-16.8 re-audit could name its partials in the report and grade MET NARROWLY. M17's DoD removed that
-option on purpose: the cell must be written "in the phase that adds it". The other items are graded
-on their own words, and the FAIL does not change them.
+Item 11 fails on M17's own words, as tracked in #538:
+- 18 of 85 new pins have no recorded red, 9 of them named nowhere;
+- 26 more pins have an anchor no recorded mutation enters;
+- three register cells claim more than their record.
 
-**What a gap phase must do:**
-1. **Record a red** for each of the nine unnamed pins in 11d, with its anchor, and write it in that
-   pin's register cell. For a pin that cannot red, say so in the cell, with the reason.
-2. **Record a red for the two unredded anchors**: row 16's `CanGoBack` (`RecreationTests.cs:170`)
-   and row 22's anchors (`RecreationAndroidTest.kt:49`). Make PS :551 name exactly what A1–A3 enter.
-3. **Correct the two overstating cells**: PS :553, what M5 reds, and PS :557, the members test's
-   claimed red. Either run the mutation or reword the cell.
-4. **Name or red the nine named partials** (`BnShellLogTest.kt` ×5, `BnDiagnosticsTest.kt` ×2,
-   `SlowHandlerProbeTest.kt:94`, `NativeRuntimeInputDriftTests.cs:66`). A compile error is not
-   their red. Where a lane makes a red impractical, keep the cell's name and give the reason.
+The 16.8 re-audit could name its partials in the report and grade MET NARROWLY. M17's DoD removed
+that option on purpose: the cell must be written "in the phase that adds it". In any case, a pin
+with no red is not a partial. The other items are graded on their own words, and the FAIL does not
+change them.
+
+**What a gap phase must do**, all tracked in **#538** unless noted:
+1. **Record a red for each of the 18 pins** with none, and write it in that pin's register cell.
+   That means the nine unnamed in 11d and the nine named. A name is not a red, and neither is a
+   compile error.
+   - The JNA pins, `SlowHandlerProbeTest.kt:94` among them, go through a throwaway draft PR on CI,
+     as this audit's J1 and J2 did.
+   - The device pins go through scratch refs on the Android lane.
+   - A pin that truly cannot red is reworked until it can, or removed.
+2. **Record a red for each of the 26 unentered anchors** in 11d's table. For each, write a mutation
+   that makes its scenario not happen, not one that breaks the main assertion.
+3. **Correct the three cells**: PS :553, what M5 reds; PS :554, which wrappers A1 and A2 cover; and
+   PS :557, the members test's claimed red. Also correct PS :551's anchor claim and PS :547's
+   Linux reason. Either run the mutation or reword the cell to what the record shows.
+4. **Item 6's wiring:** find a device test that reds without `retire()` at `MainActivity.kt:470` and
+   the template's `:483`, or drop the "proven on the device lane" claim for the wiring, with the
+   reason that the .NET unmount makes it unobservable.
 5. **In passing:**
-   - the stale DOES NOT COVER note at `FaultNoticeTests.cs:408-412`, which still says only the
-     order is pinned;
-   - the denied-prompt completion thread from item 5. Either move it off main, or put the
-     wording question to the owner.
-
-This audit files no issues and fixes nothing. The gap phase does both.
+   - reword the DOES NOT COVER note at `FaultNoticeTests.cs:408-412` to point at its pin, `:796`;
+   - correct `MILESTONE.md:84`'s "all #494 anchors redded";
+   - **#537:** the denied-prompt completion thread, `AndroidShellBridge.kt:850`, `:909` and
+     `:953-966`, in the reference shell and the byte-identical template copy. Hop it to the
+     executor, or put the wording question to the owner.
 
 Next: `plan-milestone-gaps`. M17 stays open, and no tag is cut: `CONVENTIONS.md` records
 `Milestone completion tags a release: no`.
