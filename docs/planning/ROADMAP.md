@@ -3857,6 +3857,23 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-17-milestone-17-audit.md`](../plans/2026-10-17-milestone-17-audit.md)
 **Completed:** 2026-10-17 · [PR #536](https://github.com/MarcelRoozekrans/BlazorNative/pull/536). Verdict **FAIL**. Items 1, 2, 3, 7 and 10 are MET; items 4, 5, 6, 8 and 9 are MET NARROWLY. Item 11, the pin standard, is NOT MET: 18 of 85 new pins have no recorded red, 26 pins have an anchor that no recorded mutation enters, and three register cells overstate. The 16.8 fallback, where the audit itself names the partials, is barred by item 11's own words. Tests were measured on `980abdbf`: Android 245/0, iOS 288/0, .NET 1372/0 in five local runs, and CI with .NET 1372/0 and JVM 206/0. 27 pins were re-redded on HEAD. #538 was filed as the gap scope, and #537 for a denied biometric prompt completing on main. Next: `plan-milestone-gaps`.
 
+
+#### Phase 17.7: Pin-standard gaps [status: pending]
+**Goal:** Close the 17.6 audit's item 11 gaps and #537, by owner decision on 2026-10-17. #538 is the scope.
+- Record a mutation red for each of the 18 pins with none, and for each of the 26 pins whose anchor no recorded mutation enters. Fix any pin that will not red.
+- Add a device pin for `MainActivity`'s `retire()` wiring, in the reference shell and the template.
+- Correct the register cells at `docs/pin-standard.md` :547, :551, :553, :554 and :557.
+- Fix the stale comment at `FaultNoticeTests.cs:408-412` and MILESTONE's "all #494 anchors redded" summary.
+- **#537:** a denied biometric prompt completes its secure-storage request through the handler's background executor, as the success path does, and a pin proves it.
+
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 17.8: Re-audit and close [status: pending]
+**Goal:** Re-audit all eleven DoD items on live evidence, as 16.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+
 ---
 
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*

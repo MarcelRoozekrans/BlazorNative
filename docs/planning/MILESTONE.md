@@ -87,6 +87,8 @@ features.** The user-visible outcomes:
 4. Phase 17.4 — fault-path parity (#426, #435) [complete] — Android redacts app text in Release logcat like iOS, through one seam and a twin drift pin; the slow-handler warning names the app's handler behind Bn wrappers; Android 242 → 243; #522 filed (#523)
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [complete] — a bounded generator run with a named failure, the native runtime as a Gradle input, one pollUntil; Android 243 → 245; #530 filed (#528)
 6. Phase 17.6 — audit and close [complete] — verdict FAIL: item 11 NOT MET, with 18/85 pins unredded, 26 pins with unentered anchors and 3 overstating register cells; #538 and #537 filed (#536)
+7. Phase 17.7 — pin-standard gaps (#538, #537) [pending]
+8. Phase 17.8 — re-audit and close [pending]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
 > 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.
