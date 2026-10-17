@@ -74,7 +74,7 @@ class BlazorNativeRuntime(
                 // dropped.
                 if (retired) {
                     framesDroppedAfterRetire.incrementAndGet()
-                    return
+                    // J1 (17.6 re-red): the drop removed, the frame still counts and is delivered
                 }
                 checkFrameProducer()
                 // NativeFrameAdapter.read copies everything (arena memory is
