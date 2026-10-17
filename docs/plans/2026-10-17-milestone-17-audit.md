@@ -332,7 +332,7 @@ over `980abdbf`. See item 11's re-red table.
 does not complete from a background executor. Both auth paths pass
 `onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) }` (`:850`, `:909`)
 to `runBiometricGate`, which shows the prompt with `ContextCompat.getMainExecutor(appContext)`
-(`:953-967`). `onAuthenticationError` then calls `onDenied` on the **main thread**, and the request
+(`:953-966`). `onAuthenticationError` then calls `onDenied` on the **main thread**, and the request
 completes there. Only the success path hops back through `afterAuth`. This does no KeyStore or
 BiometricManager work on main, so the harm #440 named, work inside the begin on the render thread,
 is fixed. But the item's words are "every secure-storage path … complete … from a background
@@ -723,40 +723,40 @@ after the red was taken, the recorded mutation was re-run on HEAD (design, Appro
 | 3 | 17.1 | `ACallBegunByAnInlineContinuation_DoesNotMarkTheWindow`, `:989` | .NET | R1 :27, :52-53 | M1, M2; A1, A3 | :493 | re-redded (17.1-M1) |
 | 4 | 17.1 | `AFaultWithNoDispatchFlow_InsideAWindow_IsTheWindows`, `:1007` | .NET | R1 :28, :56 | M5; A1, A2, A4 | :494 | re-redded (17.1-M5) |
 | 5 | 17.1 | `AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows`, `:1024` | .NET | R1 :29, :52, :55, :145-146 | M1, M4, R1, R2; A1, A4 | :495 | re-redded (17.1-M1) |
-| 6 | 17.1 | `AFinishedDispatchsFault_InsideAWindow_IsLoggedInStrictModeToo`, `:1053` | .NET | R1 :140-146 | red first; R1, R2 | :496 | re-redded (17.1-M1) |
+| 6 | 17.1 | `AFinishedDispatchsFault_InsideAWindow_IsLoggedInStrictModeToo`, `:1053` | .NET | R1 :140-146 | red first; R1, R2 | :496 | re-redded (17.1-M1); anchor unredded, see 11d |
 | 7 | 17.1 | `AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0`, `:796` | .NET | R1 :64-68, :76-77 | M7; begin anchor M6 | :497 | re-redded (17.1-M7) |
 | 8 | 17.2 | `biometrics_begin_returns_before_the_check_runs`, `AT/AndroidHostCallContractTest.kt:118` | Android | R2 :32, :54, :59 | M1; `gateReachedForTest` A1 | :550 | re-redded (A1, run 39029565241) |
 | 9 | 17.2 | `secure_storage_begin_returns_before_the_keystore_work_runs`, `:122` | Android | R2 :33, :55, :59 | M2; A1 | :550 | re-redded (A1, run 39029565241) |
 | 10 | 17.2 | `secure_storage_keeps_request_order`, `:127` | Android | R2 :34, :56 | M3, one run, named as not proven deterministic | :550 | re-redded (M3 alone, run 39030272142) |
 | 11 | 17.2 | `a_throw_on_the_executor_completes_error_never_a_hang`, `:141` | Android | R2 :35, :57 | M4 | :550 | re-redded (M4, run 39030947426) |
-| 12 | 17.2 | `the_after_auth_work_runs_on_the_secure_storage_executor`, `:151` | Android | R2 :36, :58, :70-72 | M5, M6 | :550 | re-redded (M6, run 39029565241) |
-| 13 | 17.3 | `ASecondMount_DisposesTheFirstRoot_SoItsLateContinuationRendersNothing`, `RT/RecreationTests.cs:106` | .NET | R3 :21, :50 | M1; `ContinuationRan` A1 | :551 | re-redded (17.3-M1) |
+| 12 | 17.2 | `the_after_auth_work_runs_on_the_secure_storage_executor`, `:151` | Android | R2 :36, :58, :70-72 | M5, M6 | :550 | re-redded (M6, run 39029565241); anchor unredded, see 11d |
+| 13 | 17.3 | `ASecondMount_DisposesTheFirstRoot_SoItsLateContinuationRendersNothing`, `RT/RecreationTests.cs:106` | .NET | R3 :21, :50 | M1; `ContinuationRan` A1 | :551 | re-redded (17.3-M1); anchor unredded, see 11d |
 | 14 | 17.3 | `ASecondMount_DisposesTheFirstRoot`, `:128` | .NET | R3 :22, :50 | M1; `Instances` A3 | :551 | re-redded (17.3-M1) |
-| 15 | 17.3 | `AReplacingMount_SendsTheNewShellNoRemovalFrameForTheOldRoot`, `:144` | .NET | R3 :65-67 | red first; M5 | :551 | re-redded (17.3-M5) |
-| 16 | 17.3 | `ASecondMount_StaysOnTheCurrentPage_WithItsHistory`, `:170` | .NET | R3 :23, :51 | M2; **`CanGoBack` anchor, no row enters it** | :551 | re-redded (17.3-M2); anchor unredded |
-| 17 | 17.3 | `ASecondMount_ByAFreshShellAtTheRoot_ShowsTheRootAndResetsHistory`, `:197` | .NET | R3 :82-85 | red first; M6 | :551 | re-redded (17.3-M6) |
-| 18 | 17.3 | `ASecondMount_OfANamedPageByAFreshShell_ShowsItAndResetsHistory`, `:225` | .NET | R3 :101-103 | red first; M7 | :551 | re-redded (17.3-M7, M6) |
-| 19 | 17.3 | `ANavigationFromADisposedRootsContinuation_IsDropped`, `:253` | .NET | R3 :24, :52-53, :150 | M3, M4, M11; `ReachedNavigate` A2 | :551 | re-redded (17.3-M11) |
-| 20 | 17.3 | `ANavigationFromADisposedRootsLifecycleCode_IsDropped`, `:282` | .NET | R3 :128, :148, :150 | red first; M9, M11 | :551 | re-redded (17.3-M11) |
-| 21 | 17.3 | `AFrameOfTheOldRoot_AfterANewShellRegisters_IsNotDeliveredToIt`, `:328` | .NET | R3 :129, :147, :149 | red first; M8, M10 | :551 | re-redded (17.3-M8) |
-| 22 | 17.3 | `a_recreated_activity_never_shows_the_old_pages_frame`, `AT/RecreationAndroidTest.kt:49` | Android | R3 :112, :114 | L2c; **anchors per PS :552, no row enters them** | :552 | re-redded (L2c, run 39026325328); anchors unredded |
+| 15 | 17.3 | `AReplacingMount_SendsTheNewShellNoRemovalFrameForTheOldRoot`, `:144` | .NET | R3 :65-67 | red first; M5 | :551 | re-redded (17.3-M5); anchor unredded, see 11d |
+| 16 | 17.3 | `ASecondMount_StaysOnTheCurrentPage_WithItsHistory`, `:170` | .NET | R3 :23, :51 | M2; **`CanGoBack` anchor, no row enters it** | :551 | re-redded (17.3-M2); anchor unredded, see 11d |
+| 17 | 17.3 | `ASecondMount_ByAFreshShellAtTheRoot_ShowsTheRootAndResetsHistory`, `:197` | .NET | R3 :82-85 | red first; M6 | :551 | re-redded (17.3-M6); anchor unredded, see 11d |
+| 18 | 17.3 | `ASecondMount_OfANamedPageByAFreshShell_ShowsItAndResetsHistory`, `:225` | .NET | R3 :101-103 | red first; M7 | :551 | re-redded (17.3-M7, M6); anchor unredded, see 11d |
+| 19 | 17.3 | `ANavigationFromADisposedRootsContinuation_IsDropped`, `:253` | .NET | R3 :24, :52-53, :150 | M3, M4, M11; `ReachedNavigate` A2 | :551 | re-redded (17.3-M11); anchor unredded, see 11d |
+| 20 | 17.3 | `ANavigationFromADisposedRootsLifecycleCode_IsDropped`, `:282` | .NET | R3 :128, :148, :150 | red first; M9, M11 | :551 | re-redded (17.3-M11); anchor unredded, see 11d |
+| 21 | 17.3 | `AFrameOfTheOldRoot_AfterANewShellRegisters_IsNotDeliveredToIt`, `:328` | .NET | R3 :129, :147, :149 | red first; M8, M10 | :551 | re-redded (17.3-M8); anchor unredded, see 11d |
+| 22 | 17.3 | `a_recreated_activity_never_shows_the_old_pages_frame`, `AT/RecreationAndroidTest.kt:49` | Android | R3 :112, :114 | L2c; **anchors per PS :552, no row enters them** | :552 | re-redded (L2c, run 39026325328); anchor unredded, see 11d |
 | 23 | 17.3 | `a_recreated_activity_stays_on_its_page_and_back_goes_to_the_parent`, `:90` | Android | R3 :111, :115 | **none**: L1 and L3 green with reasons; L4 and L5 red other tests | :552 does not name it | **FINDING: no recorded red; unnamed** |
-| 24 | 17.3 | `a_recreated_deep_linked_activity_stays_on_the_page_it_navigated_to`, `:113` | Android | R3 :97-98, :116 | L4 | :552 | re-redded (L4, run 39027028534) |
+| 24 | 17.3 | `a_recreated_deep_linked_activity_stays_on_the_page_it_navigated_to`, `:113` | Android | R3 :97-98, :116 | L4 | :552 | re-redded (L4, run 39027028534); anchor unredded, see 11d |
 | 25 | 17.3 | `a_recreated_activity_on_an_unrouted_page_keeps_that_page`, `:134` | Android | R3 :117, :131 | L5 | :552 | re-redded (L5, run 39027930371) |
-| 26 | 17.3 | `a_retired_runtime_drops_a_frame_from_a_late_continuation`, `JT/jni/RetireLateContinuationTest.kt:29` | JVM, JNA | R3 :110 | J1; vacuous first run 38709382575 | :535 | re-redded (J1, PR #535 run 39031400796) |
-| 27 | 17.3 | `retire_waits_out_a_frame_callback_already_in_flight`, `:81` | JVM, JNA | R3 :118, :129 | J2; vacuous first run 38715305230 | :535 | re-redded (J2, PR #535 run 39032029220) |
+| 26 | 17.3 | `a_retired_runtime_drops_a_frame_from_a_late_continuation`, `JT/jni/RetireLateContinuationTest.kt:29` | JVM, JNA | R3 :110 | J1; vacuous first run 38709382575 | :535 | re-redded (J1, PR #535 run 39031400796); anchor unredded, see 11d |
+| 27 | 17.3 | `retire_waits_out_a_frame_callback_already_in_flight`, `:81` | JVM, JNA | R3 :118, :129 | J2; vacuous first run 38715305230 | :535 | re-redded (J2, PR #535 run 39032029220); anchor unredded, see 11d |
 | 28 | 17.4 | `TwoBnInputs_WithDifferentSlowHandlers_GetTwoWarnings_NamingTheAppsHandlers`, `RT/SlowHandlerWarningTests.cs:612` | .NET | R4 :23, :86-87, :90, :94 | M1, M2; `RunsOf` A1 | :554, :546 | red stands |
 | 29 | 17.4 | `ASlowBnCheckbox_NamesTheAppsHandler`, `:648` | .NET | R4 :24, :86-87, :110 | M1, M2; A2 | :554 | red stands |
-| 30 | 17.4 | `ASlowBnPicker_NamesTheAppsHandler`, `:656` | .NET | R4 :25, :86-87 | M1, M2 | :554 | red stands |
-| 31 | 17.4 | `ASlowBnSlider_NamesTheAppsHandler`, `:664` | .NET | R4 :26, :86-87 | M1, M2 | :554 | red stands |
-| 32 | 17.4 | `ASlowBnSwitch_NamesTheAppsHandler`, `:672` | .NET | R4 :27, :86-87 | M1, M2 | :554 | red stands |
-| 33 | 17.4 | `ASlowBnModalDismiss_NamesTheAppsHandler`, `:680` | .NET | R4 :28, :86-87 | M1, M2 | :554 | red stands |
+| 30 | 17.4 | `ASlowBnPicker_NamesTheAppsHandler`, `:656` | .NET | R4 :25, :86-87 | M1, M2 | :554 | red stands; anchor unredded, see 11d |
+| 31 | 17.4 | `ASlowBnSlider_NamesTheAppsHandler`, `:664` | .NET | R4 :26, :86-87 | M1, M2 | :554 | red stands; anchor unredded, see 11d |
+| 32 | 17.4 | `ASlowBnSwitch_NamesTheAppsHandler`, `:672` | .NET | R4 :27, :86-87 | M1, M2 | :554 | red stands; anchor unredded, see 11d |
+| 33 | 17.4 | `ASlowBnModalDismiss_NamesTheAppsHandler`, `:680` | .NET | R4 :28, :86-87 | M1, M2 | :554 | red stands; anchor unredded, see 11d |
 | 34 | 17.4 | `AWrapperWithNoAppCallback_StillKeysByItsCallSite`, `:691` | .NET | R4 :31, :109 | M5 | :554 | red stands |
-| 35 | 17.4 | `AHookThatThrows_NeverFaultsTheDispatch_AndTheWarningFallsBackToTheTreeOwner`, `:713` | .NET | R4 :189 | red first only | :554 | red stands, red-first only |
+| 35 | 17.4 | `AHookThatThrows_NeverFaultsTheDispatch_AndTheWarningFallsBackToTheTreeOwner`, `:713` | .NET | R4 :189 | red first only | :554 | red stands, red-first only; anchor unredded, see 11d |
 | 36 | 17.4 | `TwoBoundBnInputs_OnTwoPages_GetTwoWarnings_NamingThePages`, `:732` | .NET | R4 :29, :46, :96 | M1, M2, A1 | :554 | red stands |
 | 37 | 17.4 | `TwoBoundBnInputs_OnOnePage_GetTwoWarnings`, `:758` | .NET | R4 :30, :41, :46, :96 | M1, M2, A1 | :554 | red stands |
-| 38 | 17.4 | `TwoPlainBoundBnInputs_OnOnePage_GetTwoWarnings_NamingThePage`, `:778` | .NET | R4 :48, :108, :120 | M2 | :554 | red stands |
-| 39 | 17.4 | `AGetSetBoundBnInput_NamesTheAppsSetMethod`, `:797` | .NET | R4 :48, :108, :121 | M2 | :554 | red stands |
+| 38 | 17.4 | `TwoPlainBoundBnInputs_OnOnePage_GetTwoWarnings_NamingThePage`, `:778` | .NET | R4 :48, :108, :120 | M2 | :554 | red stands; anchor unredded, see 11d |
+| 39 | 17.4 | `AGetSetBoundBnInput_NamesTheAppsSetMethod`, `:797` | .NET | R4 :48, :108, :121 | M2 | :554 | red stands; anchor unredded, see 11d |
 | 40 | 17.4 | `EventCallbackDelegate_ReturnsTheAppsMethod`, `RT/ForwardingHookTests.cs:30` | .NET | R4 :108, :116 | M2 | :553 | red stands |
 | 41 | 17.4 | `EventCallbackDelegate_IsNullForAnEmptyCallback`, `:38` | .NET | none | **none**; M2 keeps it green; R4 :109's M5 reds a different class | :553 "M5 reds the null guard" | **FINDING: no recorded red; unnamed; cell overstates** |
 | 42 | 17.4 | `EventCallbackDelegate_WorksForBool`, `:44` | .NET | R4 :116 | M2 | :553 | red stands |
@@ -783,16 +783,16 @@ after the red was taken, the recorded mutation was re-run on HEAD (design, Appro
 | 63 | 17.4 | `info debug and verbose honour SAFE and stay level gated`, `:268` | JVM | compile error only | **none** | :556 named | **FINDING: no recorded red; named** |
 | 64 | 17.4 | `warn and error are never gated by level`, `:282` | JVM | compile error only | **none** | :556 named | **FINDING: no recorded red; named** |
 | 65 | 17.4 | `a throwing throwable sink is swallowed`, `:294` | JVM | compile error only | **none** | :556 named | **FINDING: no recorded red; named** |
-| 66 | 17.4 | `a WARN diagnostic reaches the shell as WARN, and an ERROR one as ERROR`, `:301` | JVM | R4 :153, :171 | N2, J1 | :556 | red stands |
+| 66 | 17.4 | `a WARN diagnostic reaches the shell as WARN, and an ERROR one as ERROR`, `:301` | JVM | R4 :153, :171 | N2, J1 | :556 | red stands; anchor unredded, see 11d |
 | 67 | 17.4 | `the pump forwards a record as private unrevealed and verbatim revealed`, `:325` | JVM | R4 :171-174 | J1, J2 | :556 | red stands |
 | 68 | 17.4 | `the default sink writes to System err`, `JT/jni/BnDiagnosticsTest.kt:24` | JVM | compile error only | **none** | :557 "named, not run" | **FINDING: no recorded red; named** |
 | 69 | 17.4 | `the sink is replaceable`, `:45` | JVM | compile error only | **none** | :557 named | **FINDING: no recorded red; named** |
 | 70 | 17.4 | `BnPrivacy has exactly the two members`, `:59` | JVM | compile error only | **none recorded** | :557 "reds if a third privacy value is added" | **FINDING: no recorded red; the cell asserts one** |
 | 71 | 17.4 | `a_slow_bncheckbox_callback_warns_naming_the_apps_method_not_the_wrapper`, `JT/jni/SlowHandlerProbeTest.kt:94` | JVM, JNA | R4 :189, :202 | **none** | :547 "Not mutated, named" | **FINDING: no recorded red; named** |
-| 72 | 17.4 | `a_fault_notice_message_is_readable_in_a_debuggable_build`, `AT/FaultNoticeLogAndroidTest.kt:73` | Android | R4 :178-179 | L1a anchor, L1b message | :558 | re-redded (L1b, run 39028712698) |
+| 72 | 17.4 | `a_fault_notice_message_is_readable_in_a_debuggable_build`, `AT/FaultNoticeLogAndroidTest.kt:73` | Android | R4 :178-179 | L1a anchor, L1b message | :558 | re-redded (L1b, run 39028712698); anchor unredded, see 11d |
 | 73 | 17.5 | `AChildThatLeavesItsPipeHeld_FailsNamedWithinTheBound_AndLeavesNoProcess`, `RT/GeneratorRunTests.cs:57` | .NET | R5 :34-40, :96-99, :225 | M1, M2 (named), A1, M5 | :559 | red stands |
-| 74 | 17.5 | `AScriptStillRunningAtTheBound_FailsSayingItWasStillRunning`, `:140` | .NET | R5 :206-210, :225 | red first; M5 | :560 | red stands |
-| 75 | 17.5 | `AScriptThatExitsWithItsPipeHeld_FailsSayingItExited`, `:189` | .NET | R5 :206-210, :225 | red first; M5 | :560 | red stands |
+| 74 | 17.5 | `AScriptStillRunningAtTheBound_FailsSayingItWasStillRunning`, `:140` | .NET | R5 :206-210, :225 | red first; M5 | :560 | red stands; anchor unredded, see 11d |
+| 75 | 17.5 | `AScriptThatExitsWithItsPipeHeld_FailsSayingItExited`, `:189` | .NET | R5 :206-210, :225 | red first; M5 | :560 | red stands; anchor unredded, see 11d |
 | 76 | 17.5 | `GenerateReference_RunsEveryMSBuildCallWithNodeReuseOff`, `:301` | .NET | R5 :44-49, :98 | M3 | :561 | red stands |
 | 77 | 17.5 | `GenerateReference_NodeReusePin_CatchesAPlantedCall`, `:330` | .NET | R5 :98 | M3, which reds only its switched-variant half | :561 | red stands, side-effect |
 | 78 | 17.5 | `TheJvmTasksThatLoadTheRuntime_DeclareItAsAnInput`, `RT/NativeRuntimeInputDriftTests.cs:61` | .NET | R5 :53-54, :152-153, :172 | M4a, M4b | :562 | red stands |
@@ -800,7 +800,7 @@ after the red was taken, the recorded mutation was re-run on HEAD (design, Appro
 | 80 | 17.5 | `APlantedBlockWithoutTheInput_IsReported`, `:85` | .NET | R5 :55, passed | **none** | :562, the Rule 3 control only | **FINDING: no recorded red; unnamed** |
 | 81 | 17.5 | `NoPrivatePollUntil_RemainsInAndroidTest`, `RT/PollUntilDriftTests.cs:35` | .NET | R5 :177-181, :190 | red first; planted copies | :563 | red stands |
 | 82 | 17.5 | `APlantedPrivateCopy_IsReported`, `:52` | .NET | R5 :188-189 | **none** | :563, the Rule 3 control, no gap | **FINDING: no recorded red; unnamed** |
-| 83 | 17.5 | `a_poll_on_a_destroyed_activity_fails_naming_it`, `AT/PollAndroidTest.kt:29` | Android | R5 :162-163, :235 | L1, re-run on the catch-only form | :564 | red stands |
+| 83 | 17.5 | `a_poll_on_a_destroyed_activity_fails_naming_it`, `AT/PollAndroidTest.kt:29` | Android | R5 :162-163, :235 | L1, re-run on the catch-only form | :564 | red stands; anchor unredded, see 11d |
 | 84 | 17.5 | `a_predicate_that_throws_is_rethrown_unchanged`, `:48` | Android | R5 :164, :191 | L2 | :564 | red stands |
 | 85 | 17.5 | Swift `BnGeolocationTests.testUnknownOpCompletesErrorNeverCrashes`, assertion `src/BlazorNative.Apple/BnHostTests/BnGeolocationTests.swift:219` | iOS | R5 :165 | S1, not specific: 6 tests red, named | :565 | red stands, named partial |
 
@@ -917,7 +917,7 @@ mutation recorded before a fact was added does not count for that fact. Lines ar
 | 35 | `RT/SlowHandlerWarningTests.cs:720`, `RunsOf("bn-check-throw")` | added in the final wave, after A2 (R4 :189) |
 | 38 | `RT/SlowHandlerWarningTests.cs:784`, `RunsOf("bind-plain-a")` | added in review round 1, after A1 (R4 :48) |
 | 39 | `RT/SlowHandlerWarningTests.cs:802`, `RunsOf("bind-get-set")` | the same |
-| 66 | `JT/shell/BnShellLogTest.kt:315-319`, the revealed WARN line keeps its text | J1 changes only the unrevealed branch; N2 reds the first assertion, before it (R4 :153, :171) |
+| 66 | `JT/shell/BnShellLogTest.kt:321`, the revealed WARN line keeps its text, commented at `:315-317` | J1 changes only the unrevealed branch; N2 reds the first assertion, before it (R4 :153, :171) |
 | 72 | `AT/FaultNoticeLogAndroidTest.kt:93` and `:96` | L1a enters only the `reveal` anchor, `:88` (R4 :178) |
 | 74 | `RT/GeneratorRunTests.cs:160`, "the sleeper never recorded itself" | 17.5's A1 stops the launcher starting the sleeper, which is row 73's shape (R5 :99) |
 | 75 | `RT/GeneratorRunTests.cs:210-214`, the stub's two roles and "the run returned before the anchor held" | the same |
@@ -948,7 +948,7 @@ Two more cells read broader than their rows:
 in the audit report and graded the item MET NARROWLY. This item was written to close that door. It
 requires the cell to be written "in the phase that adds it", and the 16.8 re-audit is named as the
 source of that lesson. An unnamed partial cannot be named now and count. And a pin with no red is
-NOT MET whether it is named or not. So the 18 pins, the 26 pins' unentered anchors and the three
+NOT MET whether it is named or not. So the 18 pins, the 26 pins with an unentered anchor and the three
 cells fail the item's words, and the item is **NOT MET**.
 
 **Lesser notes, not counted as findings:**
@@ -1031,7 +1031,7 @@ change them.
      as this audit's J1 and J2 did.
    - The device pins go through scratch refs on the Android lane.
    - A pin that truly cannot red is reworked until it can, or removed.
-2. **Record a red for each of the 26 unentered anchors** in 11d's table. For each, write a mutation
+2. **Record an anchor red for each of the 26 pins** in 11d's anchor table. For each, write a mutation
    that makes its scenario not happen, not one that breaks the main assertion.
 3. **Correct the three cells**: PS :553, what M5 reds; PS :554, which wrappers A1 and A2 cover; and
    PS :557, the members test's claimed red. Also correct PS :551's anchor claim and PS :547's
