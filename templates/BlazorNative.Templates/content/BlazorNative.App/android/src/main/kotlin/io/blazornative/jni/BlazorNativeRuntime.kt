@@ -74,7 +74,7 @@ class BlazorNativeRuntime(
                 // dropped.
                 if (retired) {
                     framesDroppedAfterRetire.incrementAndGet()
-                    // J1 (17.6 re-red): the drop removed, the frame still counts and is delivered
+                    return
                 }
                 checkFrameProducer()
                 // NativeFrameAdapter.read copies everything (arena memory is
@@ -566,7 +566,7 @@ class BlazorNativeRuntime(
         // waited out, within the same 5 s budget, so onFrame sees no frame after this returns.
         // Not from inside a callback, which would wait for itself.
         if (!insideCallback.get()) {
-            while (callbacksInFlight.get() > 0 && System.nanoTime() < deadline) Thread.sleep(1)
+            // J2 (17.6 re-red): the in-flight wait removed
         }
         return drained
     }
