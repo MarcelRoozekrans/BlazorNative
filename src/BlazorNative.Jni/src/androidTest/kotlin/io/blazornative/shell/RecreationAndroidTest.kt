@@ -165,7 +165,7 @@ class RecreationAndroidTest {
                 "That is #425, M17 DoD item 6.", previous.get()!!.retiredForTest)
             val current = AtomicReference<BlazorNativeRuntime?>(null)
             scenario.onActivity { current.set(it.runtimeForTest) }
-            assertTrue("the recreated Activity reuses the previous runtime instead of starting its own " +
+            assertTrue("contrast: the recreated Activity holds the previous runtime, not its own " +
                 "(#425, M17 DoD item 6)", current.get() !== previous.get())
             assertFalse("the recreated Activity's own runtime is retired: retire() hit the new runtime, not " +
                 "the previous one (#425, M17 DoD item 6)", current.get()!!.retiredForTest)
