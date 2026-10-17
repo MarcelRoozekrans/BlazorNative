@@ -69,6 +69,9 @@ jobs:
   build-test:
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write   # Codecov upload via OIDC, no token secret
     defaults:
       run:
         shell: pwsh
@@ -2379,7 +2382,7 @@ jobs:
       - name: .NET tests (assert 1372 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
-          dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
+          dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "dotnet test failed (exit $LASTEXITCODE)" }
           # -AllMatches + iterating every match, not just $_.Matches[0]: `dotnet test`
           # runs projects in parallel and their summary lines can land on ONE physical
@@ -2397,6 +2400,15 @@ jobs:
           if ($failed -ne 0 -or $passed -ne 1372 -or $skipped -ne 0) {
             throw ".NET test baseline drift: expected 1372 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
+
+      - name: Upload coverage to Codecov
+        if: '!cancelled()'
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: "TestResults/**/coverage.cobertura.xml"
+          disable_search: true   # only the files above, not every *.xml the search finds
+          fail_ci_if_error: false
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
       # parser is tools/BlazorNative.DocSamples — the same one DocsSamplesDriftTests

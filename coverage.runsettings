@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Code coverage for CI: pass this file to dotnet test with the settings option. The Cobertura report goes to Codecov. -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!-- Generated and compiler-generated code says nothing about test quality. -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute,ObsoleteAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/obj/**/*.cs,**/*.g.cs</ExcludeByFile>
+          <!-- Test projects, the sample app and the repo-internal generators under tools are not shipped code. -->
+          <Exclude>[*.Tests]*,[BlazorNative.SampleApp]*,[BlazorNative.RouteGen]*,[BlazorNative.WireGen]*,[BlazorNative.DocSamples]*</Exclude>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
