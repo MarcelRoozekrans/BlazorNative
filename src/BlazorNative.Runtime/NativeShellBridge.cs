@@ -550,7 +550,7 @@ public sealed class NativeShellBridge : IMobileBridge
         // is delivered as data (the awaiting side maps it to Error). TrySetResult so a
         // duplicate completion after a cancellation race cannot fault the host.
         tcs.TrySetResult(new HostCallResult(status, payloadJson));
-        return 0;
+        return 1; // 17.7 MR: a delivered completion reports the unknown-id rc
     }
 
     /// <summary>Test-only: how many host calls are still waiting for the shell's answer.</summary>

@@ -455,7 +455,7 @@ class MainActivity : FragmentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         // 17.3 (#425): the route a recreation restores; see the bridge construction in onCreate.
-        shellBridge?.currentRoute()?.let { outState.putString(STATE_ROUTE, it) }
+        // 17.7 S1: the route a recreation restores is not saved
     }
 
     override fun onDestroy() {
