@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.blazornative.jni.BlazorNativeRuntime
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -142,6 +143,32 @@ class RecreationAndroidTest {
             assertTrue("the recreated Activity replaced the unrouted page with the home page: rotation " +
                 "lost the page its launch chose",
                 pollUntil(scenario, 60_000) { buttonLabelled(it, "Hold") && !hasEditText(it) })
+        }
+    }
+
+    @Test
+    fun a_rotation_retires_the_previous_activitys_runtime() {
+        // 17.7: 17.3's mutation L1 removed MainActivity's retire() call and every test above stayed
+        // green, because the .NET unmount already stops the old root rendering. retire() exists to
+        // put the old runtime in the retired state, so that state is what this pin holds.
+        launch().use { scenario ->
+            assertTrue("BnDemo never rendered within 60s", pollUntil(scenario, 60_000) { hasEditText(it) })
+            val previous = AtomicReference<BlazorNativeRuntime?>(null)
+            scenario.onActivity { previous.set(it.runtimeForTest) }
+            assertFalse("anchor: the first Activity's runtime is retired before any rotation",
+                previous.get()!!.retiredForTest)
+
+            scenario.recreate()
+            scenario.awaitBooted()
+            assertTrue("the previous Activity's runtime was not retired after a rotation: MainActivity's " +
+                "onDestroy did not call retire(), so a frame that still reaches it is not dropped. " +
+                "That is #425, M17 DoD item 6.", previous.get()!!.retiredForTest)
+            val current = AtomicReference<BlazorNativeRuntime?>(null)
+            scenario.onActivity { current.set(it.runtimeForTest) }
+            assertTrue("the recreated Activity reuses the previous runtime instead of starting its own " +
+                "(#425, M17 DoD item 6)", current.get() !== previous.get())
+            assertFalse("the recreated Activity's own runtime is retired: retire() hit the new runtime, not " +
+                "the previous one (#425, M17 DoD item 6)", current.get()!!.retiredForTest)
         }
     }
 

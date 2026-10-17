@@ -186,6 +186,10 @@ class MainActivity : FragmentActivity() {
      * boot guard. The instrumented tests wait for it through `awaitBooted`. */
     internal val bootedForTest: Boolean get() = booted
 
+    /** 17.7 test seam: this Activity's runtime. RecreationAndroidTest keeps the one it reads
+     * before a rotation and checks that onDestroy retired it. */
+    internal val runtimeForTest: BlazorNativeRuntime get() = runtime
+
     /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
      * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
      * other signal — insets change independently of view size (a rotation, a
