@@ -76,3 +76,6 @@ src/BlazorNative.Apple/DerivedData/
 
 # subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Screenshots and page snapshots the Playwright MCP server writes into the working directory.
+.playwright-mcp/
