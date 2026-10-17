@@ -829,7 +829,8 @@ class AndroidShellBridge(
         val cipher: Cipher
         val iv: ByteArray
         try {
-            val secretKey = provisionKey(key, requireAuth = true)
+            val secretKey = provisionKey(key, requireAuth = true,
+                allowDeviceCredentialForTest = setAuthAllowsDeviceCredentialForTest)
             cipher = Cipher.getInstance(AES_GCM).apply { init(Cipher.ENCRYPT_MODE, secretKey) }
             iv = cipher.iv
         } catch (t: Throwable) {
@@ -1783,11 +1784,18 @@ class AndroidShellBridge(
         @VisibleForTesting @Volatile @JvmStatic internal var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
         @VisibleForTesting @Volatile @JvmStatic internal var jobFaultForTest: (() -> Unit)? = null
 
+        /** 17.7 (#537) test seam: when true, an auth-bound set provisions its key with the
+         * device-credential fallback, as [writeAuthBoundSecretForTest] does, so the set reaches
+         * its prompt on a CI emulator that has a PIN but no enrolled fingerprint. False in
+         * production; reset by [resetHostCallContractForTest]. */
+        @VisibleForTesting @Volatile @JvmStatic internal var setAuthAllowsDeviceCredentialForTest: Boolean = false
+
         @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
             completeHookForTest = null
             workGateForTest = null
             gateReachedForTest = null
             jobFaultForTest = null
+            setAuthAllowsDeviceCredentialForTest = false
             biometricGateHook = null
         }
 
