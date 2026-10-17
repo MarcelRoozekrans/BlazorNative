@@ -2810,7 +2810,7 @@ jobs:
       - name: JVM tests (Gradle testDebugUnitTest — assert 206 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
-          .\gradlew.bat --no-daemon testDebugUnitTest --tests 'io.blazornative.jni.RetireLateContinuationTest'
+          .\gradlew.bat --no-daemon testDebugUnitTest
           if ($LASTEXITCODE -ne 0) { throw "gradlew testDebugUnitTest failed (exit $LASTEXITCODE)" }
           $xmls = @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)
           if ($xmls.Count -eq 0) { throw "No JUnit XML results found under build\test-results\testDebugUnitTest" }
