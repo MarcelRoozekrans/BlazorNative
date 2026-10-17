@@ -61,7 +61,7 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
     /// <summary>The synchronous part of each slow handler: five times the budget.</summary>
     internal const int SlowMs = 500;
 
-    private readonly List<string> _warnings = new();
+    private readonly List<string> _warnings = new() { "slow handler: a line captured before this change" };
     private int _threePresses;
     private Action<BnLogLevel, string, string>? _previousSink;
 
