@@ -3839,12 +3839,14 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-16-phase-17.4-record.md`](../plans/2026-10-16-phase-17.4-record.md)
 **Completed:** 2026-10-16 · [PR #523](https://github.com/MarcelRoozekrans/BlazorNative/pull/523). Android writes no app text to logcat in a non-debuggable build, mirroring iOS's `.private`. That covers all 58 shell log sites, the pumped .NET lines and the shared JVM code's diagnostics, through one `BnShellLog` seam. A drift pin holds both shells' rules together. The slow-handler warning names the app's handler behind six Bn wrappers, through an internal hook; the delegate accessor is proven under NativeAOT for the bool instantiation. Naming a diagnostic never faults a dispatch. Executed subagent-driven, with a final review whose one Important finding was fixed. .NET 1332 → 1362, JVM 193 → 206, Android 242 → 243. #426 and #435 closed; #522 filed.
 
-#### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: active]
+#### Phase 17.5: Test-infrastructure honesty (#454, #424, #458) [status: complete]
 **Goal:** No local run can hang silently, test a stale native library, or fail with a bare message.
 **Surface:** Infra
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-16-phase-17.5-design.md`](../superpowers/specs/2026-10-16-phase-17.5-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-16-phase-17.5-test-infra-honesty.md`](../superpowers/plans/2026-10-16-phase-17.5-test-infra-honesty.md)
+**Record:** [`docs/plans/2026-10-16-phase-17.5-record.md`](../plans/2026-10-16-phase-17.5-record.md)
+**Completed:** 2026-10-17 · [PR #528](https://github.com/MarcelRoozekrans/BlazorNative/pull/528). The reference generator runs under one 5-minute deadline covering exit and end of file. A stall is a named failure that says whether a step was still running or a descendant held the output, never a silent hang. Node reuse is off, the likely fix, not proven; #530 tracks the pipe holder, after the 2026-10-15 dumps showed node reuse was on. Gradle declares the native runtime as an input of every task that loads it, the template's included. One `pollUntil` replaces 10 copies and names a destroyed Activity. The geolocation assertion carries a message. Executed subagent-driven; two node-reuse rulings were corrected against the dumps. .NET 1362 → 1372, Android 243 → 245. #454, #424 and #458 closed; #530 filed.
 
 #### Phase 17.6: Audit and close [status: pending]
 **Goal:** Run `audit-milestone` against the DoD on live evidence. **No tag**, per `CONVENTIONS.md`.
