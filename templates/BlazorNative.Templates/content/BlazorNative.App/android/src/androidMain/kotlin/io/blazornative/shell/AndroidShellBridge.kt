@@ -276,7 +276,9 @@ class AndroidShellBridge(
      * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
      * An auth-bound request frees its executor while its prompt is up, so its after-auth work
      * runs when the prompt answers, behind whatever was queued meanwhile; that was already so
-     * when the work ran inline, and is #506's question. Daemon,
+     * when the work ran inline, and is #506's question. An auth-bound storage request completes
+     * on its executor whether the prompt is granted or denied, while biometrics' authenticate
+     * completes from the prompt's own callback, because it does no work after the prompt. Daemon,
      * so neither blocks process exit. */
     private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
@@ -288,7 +290,9 @@ class AndroidShellBridge(
     /** 17.2: the secure-storage KeyStore work after a biometric prompt. The prompt answers on
      * main; this sends the work back to the secure-storage executor, so none of it runs on main.
      * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
-     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed. */
+     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed.
+     * 17.7 (#537): a denied prompt's AuthFailed completion comes through here too, for both
+     * paths, pinned by AndroidHostCallContractTest's denied-prompt pin. */
     private fun afterAuth(requestId: Long, failure: String, work: () -> Unit) {
         secureStorageExecutor.execute {
             try {
@@ -848,7 +852,11 @@ class AndroidShellBridge(
                     completeHostCall(requestId, SecureStorageStatus.OK, null)
                 }
             },
-            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+            onDenied = {
+                afterAuth(requestId, "secure set('$key', auth) denial failed to complete") {
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
         )
     }
 
@@ -907,7 +915,11 @@ class AndroidShellBridge(
                     completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
                 }
             },
-            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+            onDenied = {
+                afterAuth(requestId, "secure getWithAuth('$key') denial failed to complete") {
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
         )
     }
 
