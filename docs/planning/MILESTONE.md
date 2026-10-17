@@ -116,3 +116,4 @@ None. Every decision was taken on 2026-10-14; see the design.
 
 | Date | Verdict | Gaps |
 |---|---|---|
+| 2026-10-17 | FAIL | item 11: 18 of 85 new pins have no recorded red, 9 of them named nowhere; 2 anchors unredded; register cells `pin-standard.md:553` and `:557` claim reds no record shows. Items 4, 5, 6, 8 and 9 MET NARROWLY: the #494 cancellation entry, a denied prompt completing on main, #511, #522, #530. [Report](../plans/2026-10-17-milestone-17-audit.md) |
