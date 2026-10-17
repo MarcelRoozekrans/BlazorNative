@@ -3848,12 +3848,14 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-16-phase-17.5-record.md`](../plans/2026-10-16-phase-17.5-record.md)
 **Completed:** 2026-10-17 · [PR #528](https://github.com/MarcelRoozekrans/BlazorNative/pull/528). The reference generator runs under one 5-minute deadline covering exit and end of file. A stall is a named failure that says whether a step was still running or a descendant held the output, never a silent hang. Node reuse is off, the likely fix, not proven; #530 tracks the pipe holder, after the 2026-10-15 dumps showed node reuse was on. Gradle declares the native runtime as an input of every task that loads it, the template's included. One `pollUntil` replaces 10 copies and names a destroyed Activity. The geolocation assertion carries a message. Executed subagent-driven; two node-reuse rulings were corrected against the dumps. .NET 1362 → 1372, Android 243 → 245. #454, #424 and #458 closed; #530 filed.
 
-#### Phase 17.6: Audit and close [status: active]
+#### Phase 17.6: Audit and close [status: complete]
 **Goal:** Run `audit-milestone` against the DoD on live evidence. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-17-phase-17.6-design.md`](../superpowers/specs/2026-10-17-phase-17.6-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-17-phase-17.6-audit.md`](../superpowers/plans/2026-10-17-phase-17.6-audit.md)
+**Record:** [`docs/plans/2026-10-17-milestone-17-audit.md`](../plans/2026-10-17-milestone-17-audit.md)
+**Completed:** 2026-10-17 · [PR #536](https://github.com/MarcelRoozekrans/BlazorNative/pull/536). Verdict **FAIL**. Items 1, 2, 3, 7 and 10 are MET; items 4, 5, 6, 8 and 9 are MET NARROWLY. Item 11, the pin standard, is NOT MET: 18 of 85 new pins have no recorded red, 26 pins have an anchor that no recorded mutation enters, and three register cells overstate. The 16.8 fallback, where the audit itself names the partials, is barred by item 11's own words. Tests were measured on `980abdbf`: Android 245/0, iOS 288/0, .NET 1372/0 in five local runs, and CI with .NET 1372/0 and JVM 206/0. 27 pins were re-redded on HEAD. #538 was filed as the gap scope, and #537 for a denied biometric prompt completing on main. Next: `plan-milestone-gaps`.
 
 ---
 
