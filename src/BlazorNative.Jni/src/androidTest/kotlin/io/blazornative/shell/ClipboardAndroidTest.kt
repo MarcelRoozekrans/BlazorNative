@@ -198,21 +198,6 @@ class ClipboardAndroidTest {
         pollUntil(scenario, deadlineMs = 10_000) { act -> act.hasWindowFocus() }
     }
 
-    private fun pollUntil(
-        scenario: ActivityScenario<MainActivity>,
-        deadlineMs: Long,
-        predicate: (MainActivity) -> Boolean,
-    ): Boolean {
-        val deadline = System.currentTimeMillis() + deadlineMs
-        while (System.currentTimeMillis() < deadline) {
-            val ok = AtomicReference(false)
-            scenario.onActivity { act -> ok.set(predicate(act)) }
-            if (ok.get()) return true
-            Thread.sleep(250)
-        }
-        return false
-    }
-
     /** Finds the Button whose text equals [label] and performClicks it on the
      * UI thread. Fails the test if the button is not on screen. */
     private fun tapButton(scenario: ActivityScenario<MainActivity>, label: String) {

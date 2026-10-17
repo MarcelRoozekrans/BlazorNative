@@ -4,6 +4,7 @@ using System.Reflection;
 using BlazorNative.Core;      // #173: the Core reference drift pin
 using BlazorNative.Device;
 using BlazorNative.Tests.Shared;
+using Xunit.Sdk;
 
 namespace BlazorNative.Runtime.Tests;
 
@@ -33,7 +34,14 @@ public abstract class ReferenceFixtureBase : IDisposable
     public string OutputDirectory { get; }
     public string GeneratorLog { get; }
 
-    protected ReferenceFixtureBase(string package)
+    /// <summary>The bound on one reference generation (#454). Standalone, a
+    /// generation takes seconds; the 17.5 record holds the slowest measured.</summary>
+    internal static readonly TimeSpan GenerationBound = TimeSpan.FromMinutes(5);
+
+    /// <param name="package">The package to generate.</param>
+    /// <param name="sink">Takes one timing line per generation; it prints when xUnit
+    /// diagnostic messages are on.</param>
+    protected ReferenceFixtureBase(string package, IMessageSink sink)
     {
         OutputDirectory = Path.Combine(
             Path.GetTempPath(), $"bn-docs-reference-{package}-" + Guid.NewGuid().ToString("N"));
@@ -42,29 +50,16 @@ public abstract class ReferenceFixtureBase : IDisposable
             BnRepo.Root(), "scripts", "generate-reference.ps1");
         Assert.True(File.Exists(script), $"generator script not found: {script}");
 
-        var psi = new ProcessStartInfo("pwsh")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = BnRepo.Root(),
-        };
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-File");
-        psi.ArgumentList.Add(script);
-        psi.ArgumentList.Add("-Package");
-        psi.ArgumentList.Add(package);
-        psi.ArgumentList.Add("-OutputPath");
-        psi.ArgumentList.Add(OutputDirectory);
+        // BOUNDED (#454): a held output pipe fails, named, in 5 minutes; it never hangs.
+        var clock = Stopwatch.StartNew();
+        GeneratorRun run = BoundedScript.RunBounded(
+            script, ["-Package", package, "-OutputPath", OutputDirectory], GenerationBound);
+        GeneratorLog = run.Log;
+        sink.OnMessage(new DiagnosticMessage(
+            $"generate-reference.ps1 -Package {package}: {clock.Elapsed.TotalSeconds:F1} s, exit {run.ExitCode}"));
 
-        using var p = Process.Start(psi)!;
-        string stdout = p.StandardOutput.ReadToEnd();
-        string stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        GeneratorLog = stdout + stderr;
-
-        Assert.True(p.ExitCode == 0,
-            $"generate-reference.ps1 -Package {package} failed (exit {p.ExitCode}):\n{GeneratorLog}");
+        Assert.True(run.ExitCode == 0,
+            $"generate-reference.ps1 -Package {package} failed (exit {run.ExitCode}):\n{GeneratorLog}");
     }
 
     public void Dispose()
@@ -78,7 +73,7 @@ public abstract class ReferenceFixtureBase : IDisposable
 /// <summary>Generates the <c>BlazorNative.Device</c> reference once for the whole class.</summary>
 public sealed class DeviceReferenceFixture : ReferenceFixtureBase
 {
-    public DeviceReferenceFixture() : base("Device") { }
+    public DeviceReferenceFixture(IMessageSink sink) : base("Device", sink) { }
 }
 
 /// <summary>
@@ -208,7 +203,7 @@ public sealed class ReferenceDriftTests : IClassFixture<DeviceReferenceFixture>
 /// <summary>Generates the <c>BlazorNative.Core</c> reference once for the whole class (#173).</summary>
 public sealed class CoreReferenceFixture : ReferenceFixtureBase
 {
-    public CoreReferenceFixture() : base("Core") { }
+    public CoreReferenceFixture(IMessageSink sink) : base("Core", sink) { }
 }
 
 /// <summary>
@@ -298,7 +293,7 @@ public sealed class CoreReferenceDriftTests : IClassFixture<CoreReferenceFixture
 /// <summary>Generates the <c>BlazorNative.Runtime</c> reference once for the whole class (#173).</summary>
 public sealed class RuntimeReferenceFixture : ReferenceFixtureBase
 {
-    public RuntimeReferenceFixture() : base("Runtime") { }
+    public RuntimeReferenceFixture(IMessageSink sink) : base("Runtime", sink) { }
 }
 
 /// <summary>
@@ -419,7 +414,7 @@ public sealed class RuntimeReferenceDriftTests : IClassFixture<RuntimeReferenceF
 /// <summary>Generates the <c>BlazorNative.Http</c> reference once for the whole class (#173).</summary>
 public sealed class HttpReferenceFixture : ReferenceFixtureBase
 {
-    public HttpReferenceFixture() : base("Http") { }
+    public HttpReferenceFixture(IMessageSink sink) : base("Http", sink) { }
 }
 
 /// <summary>

@@ -251,6 +251,11 @@ val winX64PublishPath: String = rootProject.projectDir
     .resolve("../../samples/BlazorNative.SampleApp/bin/Release/net10.0/win-x64/publish")
     .absolutePath
 
+// The native runtime JNA loads is not a classpath entry. Each task that sets jna.library.path
+// declares this tree as an input, or a rebuilt library leaves it UP-TO-DATE (#424). A missing
+// DLL is an empty tree, so declaring it never fails a task.
+val nativeRuntimeFiles = fileTree(winX64PublishPath) { include("BlazorNative.Runtime.dll") }
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
@@ -259,6 +264,9 @@ tasks.withType<Test>().configureEach {
         showStandardStreams = true
     }
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(nativeRuntimeFiles)
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,6 +296,9 @@ tasks.register<JavaExec>("runPreviewHost") {
     mainClass.set("io.blazornative.jni.PreviewHostKt")
     classpath = files(debugKotlinClasses) + previewHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(nativeRuntimeFiles)
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
     systemProperty("stdout.encoding", "UTF-8")
     systemProperty("stderr.encoding", "UTF-8")
@@ -383,6 +394,9 @@ tasks.register<JavaExec>("runInspectorHost") {
         debugKotlinClasses,
     ) + inspectorHostRuntime
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(nativeRuntimeFiles)
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
     // Deterministic UTF-8 on Windows consoles (BnDemo's "Settings →" label).
     systemProperty("stdout.encoding", "UTF-8")
     systemProperty("stderr.encoding", "UTF-8")

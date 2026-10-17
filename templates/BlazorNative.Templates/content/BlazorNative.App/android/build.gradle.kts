@@ -191,6 +191,11 @@ val appPubRoot: File = (findProperty("appPubRoot") as String?)
 // template; this is wired so the ones you add can load the runtime.)
 val winX64PublishPath: String = appPubRoot.resolve("win-x64/publish").absolutePath
 
+// The native runtime JNA loads is not a classpath entry. Each task that sets jna.library.path
+// declares this tree as an input, or a rebuilt library leaves it UP-TO-DATE (#424). A missing
+// DLL is an empty tree, so declaring it never fails a task.
+val nativeRuntimeFiles = fileTree(winX64PublishPath) { include("BlazorNative.Runtime.dll") }
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
@@ -199,6 +204,9 @@ tasks.withType<Test>().configureEach {
         showStandardStreams = true
     }
     systemProperty("jna.library.path", winX64PublishPath)
+    inputs.files(nativeRuntimeFiles)
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("nativeRuntime")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

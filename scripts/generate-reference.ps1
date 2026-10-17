@@ -128,6 +128,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# NODE REUSE OFF, for every MSBuild call below: the likely fix for #454. In the
+# 2026-10-15 Linux hang the publish had exited, yet something still held its output
+# pipe, so this script's `| Out-Host` never saw EOF. The hung pwsh's dump holds the
+# emitted Runtime "publishing" line, the publish's own final "->" output line and
+# its arguments, and no emitted "xmldoc2md ->" line; no dump is of the publish. The 2026-10-15 Linux hang ran with node
+# reuse on: no MSBUILDDISABLENODEREUSE in the environment of any of the three
+# dumped processes, and persistent MSBuild nodes running. A worker node that
+# outlives the publish is the leading suspect; it is not proven, and #530 tracks
+# proving it. With reuse off, MSBuild's documented behaviour is that no worker node
+# outlives the build that started it; this repo does not pin that behaviour, only
+# that the switch and the variable are set. Whatever the cause, the bound in
+# the test project's BoundedScript turns a stall into a named failure. The
+# variable covers any MSBuild this script starts, and each call also passes
+# -nodeReuse:false. GeneratorRunTests pins both.
+$env:MSBUILDDISABLENODEREUSE = '1'
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 if (-not $ReferenceRoot) { $ReferenceRoot = Join-Path $repoRoot 'website/docs/reference' }
@@ -325,7 +341,7 @@ foreach ($name in $Package) {
     # Each package gets its OWN publish dir so a transitively-referenced type from a
     # sibling package is present when xmldoc2md resolves the surface.
     Write-Host "==> generate-reference [$name]: publishing (the dependency-complete output)"
-    dotnet publish $project -c Release -o $pubDir --nologo -v minimal | Out-Host
+    dotnet publish $project -c Release -o $pubDir --nologo -v minimal -nodeReuse:false | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $name (exit $LASTEXITCODE)" }
 
     $assembly = Join-Path $pubDir $entry.Dll

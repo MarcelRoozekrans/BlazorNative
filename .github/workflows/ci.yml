@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1362 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1372 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2365,7 +2365,18 @@ jobs:
       # 1360 -> 1362 (17.4, +2, 2026-10-16): Runtime 1186 -> 1188. LogPrivacyDriftTests gains the
       # console-writer scan — no System.out, bare print or println, or printStackTrace in the
       # shipped shell outside PreviewHost.kt — and its planted-violation control.
-      - name: .NET tests (assert 1362 passed / 0 skipped)
+      # 1362 -> 1365 (17.5, +3, 2026-10-16): Runtime 1188 -> 1191. GeneratorRunTests, #454 — a script
+      # whose output pipe a descendant holds fails, named, within the bound and its pwsh is killed;
+      # every MSBuild call in generate-reference.ps1 runs with node reuse off, and a planted call reds.
+      # 1365 -> 1368 (17.5, +3, 2026-10-16): Runtime 1191 -> 1194. NativeRuntimeInputDriftTests, #424 —
+      # every task block in build.gradle.kts, and in the template's, that sets jna.library.path declares
+      # the publish output as an input with relative path sensitivity, and a planted block without it reds.
+      # 1368 -> 1370 (17.5, +2, 2026-10-16): Runtime 1194 -> 1196. PollUntilDriftTests, #458 — no
+      # instrumented test declares its own pollUntil outside Poll.kt, and a planted private copy reds.
+      # 1370 -> 1372 (17.5, +2, 2026-10-16): Runtime 1196 -> 1198. GeneratorRunTests, #454 — the bound's
+      # failure says which case it hit: a script still running at the bound, and a script that exited
+      # while a descendant holds its own output pipe.
+      - name: .NET tests (assert 1372 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal 2>&1 | Tee-Object -FilePath $log
@@ -2383,8 +2394,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1362 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1362 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1372 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1372 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence

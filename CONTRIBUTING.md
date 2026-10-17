@@ -77,6 +77,33 @@ The four surfaces and where each is asserted are tabulated in the README's **Tes
 surface** section. Only `build-test` (.NET + JVM) gates a PR; Android and iOS are
 advisory lanes (nightly / on-merge / manual dispatch).
 
+### When a test run stalls, or does not rerun
+
+- **The reference generator is bounded.** The .NET suite's reference-drift tests run
+  `scripts/generate-reference.ps1` once per package, each run under a 5-minute bound. The
+  slowest generation measured on Linux was about 3 s, with MSBuild node reuse off, which the script
+  sets, so the bound is generous there. Windows generation time is not captured on CI. A run that does not finish
+  fails with `did not finish within 00:05:00`, and no longer hangs the suite. The failure says
+  which case it hit:
+  - **The script was still running at the bound.** Either a step is slow, such as a cold
+    `dotnet tool restore`, or the script is in the #454 shape: it waits for end of file from a
+    child command, such as the publish, that has exited while something that command left
+    behind still holds its output pipe.
+  - **The script exited, but its output never reached end of file.** Something the script left
+    behind holds the script's own output pipe.
+
+  The process tree is killed, but a process that lost its parent, such as an MSBuild worker
+  node, is out of that kill's reach. The failure message says so.
+  [#530](https://github.com/MarcelRoozekrans/BlazorNative/issues/530) tracks finding out what the
+  holder is. The script turns MSBuild node reuse off, which is the likely
+  fix, not a proven one.
+- **A stray MSBuild node:** `dotnet build-server shutdown` stops it.
+- **The JVM tests rerun when the native library changes.** The Gradle test and run tasks declare
+  `BlazorNative.Runtime.dll` in the win-x64 publish directory as an input, by content. After you
+  republish it, `testDebugUnitTest` runs again. A `touch` that leaves the content unchanged
+  does not rerun them: measured with a placeholder file, the run after the `touch` was UP-TO-DATE.
+  A publish that produces the same bytes does not rerun them either.
+
 ---
 
 ## Project conventions

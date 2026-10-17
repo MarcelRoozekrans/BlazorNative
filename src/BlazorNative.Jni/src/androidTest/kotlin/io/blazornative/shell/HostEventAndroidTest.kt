@@ -177,21 +177,6 @@ class HostEventAndroidTest {
         act.findViewById<FrameLayout>(R.id.widget_root)
             ?.let { firstMatch(it) { v -> v is EditText } } != null
 
-    private fun pollUntil(
-        scenario: ActivityScenario<MainActivity>,
-        deadlineMs: Long,
-        predicate: (MainActivity) -> Boolean,
-    ): Boolean {
-        val deadline = System.currentTimeMillis() + deadlineMs
-        while (System.currentTimeMillis() < deadline) {
-            val ok = AtomicReference(false)
-            scenario.onActivity { act -> ok.set(predicate(act)) }
-            if (ok.get()) return true
-            Thread.sleep(250)
-        }
-        return false
-    }
-
     private fun tapButton(scenario: ActivityScenario<MainActivity>, label: String) {
         val clicked = AtomicReference(false)
         scenario.onActivity { act ->
