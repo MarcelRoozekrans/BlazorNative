@@ -287,8 +287,9 @@ class AndroidShellBridge(
         Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
     }
 
-    /** 17.2: the secure-storage KeyStore work after a biometric prompt. The prompt answers on
-     * main; this sends the work back to the secure-storage executor, so none of it runs on main.
+    /** 17.2: the secure-storage completion after a biometric prompt answers, its KeyStore work
+     * included. The prompt answers on main; this sends the work, granted or denied, back to the
+     * secure-storage executor, so none of it runs on main.
      * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
      * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed.
      * 17.7 (#537): a denied prompt's AuthFailed completion comes through here too, for both
