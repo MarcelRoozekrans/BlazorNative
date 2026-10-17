@@ -86,7 +86,7 @@ features.** The user-visible outcomes:
 3. Phase 17.3 — Activity recreation (#425) [complete] — a mount replaces the root; a recreated shell keeps its page and back stack, a fresh one starts at its own route; a replaced root cannot navigate; a new shell's frames are held until its mount; 15 pins, Android 238 → 242; #511 filed (#510)
 4. Phase 17.4 — fault-path parity (#426, #435) [complete] — Android redacts app text in Release logcat like iOS, through one seam and a twin drift pin; the slow-handler warning names the app's handler behind Bn wrappers; Android 242 → 243; #522 filed (#523)
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [complete] — a bounded generator run with a named failure, the native runtime as a Gradle input, one pollUntil; Android 243 → 245; #530 filed (#528)
-6. Phase 17.6 — audit and close [pending]
+6. Phase 17.6 — audit and close [active]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
 > 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.
@@ -116,3 +116,4 @@ None. Every decision was taken on 2026-10-14; see the design.
 
 | Date | Verdict | Gaps |
 |---|---|---|
+| 2026-10-17 | FAIL | item 11 (#538): 18 of 85 new pins have no recorded red, 9 of them named nowhere; 26 more pins have an anchor no recorded mutation enters; register cells `pin-standard.md:553`, `:554` and `:557` claim more than their record. Items 4, 5, 6, 8 and 9 MET NARROWLY: the #494 cancellation entry, a denied prompt completing on main (#537), #511 and the unproven `retire()` wiring, #522, #530. [Report](../plans/2026-10-17-milestone-17-audit.md) |
