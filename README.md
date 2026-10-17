@@ -1,6 +1,7 @@
 # BlazorNative
 
 [![ci](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelRoozekrans/BlazorNative/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/MarcelRoozekrans/BlazorNative/graph/badge.svg)](https://codecov.io/gh/MarcelRoozekrans/BlazorNative)
 [![NuGet](https://img.shields.io/nuget/v/BlazorNative.Runtime.svg)](https://www.nuget.org/packages?q=BlazorNative)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
