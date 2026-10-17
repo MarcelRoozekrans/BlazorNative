@@ -3848,10 +3848,12 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-16-phase-17.5-record.md`](../plans/2026-10-16-phase-17.5-record.md)
 **Completed:** 2026-10-17 · [PR #528](https://github.com/MarcelRoozekrans/BlazorNative/pull/528). The reference generator runs under one 5-minute deadline covering exit and end of file. A stall is a named failure that says whether a step was still running or a descendant held the output, never a silent hang. Node reuse is off, the likely fix, not proven; #530 tracks the pipe holder, after the 2026-10-15 dumps showed node reuse was on. Gradle declares the native runtime as an input of every task that loads it, the template's included. One `pollUntil` replaces 10 copies and names a destroyed Activity. The geolocation assertion carries a message. Executed subagent-driven; two node-reuse rulings were corrected against the dumps. .NET 1362 → 1372, Android 243 → 245. #454, #424 and #458 closed; #530 filed.
 
-#### Phase 17.6: Audit and close [status: pending]
+#### Phase 17.6: Audit and close [status: active]
 **Goal:** Run `audit-milestone` against the DoD on live evidence. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-17-phase-17.6-design.md`](../superpowers/specs/2026-10-17-phase-17.6-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-17-phase-17.6-audit.md`](../superpowers/plans/2026-10-17-phase-17.6-audit.md)
 
 ---
 
