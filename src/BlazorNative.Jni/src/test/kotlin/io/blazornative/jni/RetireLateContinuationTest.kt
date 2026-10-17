@@ -46,11 +46,13 @@ class RetireLateContinuationTest {
             awaitHeldCall(host)
             assertTrue(runtime.retire(), "the lane must drain while the handler is suspended on the held call")
             retired.set(true)
-            // retire() marks the runtime retired BEFORE it drains the lane, so a frame the handler's
-            // synchronous part renders during the drain is dropped and counted too. Counting from
-            // zero let the anchor pass with no late continuation at all: mutation C1 in the 17.7
-            // record loses every host call completion and passed it. retire() has returned, so the
-            // lane is drained and no callback is in flight; only a frame after the release counts.
+            // retire() marks the runtime retired BEFORE it drains the lane, so a frame that reaches
+            // the callback during the drain is dropped and counted too. Counting from zero let the
+            // anchor pass with no late continuation at all: mutation C1 in the 17.7 record loses
+            // every host call completion and passed it. Premise: the dispatch export delivers the
+            // synchronous part's frames before it returns, per the rc contract in Exports.cs. So
+            // once retire() has returned, the lane is drained and no callback is in flight, and
+            // only a frame after the release, which only the late continuation can render, counts.
             val droppedBeforeRelease = runtime.framesDroppedAfterRetire.get()
 
             host.release()
