@@ -103,7 +103,14 @@ class RecreationAndroidTest {
                 pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
             scenario.awaitBooted() // the recreated shell's page shows before its boot guard opens
 
-            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            // 17.7: back is enabled, so .NET handles this press. Checked in the press's own main-thread
+            // turn too: a press that also finishes the activity completes the finish before the poll
+            // below sees the home page, and the poll can then only report the activity DESTROYED.
+            scenario.onActivity { act ->
+                act.onBackPressedDispatcher.onBackPressed()
+                assertFalse("the back press finished the activity, although back was enabled and handed to " +
+                    ".NET: a handled back must not also take the platform's default", act.isFinishing)
+            }
             assertTrue("back from /settings after recreation did not return to the home page within 10s",
                 pollUntil(scenario, 10_000) { hasEditText(it) && settingsTitle(it) == null })
             scenario.onActivity { act -> assertFalse("a handled back must not finish the activity", act.isFinishing) }
