@@ -661,7 +661,7 @@ object BridgeHostCallCompleter {
         val payloadMem = payload?.let { utf8CString(FlatJson.write(it)) }
 
         val rc = try {
-            NativeBindings.INSTANCE.blazornative_host_call_complete(requestId, status, payloadMem)
+            1 // the completion is lost: reported as an unknown id
         } finally {
             if (payloadMem != null) Reference.reachabilityFence(payloadMem)
         }
