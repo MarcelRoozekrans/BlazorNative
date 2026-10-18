@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.0...v0.20.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **17.4:** android redacts app text in logcat, and the slow-handler warning names the app's handler ([#523](https://github.com/MarcelRoozekrans/BlazorNative/issues/523)) ([41af910](https://github.com/MarcelRoozekrans/BlazorNative/commit/41af910c7d8dcdf3647f54cd2875cacbcabe9b50))
+* **17.5:** no local test run hangs silently, tests a stale library, or fails bare ([#528](https://github.com/MarcelRoozekrans/BlazorNative/issues/528)) ([2f88924](https://github.com/MarcelRoozekrans/BlazorNative/commit/2f8892443b5749b2ce59e10a9612a79ca8a820ee))
+
 ## [0.20.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.19.0...v0.20.0) (2026-10-15)
 
 
