@@ -16,8 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * quiescent too (ShutdownQuiescenceTest), by closing .NET's frame gate.
  *
  * Anchors: `retire()` returned true, so the lane drained while the call was still held; and the
- * runtime COUNTED a dropped frame after the release, so the late continuation really rendered
- * and the empty onFrame is the drop, not silence.
+ * runtime COUNTED a dropped frame after the release, beyond those it counted before it, so the
+ * late continuation really rendered and the empty onFrame is the drop, not silence.
  *
  * DOES NOT COVER: the replacement runtime. A replacing mount disposes the old root, so the late
  * continuation renders nothing there; RecreationTests pins that on .NET, and
@@ -46,15 +46,24 @@ class RetireLateContinuationTest {
             awaitHeldCall(host)
             assertTrue(runtime.retire(), "the lane must drain while the handler is suspended on the held call")
             retired.set(true)
+            // retire() marks the runtime retired BEFORE it drains the lane, so a frame that reaches
+            // the callback during the drain is dropped and counted too. Counting from zero let the
+            // anchor pass with no late continuation at all: mutation C1 in the 17.7 record loses
+            // every host call completion and passed it. Premise: the dispatch export delivers the
+            // synchronous part's frames before it returns, per the rc contract in Exports.cs. So
+            // once retire() has returned, the lane is drained and no callback is in flight, and
+            // only a frame after the release, which only the late continuation can render, counts.
+            val droppedBeforeRelease = runtime.framesDroppedAfterRetire.get()
 
             host.release()
             released = true
 
             // Anchor: the late continuation really rendered, and the runtime dropped that frame.
             val deadline = System.currentTimeMillis() + 5_000
-            while (runtime.framesDroppedAfterRetire.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
-            assertTrue(runtime.framesDroppedAfterRetire.get() > 0,
-                "anchor: no frame reached the retired runtime within 5 s, so its drop was never exercised")
+            while (runtime.framesDroppedAfterRetire.get() == droppedBeforeRelease && System.currentTimeMillis() < deadline) Thread.sleep(10)
+            assertTrue(runtime.framesDroppedAfterRetire.get() > droppedBeforeRelease,
+                "anchor: no frame reached the retired runtime within 5 s of the release, so its drop was never " +
+                    "exercised; $droppedBeforeRelease were dropped before the release")
             // The callback counts a frame BEFORE it would deliver it, so a broken drop delivers it
             // just after the anchor passes. Asserting at once raced that delivery and passed with
             // the drop removed, mutation J1 in the 17.3 record; give the callback time to finish.

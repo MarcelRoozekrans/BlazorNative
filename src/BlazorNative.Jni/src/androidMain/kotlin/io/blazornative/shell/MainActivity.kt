@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
+import androidx.annotation.VisibleForTesting
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
@@ -185,6 +186,10 @@ class MainActivity : FragmentActivity() {
      * that dispatches a host event as soon as the page appears can have it dropped by the
      * boot guard. The instrumented tests wait for it through `awaitBooted`. */
     internal val bootedForTest: Boolean get() = booted
+
+    /** 17.7 test seam: this Activity's runtime. RecreationAndroidTest keeps the one it reads
+     * before a rotation and checks that onDestroy retired it. */
+    @VisibleForTesting internal val runtimeForTest: BlazorNativeRuntime get() = runtime
 
     /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
      * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some

@@ -276,7 +276,9 @@ class AndroidShellBridge(
      * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
      * An auth-bound request frees its executor while its prompt is up, so its after-auth work
      * runs when the prompt answers, behind whatever was queued meanwhile; that was already so
-     * when the work ran inline, and is #506's question. Daemon,
+     * when the work ran inline, and is #506's question. An auth-bound storage request completes
+     * on its executor whether the prompt is granted or denied, while biometrics' authenticate
+     * completes from the prompt's own callback, because it does no work after the prompt. Daemon,
      * so neither blocks process exit. */
     private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
@@ -285,10 +287,13 @@ class AndroidShellBridge(
         Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
     }
 
-    /** 17.2: the secure-storage KeyStore work after a biometric prompt. The prompt answers on
-     * main; this sends the work back to the secure-storage executor, so none of it runs on main.
+    /** 17.2: the secure-storage completion after a biometric prompt answers, its KeyStore work
+     * included. The prompt answers on main; this sends the work, granted or denied, back to the
+     * secure-storage executor, so none of it runs on main.
      * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
-     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed. */
+     * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed.
+     * 17.7 (#537): a denied prompt's AuthFailed completion comes through here too, for both
+     * paths, pinned by AndroidHostCallContractTest's denied-prompt pin. */
     private fun afterAuth(requestId: Long, failure: String, work: () -> Unit) {
         secureStorageExecutor.execute {
             try {
@@ -829,7 +834,8 @@ class AndroidShellBridge(
         val cipher: Cipher
         val iv: ByteArray
         try {
-            val secretKey = provisionKey(key, requireAuth = true)
+            val secretKey = provisionKey(key, requireAuth = true,
+                allowDeviceCredentialForTest = setAuthAllowsDeviceCredentialForTest)
             cipher = Cipher.getInstance(AES_GCM).apply { init(Cipher.ENCRYPT_MODE, secretKey) }
             iv = cipher.iv
         } catch (t: Throwable) {
@@ -847,7 +853,11 @@ class AndroidShellBridge(
                     completeHostCall(requestId, SecureStorageStatus.OK, null)
                 }
             },
-            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+            onDenied = {
+                afterAuth(requestId, "secure set('$key', auth) denial failed to complete") {
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
         )
     }
 
@@ -906,7 +916,11 @@ class AndroidShellBridge(
                     completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
                 }
             },
-            onDenied = { completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null) },
+            onDenied = {
+                afterAuth(requestId, "secure getWithAuth('$key') denial failed to complete") {
+                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                }
+            },
         )
     }
 
@@ -1783,11 +1797,18 @@ class AndroidShellBridge(
         @VisibleForTesting @Volatile @JvmStatic internal var gateReachedForTest: java.util.concurrent.CountDownLatch? = null
         @VisibleForTesting @Volatile @JvmStatic internal var jobFaultForTest: (() -> Unit)? = null
 
+        /** 17.7 (#537) test seam: when true, an auth-bound set provisions its key with the
+         * device-credential fallback, as [writeAuthBoundSecretForTest] does, so the set reaches
+         * its prompt on a CI emulator that has a PIN but no enrolled fingerprint. False in
+         * production; reset by [resetHostCallContractForTest]. */
+        @VisibleForTesting @Volatile @JvmStatic internal var setAuthAllowsDeviceCredentialForTest: Boolean = false
+
         @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
             completeHookForTest = null
             workGateForTest = null
             gateReachedForTest = null
             jobFaultForTest = null
+            setAuthAllowsDeviceCredentialForTest = false
             biometricGateHook = null
         }
 

@@ -1,5 +1,6 @@
 package io.blazornative.jni
 
+import androidx.annotation.VisibleForTesting
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import java.util.concurrent.ExecutorService
@@ -164,6 +165,10 @@ class BlazorNativeRuntime(
      */
     /** 17.3 (#425): set by [retire]; the frame callback drops everything once it is. */
     @Volatile private var retired = false
+
+    /** 17.7 test seam: whether [retire] has run on this runtime. RecreationAndroidTest reads it
+     * on the previous Activity's runtime after a rotation, which pins MainActivity's retire() call. */
+    @VisibleForTesting internal val retiredForTest: Boolean get() = retired
 
     /** 17.3 test seam: how many frames reached this runtime after [retire] and were dropped. */
     internal val framesDroppedAfterRetire = java.util.concurrent.atomic.AtomicInteger(0)

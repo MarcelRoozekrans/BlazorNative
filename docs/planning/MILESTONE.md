@@ -81,13 +81,13 @@ features.** The user-visible outcomes:
 
 ## Phases
 
-1. Phase 17.1 — fault attribution (#464, #494) [complete] — a fault is its own dispatch's via the flowing scope; strict-mode loss found by review and fixed; all #494 anchors redded; 0.20.0 BREAKING; #500 filed (#503)
+1. Phase 17.1 — fault attribution (#464, #494) [complete] — a fault is its own dispatch's via the flowing scope; strict-mode loss found by review and fixed; every #494 anchor redded but one, the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`, which no probe-side change can red, as its comment at `:726-728` says; 0.20.0 BREAKING; #500 filed (#503)
 2. Phase 17.2 — Android host-call contract (#440) [complete] — one serial executor per handler, after-auth work off main, 5 pins, Android 233 → 238; #506 filed (#507)
 3. Phase 17.3 — Activity recreation (#425) [complete] — a mount replaces the root; a recreated shell keeps its page and back stack, a fresh one starts at its own route; a replaced root cannot navigate; a new shell's frames are held until its mount; 15 pins, Android 238 → 242; #511 filed (#510)
 4. Phase 17.4 — fault-path parity (#426, #435) [complete] — Android redacts app text in Release logcat like iOS, through one seam and a twin drift pin; the slow-handler warning names the app's handler behind Bn wrappers; Android 242 → 243; #522 filed (#523)
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [complete] — a bounded generator run with a named failure, the native runtime as a Gradle input, one pollUntil; Android 243 → 245; #530 filed (#528)
 6. Phase 17.6 — audit and close [complete] — verdict FAIL: item 11 NOT MET, with 18/85 pins unredded, 26 pins with unentered anchors and 3 overstating register cells; #538 and #537 filed (#536)
-7. Phase 17.7 — pin-standard gaps (#538, #537) [pending]
+7. Phase 17.7 — pin-standard gaps (#538, #537) [active]
 8. Phase 17.8 — re-audit and close [pending]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and

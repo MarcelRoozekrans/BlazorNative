@@ -34,8 +34,9 @@ import java.util.concurrent.TimeUnit
  *     and the emulator's key is per-use auth-bound, so the decrypt throws and completes
  *     AuthFailed. Pin 5 proves only WHERE the after-auth work runs;
  *   - the auth-bound SET's after-auth path on its own: it shares AndroidShellBridge.afterAuth
- *     with getWithAuth, which pin 5 drives, so one hop is pinned for both. The set itself cannot
- *     reach its prompt on the CI emulator, since provisioning its key needs an enrolled biometric;
+ *     with getWithAuth, which pin 5 drives, so one hop is pinned for both. Provisioning the set's
+ *     key needs an enrolled biometric, which the CI emulator lacks; only pin 6 reaches the set's
+ *     prompt, through setAuthAllowsDeviceCredentialForTest, and it drives only a denial;
  *   - the order of an auth-bound request's after-auth work against later requests, #506;
  *   - geolocation and notifications, whose begins #440 does not name;
  *   - the iOS twin: BnBiometricsTests and BnSecureStorageTests pin it since 16.4.
@@ -165,6 +166,54 @@ class AndroidHostCallContractTest {
             assertTrue("no completion after the prompt succeeded", done != null)
             assertEquals("the after-auth KeyStore work ran on ${done!!.thread}: it must run on the secure-storage " +
                 "executor, never on main", "BlazorNative-SecureStorage", done.thread)
+        } finally {
+            SecureHarness.clearPin()
+        }
+    }
+
+    /** Begins [args], denies its prompt from the main thread, as the real prompt answers, and
+     * returns the denial's completion. */
+    private fun denyOnMain(what: String, args: String): Completion {
+        val gateSeen = CountDownLatch(1)
+        var gate: AndroidShellBridge.BiometricGate? = null
+        AndroidShellBridge.biometricGateHook = { g -> gate = g; gateSeen.countDown() }
+        val id = ids.getAndIncrement()
+        bridge.hostCallBegin(id, HostCallOp.SECURE_STORAGE, args)
+        assertTrue("anchor: the $what never reached the prompt", gateSeen.await(10, TimeUnit.SECONDS))
+        var denier = ""
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            denier = Thread.currentThread().name
+            gate!!.deny(SecureStorageStatus.AUTH_FAILED)
+        }
+        assertEquals("anchor: the $what's denial was not driven from the main thread", "main", denier)
+        val done = completionFor(id)
+        assertTrue("no completion after the $what's prompt was denied: a hang", done != null)
+        assertEquals("the $what's denial must complete AuthFailed", SecureStorageStatus.AUTH_FAILED, done!!.status)
+        return done
+    }
+
+    private fun assertOnTheExecutor(what: String, done: Completion) {
+        assertTrue("#537: the denied $what completed on ${done.thread}, the main thread: an auth-bound storage request " +
+            "must complete on the secure-storage executor whether its prompt is granted or denied",
+            done.thread != "main")
+        assertEquals("#537: the denied $what completed on ${done.thread}: it must complete on the " +
+            "secure-storage executor", "BlazorNative-SecureStorage", done.thread)
+    }
+
+    @Test
+    fun a_denied_storage_prompt_completes_on_the_secure_storage_executor() {
+        SecureHarness.setPin()
+        try {
+            AndroidShellBridge.setAuthAllowsDeviceCredentialForTest = true
+            val set = denyOnMain("auth-bound set",
+                """{"action":"set","key":"$key","value":"v","auth":"1"}""")
+            assertOnTheExecutor("auth-bound set", set)
+
+            assertTrue("could not provision the auth-bound key (is a secure lock screen set?)",
+                bridge.writeAuthBoundSecretForTest(key))
+            val get = denyOnMain("getWithAuth",
+                """{"action":"getWithAuth","key":"$key","reason":"test"}""")
+            assertOnTheExecutor("getWithAuth", get)
         } finally {
             SecureHarness.clearPin()
         }

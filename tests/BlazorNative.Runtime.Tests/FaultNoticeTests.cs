@@ -405,17 +405,20 @@ public sealed class FaultNoticeTests
     //     with nothing sent, after a begun call or before one, and with the cancelled-Task arm
     //     in DispatchSyncPart made to throw the cancel-only fact still returned rc 0, so that
     //     arm was not reached. Why is not established here; it rests on that measurement;
-    //   - a host call or fetch begun by a CHILD component during the handler's re-render.
-    //     The re-render is part of the handler's synchronous part, so that call marks the
-    //     dispatch too, and a later render fault in the same synchronous part is a
-    //     FaultNotice with rc 0, not rc 2. The ORDER is pinned: a fault captured before that
-    //     call stays rc 2, AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice;
     //   - a host call or fetch begun by a NAVIGATION SWAP the handler queued. The swap runs
     //     when the synchronous part's scope closes, still inside the export, so the rc counts
     //     its faults; but the scope is no longer this thread's synchronous scope then, so a
     //     call the new page begins never marks the dispatch, and a later fault in the swap
     //     stays rc 2 unless the handler itself had begun a call. That rests on reading
     //     DispatchSyncPart's finally, which restores the thread-bound scope before it drains.
+    //
+    // COVERED SINCE 17.1, and listed above as a gap until 17.7: a host call or fetch begun by
+    // a CHILD component during the handler's re-render. The re-render is part of the
+    // handler's synchronous part, so that call marks the dispatch too, and a later render
+    // fault in the same synchronous part is a FaultNotice with rc 0, not rc 2.
+    // AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0 pins that
+    // rc 0 half, and AFaultBeforeASiblingBeginsAShellCall_IsStillRc2_AndSendsNoNotice pins
+    // the order: a fault captured before that call stays rc 2.
 
     [Fact]
     public void AFaultAfterAnInlineAnsweredHostCall_IsAFaultNotice_AndRc0()
