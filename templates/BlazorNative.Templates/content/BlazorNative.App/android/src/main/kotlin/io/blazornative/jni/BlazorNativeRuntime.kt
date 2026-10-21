@@ -571,7 +571,7 @@ class BlazorNativeRuntime(
         // waited out, within the same 5 s budget, so onFrame sees no frame after this returns.
         // Not from inside a callback, which would wait for itself.
         if (!insideCallback.get()) {
-            while (callbacksInFlight.get() > 0 && System.nanoTime() < deadline) Thread.sleep(1)
+            // 17.8 re-red J2: the in-flight wait removed
         }
         return drained
     }
