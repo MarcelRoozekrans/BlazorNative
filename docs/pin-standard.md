@@ -615,23 +615,25 @@ restating it.
 [the 17.10 re-audit](plans/2026-10-22-milestone-17-reaudit-2.md) §11a. Item 11 grades:
 
 - **every labelled anchor**, meaning an assertion the test's own comment or message calls an
-  anchor. When the label names several statements, as `// anchor: both … ran` does, every line it
-  names is a site;
+  anchor; a cell that calls a line an anchor does not make it one. When the label names several
+  statements, as `// anchor: both … ran` does, every line it names is a site;
 - **every assertion that carries a claim in the test's NAME.** Each separate clause of the name is
   a claim: `ShowsItAndResetsHistory` needs a red on the assertion that shows it and on the one that
   resets history.
 
 Summary sub-clauses and sibling statements next to a redded statement are **not** graded. A phase
-may still record reds for them, and those reds stand; they are just not required. A control that
-plants its forms through one looped statement is one site.
+may still record reds for them, and those reds stand; they are just not required.
 
 **2. The red standard, RS1.** Stated in [the 17.7 record](plans/2026-10-17-phase-17.7-record.md)
 §4 "Rulings" and ratified by the owner on 2026-10-21. A red is a run in which the site fails under
 one mutation of:
 
 1. **Subject code.** The product, or the helper the pin is named for. This is the default.
-2. **A planted input, or a weakened detector,** for drift, scan and stub pins: the source text it
-   scans, a stub it runs, or the detector of a planted-control fact.
+2. **A planted input, or a weakened detector,** for drift, scan and stub pins, or, for a JNA pin, a
+   sample page written only for that test class, with no route: the source text it scans, a stub
+   it runs, or the detector of a planted-control fact. The 17.7 record files a weakened
+   planted-control detector under clause 1, as the fact's subject; this section files it here. The
+   two wordings name the same reds.
 3. **A test fixture or test seam,** only with a written argument that no subject-side red exists
    for that site, saying what was tried, and that the site reds with its own message. A fixture or
    seam red beside a subject-side red is corroboration, not the red.
@@ -651,7 +653,7 @@ git diff --stat <red-commit> HEAD -- <test-file> <subject-file>
 
 Any output means the red is stale, and it is re-run before it is cited. The scar: 17.4's M5 was
 taken before a later commit in the same phase and has been an equivalent mutant ever since, while
-three records and one register cell went on citing it.
+several records and one register cell went on citing it.
 
 ---
 
