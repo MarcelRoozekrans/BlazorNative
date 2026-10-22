@@ -88,7 +88,9 @@ features.** The user-visible outcomes:
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [complete] — a bounded generator run with a named failure, the native runtime as a Gradle input, one pollUntil; Android 243 → 245; #530 filed (#528)
 6. Phase 17.6 — audit and close [complete] — verdict FAIL: item 11 NOT MET, with 18/85 pins unredded, 26 pins with unentered anchors and 3 overstating register cells; #538 and #537 filed (#536)
 7. Phase 17.7 — pin-standard gaps (#538, #537) [complete] — every M17 pin has a recorded red under the ratified RS1; #537's hop; retire() proven on device; Android 245 → 247; #543, #544, #551 filed (#545)
-8. Phase 17.8 — re-audit and close [active]
+8. Phase 17.8 — re-audit and close [complete] — verdict FAIL: item 11 NOT MET on #557, 13 assertion sites without a red across 10 pins plus three overclaiming cells; the population was re-derived from git (#558)
+9. Phase 17.9 — pin-standard gaps, second pass (#557) [pending]
+10. Phase 17.10 — re-audit and close [pending]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
 > 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.

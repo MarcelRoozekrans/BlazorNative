@@ -3880,12 +3880,35 @@ the app's handler through a forwarding hook.
 - **Counts:** Android 245 → 247.
 - **Issues:** #537 and #538 were closed by the merge; #543, #544 and #551 were filed.
 
-#### Phase 17.8: Re-audit and close [status: active]
+#### Phase 17.8: Re-audit and close [status: complete]
 **Goal:** Re-audit all eleven DoD items on live evidence, as 16.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-21-phase-17.8-design.md`](../superpowers/specs/2026-10-21-phase-17.8-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-21-phase-17.8-reaudit.md`](../superpowers/plans/2026-10-21-phase-17.8-reaudit.md)
+**Record:** [`docs/plans/2026-10-21-milestone-17-reaudit.md`](../plans/2026-10-21-milestone-17-reaudit.md)
+**Completed:** 2026-10-22 · [PR #558](https://github.com/MarcelRoozekrans/BlazorNative/pull/558).
+- **Verdict:** **FAIL.** Item 11 is NOT MET on #557: 13 assertion sites across 10 pins have no red under RS1, 7 anchors and 6 main assertions, and register cells `:499`, `:501`–`:502` and `:552` overclaim.
+- **The re-derivation:** it built the population from git rather than from the audit's list, and found what 17.6 and 17.7 missed.
+- **Owner ruling, 2026-10-22:** a pin's main assertions need their own red.
+- **The other items:** items 1, 2, 3, 5, 7 and 10 are MET; items 4, 6, 8 and 9 are MET NARROWLY.
+- **Tests:** CI .NET 1372/0 and JVM 206/0; Android 247/0; iOS 288/0.
+- **Next:** 17.9, then 17.10.
+
+
+#### Phase 17.9: Pin-standard gaps, second pass [status: pending]
+**Goal:** Close #557, by owner decision on 2026-10-22.
+- Record a red under RS1 for each of the 13 assertion sites the 17.8 re-audit found: 7 anchors and 6 main assertions, across 10 pins. A pin that will not red is reworked to be stronger, or the RS1 clause-3 argument is written for it.
+- Correct the register cells that overclaim, `docs/pin-standard.md` `:499`, `:501`–`:502` and `:552`.
+- Build the coverage check from git, not from an audit's list, so the 17.10 re-audit re-derives the same population.
+
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 17.10: Re-audit and close [status: pending]
+**Goal:** Re-audit all eleven DoD items on live evidence, as 17.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
+**Surface:** Docs
+**HelpWanted:** no
 
 ---
 
