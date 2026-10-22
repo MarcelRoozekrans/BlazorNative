@@ -3913,10 +3913,12 @@ the app's handler through a forwarding hook.
 - **Register:** the overclaiming cells are corrected, and the named limits now quote 11 of 15.
 - **Closed:** #557.
 
-#### Phase 17.10: Re-audit and close [status: pending]
+#### Phase 17.10: Re-audit and close [status: active]
 **Goal:** Re-audit all eleven DoD items on live evidence, as 17.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-22-phase-17.10-design.md`](../superpowers/specs/2026-10-22-phase-17.10-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.10-reaudit.md`](../superpowers/plans/2026-10-22-phase-17.10-reaudit.md)
 
 ---
 
