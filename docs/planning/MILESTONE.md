@@ -87,8 +87,10 @@ features.** The user-visible outcomes:
 4. Phase 17.4 — fault-path parity (#426, #435) [complete] — Android redacts app text in Release logcat like iOS, through one seam and a twin drift pin; the slow-handler warning names the app's handler behind Bn wrappers; Android 242 → 243; #522 filed (#523)
 5. Phase 17.5 — test-infrastructure honesty (#454, #424, #458) [complete] — a bounded generator run with a named failure, the native runtime as a Gradle input, one pollUntil; Android 243 → 245; #530 filed (#528)
 6. Phase 17.6 — audit and close [complete] — verdict FAIL: item 11 NOT MET, with 18/85 pins unredded, 26 pins with unentered anchors and 3 overstating register cells; #538 and #537 filed (#536)
-7. Phase 17.7 — pin-standard gaps (#538, #537) [active]
-8. Phase 17.8 — re-audit and close [pending]
+7. Phase 17.7 — pin-standard gaps (#538, #537) [complete] — every M17 pin has a recorded red under the ratified RS1; #537's hop; retire() proven on device; Android 245 → 247; #543, #544, #551 filed (#545)
+8. Phase 17.8 — re-audit and close [complete] — verdict FAIL: item 11 NOT MET on #557, 13 assertion sites without a red across 10 pins plus three overclaiming cells; the population was re-derived from git (#558)
+9. Phase 17.9 — pin-standard gaps, second pass (#557) [pending]
+10. Phase 17.10 — re-audit and close [pending]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
 > 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.
@@ -119,3 +121,4 @@ None. Every decision was taken on 2026-10-14; see the design.
 | Date | Verdict | Gaps |
 |---|---|---|
 | 2026-10-17 | FAIL | item 11 (#538): 18 of 85 new pins have no recorded red, 9 of them named nowhere; 26 more pins have an anchor no recorded mutation enters; register cells `pin-standard.md:553`, `:554` and `:557` claim more than their record. Items 4, 5, 6, 8 and 9 MET NARROWLY: the #494 cancellation entry, a denied prompt completing on main (#537), #511 and the unproven `retire()` wiring, #522, #530. [Report](../plans/2026-10-17-milestone-17-audit.md) |
+| 2026-10-22 | FAIL | item 11 (#557): 13 assertion sites across 10 pins have no red under RS1, counting one assertion at one file:line as a site. Two anchors have no red at all, five anchors rest on fixture or seam reds with no clause-3 argument, and six are main assertions red only on a precondition or another assertion, `SlowHandlerWarningTests.cs:701`–`:702` among them. Register cells `pin-standard.md:501`–`:502` and `:552` claim more than their rows. Items 4, 6, 8 and 9 are MET NARROWLY: the cancellation rc assertion, #511, #522 and #530. Two 17.6 narrowings are lifted: #537, so item 5 is MET, and item 6's unproven `retire()` wiring. The named limits at `GeneratorRunTests :213` and `:83`, both 11 of 15 today, and `RecreationAndroidTest :116`, 6 of 6, are MET NARROWLY. Next: gap phase 17.9. [Report](../plans/2026-10-21-milestone-17-reaudit.md) |
