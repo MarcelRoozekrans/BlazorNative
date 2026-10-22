@@ -13,8 +13,8 @@
 - Its verdicts are a list of things to re-check, not evidence.
 - Every number below was measured on `d31e9989`, with the command shown beside it.
 
-**Verdict:** **FAIL**: 6 MET, 4 MET NARROWLY, 1 NOT MET (item 11). See [the verdict](#verdict).
-- One of the six MET is item 2, which is provisional until Task 4 fills in its lanes.
+**Verdict:** **FAIL**: 5 MET, 5 MET NARROWLY, 1 NOT MET (item 11). See [the verdict](#verdict).
+- Item 2 is MET NARROWLY on #564, a new CI flake that needed one re-run.
 - Next comes a small gap phase, 17.11, on #561, then a short re-audit. M17 stays open.
 
 ## Scorecard
@@ -22,7 +22,7 @@
 | # | DoD item | Verdict |
 |---|---|---|
 | 1 | All planned phases complete | **MET**: 17.1–17.9 complete; 17.10 is this re-audit |
-| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET, provisional**: local .NET 1372/0/0 on `d31e9989`. The CI, Android and iOS cells are **[filled in Task 4 from the PR's lanes, #551 rule applied]** |
+| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET NARROWLY** (#564): Android 247/0 and iOS 288/0 at attempt 1 on the PR head `026777c0`. CI `build-test` failed at attempt 1 on a new flake, #564, and passed at attempt 2 with .NET 1372/0 and JVM 206/0. Local .NET 1372/0/0 on `d31e9989` |
 | 3 | #464 is fixed as decided | **MET** |
 | 4 | #494 is closed | **MET NARROWLY**: the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`, still has no red. The test names it, and so does `MILESTONE.md:84` |
 | 5 | #440 is fixed | **MET** |
@@ -92,17 +92,18 @@ for i in 464 494 440 425 426 435 454 424 458 537 538 557; do
 #   #537, #538  CLOSED 2026-10-21  by #545       #557  CLOSED 2026-10-22  by #560
 ```
 
-## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET, provisional**
+## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET NARROWLY** (#564)
 
 > All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's `headSha`
 > compared against the PR head
 
 | lane | run | attempt | `headSha` | result | source |
 |---|---|---|---|---|---|
-| .NET, CI | **[filled in Task 4 from the PR's lanes, #551 rule applied]** | | | | |
-| JVM, CI | **[filled in Task 4 from the PR's lanes, #551 rule applied]** | | | | |
-| Android | **[filled in Task 4 from the PR's lanes, #551 rule applied]** | | | | |
-| iOS | **[filled in Task 4 from the PR's lanes, #551 rule applied]** | | | | |
+| .NET, CI | `ci.yml` `build-test` [39764450069](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39764450069), PR #563 | 1 | `026777c0` | **1196 / 2 / 0**, red: `FaultNoticeTests` `:145` "dispatch_event for handler 15 did not return within 1s", then the next fact at `:200` saw handler 15's leaked notice. Filed as **#564** | `Failed!  - Failed: 2, Passed: 1196` |
+| .NET, CI | same run | 2 | `026777c0` | **1372 / 0 / 0** | `dotnet test totals across 3 projects: passed=1372 skipped=0 failed=0` |
+| JVM, CI | same run | 2 | `026777c0` | **206 / 0 / 0** | `JVM test totals across 34 suites: tests=206 failures=0 errors=0 skipped=0` |
+| Android | `android-instrumented.yml` [39764450055](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39764450055), PR #563 | 1 | `026777c0` | **247 / 0 / 0** | `Instrumented totals across 1 suite(s): tests=247 failures=0 errors=0 skipped=0` |
+| iOS | `ios.yml` [39764450092](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39764450092), PR #563 | 1 | `026777c0` | **288 / 0** | `XCTest cases: passed=288 failed=0` |
 | .NET, local | detached worktree of `d31e9989` | 1 | `d31e9989` | **1372 / 0 / 0** | Analyzers 27, Renderer 147, Runtime 1198, exit 0 |
 
 ```bash
@@ -112,7 +113,7 @@ dotnet test BlazorNative.sln -c Debug --nologo      # one run, before any mutati
 - **One local run, not five.** The five-run soak existed for #454, and #454 is closed. The design says one.
 - **The device lanes** run on this phase's PR. It is docs-only against `d31e9989`, so every lane exercises HEAD's code.
 
-**Grade: MET, provisional.** Task 4 sets the final grade by these rules:
+**Grade: MET NARROWLY, citing #564.** Both device lanes are green at attempt 1 on the PR head `026777c0`, and `git diff --stat origin/main 026777c0 -- ':!docs'` is empty. `build-test` failed at attempt 1 on a signature that is not #551's. That failure was diagnosed: a 1 s dispatch bound at `FaultNoticeTests.cs:145` missed on the Windows runner, and the stuck dispatch leaked a notice into the next fact. The code passed `ci.yml` on run 39750959240, and the signature is in none of the 15 failed runs before it. It is filed as #564, and the failed job was re-run once and passed. By the rules below, any other failure is diagnosed before the grade is set. A test failure that needed a re-run narrows the item. The rules the grade was set by:
 - Only attempt 1 counts, and each lane's `headSha` must equal the PR head.
 - If `build-test` is green at attempt 1, and `git diff --stat origin/main <head> -- ':!docs'` is empty, item 2 is **MET**.
 - If `build-test` fails on #551's signature, it is diagnosed against that signature and its job is re-run once. The signature is `ShutdownQuiescenceTests.cs:300` at `:248`, "completing the held call delivered no frame even without shutdown". Both attempts are recorded, and item 2 is **MET NARROWLY**, citing #551.
@@ -640,6 +641,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
 | **#561** | m17 pins: twenty-eight name-claim and anchor sites with no assertion red, and three register cells that claim more than their rows | 11 | **fails item 11.** Filed by this re-audit | **17.11**, the gap phase, before M18 |
 | **#562** | m17 pins: per-statement coverage beyond the name and anchor unit, 30 sites with no recorded red | 11 | outside the ruled unit, so it does not narrow item 11. Filed by this re-audit | M18 |
 | #551 | flaky: ShutdownQuiescenceTests' positive control sees no frame for 10 s on the windows ci runner | 2 | narrows item 2 only if it fires on this phase's `build-test`; Task 4 applies the rule. **It has hit 3 times. The owner may move it to the front of M18** | 18.7 |
+| #564 | flaky: a FaultNoticeTests dispatch misses its 1 s bound on the windows ci runner and leaks a notice into the next fact | 2 | narrows item 2: it fired on this phase's PR at attempt 1, run 39764450069 | M18 18.7, beside #551 |
 | #500 | A re-render or queued work from another dispatch's continuation is charged to the window it runs in | 3 | adjacent: item 3 is about a fault A's own code raises. Needs a decision | 18.1 |
 | #506 | Android secure storage: an auth-bound set's encrypt runs after later requests on the same key | 5 | adjacent: the item says nothing about order across a prompt | 18.2 |
 | #511 | Android: an Activity recreated during boot can leave the new Activity blank | 6 | **narrows item 6** | 18.3 |
@@ -666,8 +668,9 @@ Every one of these is `OPEN` on 2026-10-22, from `gh issue view <n> --json state
 
 **FAIL.** Item 11 is NOT MET, so M17 cannot close.
 
-- **Six items are MET:** 1, 2, 3, 5, 7 and 10. Item 2 is provisional until Task 4 fills in its lanes.
-- **Four are MET NARROWLY,** each with its reason:
+- **Five items are MET:** 1, 3, 5, 7 and 10.
+- **Five are MET NARROWLY,** each with its reason:
+  - **item 2:** #564, a new CI flake, diagnosed and re-run once;
   - **item 4:** the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`;
   - **item 6:** #511;
   - **item 8:** #522;
