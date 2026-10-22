@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.1...v0.20.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **17.7:** a denied storage prompt completes on its executor, and every M17 pin has a recorded red ([#545](https://github.com/MarcelRoozekrans/BlazorNative/issues/545)) ([262177c](https://github.com/MarcelRoozekrans/BlazorNative/commit/262177ccf354da0bae1d82ca69cbe0783c5874e2))
+
 ## [0.20.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.0...v0.20.1) (2026-10-18)
 
 
