@@ -22,7 +22,7 @@ command beside it.
 | # | DoD item | Verdict |
 |---|---|---|
 | 1 | All planned phases complete | **MET**: 17.1–17.7 complete on `36b2716f`; 17.8 is this re-audit |
-| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET, provisional**: Android 247/0 and iOS 288/0 on `36b2716f`, both attempt 1; 5 of 5 local .NET runs 1372/0. The CI cell is filled in Task 5 |
+| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET**: CI `build-test` on the PR head `54d662b4`, .NET 1372/0/0 and JVM 206/0/0, attempt 1, no #551 hit; Android 247/0 and iOS 288/0 on `36b2716f`, both attempt 1; 5 of 5 local .NET runs 1372/0 |
 | 3 | #464 is fixed as decided | **MET** |
 | 4 | #494 is closed | **MET NARROWLY**: the cancellation fact's rc assertion still has no red; the test and `MILESTONE.md:84` now both name it |
 | 5 | #440 is fixed | **MET**: a denied prompt now completes on the secure-storage executor (#537 closed by #545), pinned on device. The 17.6 narrowing is lifted |
@@ -74,15 +74,15 @@ for i in 464 494 440 425 426 435 454 424 458 537 538; do
 #   #537, #538  CLOSED 2026-10-21T18:52  by #545
 ```
 
-## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET, provisional**
+## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET**
 
 > All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's `headSha`
 > compared against the PR head
 
 | lane | run | attempt | `headSha` | result | source |
 |---|---|---|---|---|---|
-| .NET, CI | **[filled in Task 5 from the PR's ci.yml build-test run, #551 rule applied]** | | | | |
-| JVM, CI | **[filled in Task 5 from the PR's ci.yml build-test run, #551 rule applied]** | | | | |
+| .NET, CI | `ci.yml` `build-test` [39721776972](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39721776972), PR #558 | 1 | `54d662b4` | **1372 / 0 / 0** | `dotnet test totals across 3 projects: passed=1372 skipped=0 failed=0` |
+| JVM, CI | `ci.yml` `build-test` [39721776972](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39721776972), PR #558 | 1 | `54d662b4` | **206 / 0 / 0** | `JVM test totals across 34 suites: tests=206 failures=0 errors=0 skipped=0` |
 | Android | `android-instrumented.yml` [39667200369](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39667200369), dispatched on `main` | 1 | `36b2716f` | **247 / 0 / 0** | `Instrumented totals across 1 suite(s): tests=247 failures=0 errors=0 skipped=0` |
 | iOS | `ios.yml` [39668770271](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39668770271), dispatched on `main` | 1 | `36b2716f` | **288 / 0** | `XCTest cases: passed=288 failed=0` |
 
@@ -140,8 +140,9 @@ cd src/BlazorNative.Jni && bash ./gradlew testDebugUnitTest --rerun
   These are the JNA tests, and the cause is **#491**, open and adjacent: Gradle points
   `jna.library.path` at the win-x64 publish. The same shape appeared in 17.6.
 
-**Grade: MET, provisional.** Both device lanes are green on HEAD at attempt 1, and the local .NET
-suite passed five runs out of five. The grade waits on the CI cell above.
+**Grade: MET.** Both device lanes are green on HEAD at attempt 1, and the local .NET suite passed
+five runs out of five. CI `build-test` run 39721776972 is green at attempt 1 on the PR head `54d662b4`, with no #551 hit, and
+`git diff --stat origin/main 54d662b4 -- ':!docs'` is empty, so the first rule below applies.
 - If `build-test` is green at attempt 1 on a PR head whose `git diff --stat origin/main <head> --
   ':!docs'` is empty, item 2 is **MET**.
 - If it fails on #551's signature, `ShutdownQuiescenceTests.cs:300` at `:248`, "completing the held
@@ -953,7 +954,7 @@ of 2026-10-21.
 
 **FAIL.** Item 11 is NOT MET, so M17 cannot close.
 
-- **Six items are MET:** 1, 2 (provisional, pending Task 5's CI cell), 3, 5, 7 and 10.
+- **Six items are MET:** 1, 2, 3, 5, 7 and 10.
 - **Four are MET NARROWLY,** each with its reason:
   - **item 4:** the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`, still has no red.
     It is named in the test at `:726`–`:728` and in `MILESTONE.md:84`.
