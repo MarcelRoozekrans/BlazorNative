@@ -1758,7 +1758,7 @@ public sealed class NativeRenderer : BlazorRenderer
                         if (Handler.Target is IForwardsUiEvent wrapper
                             && wrapper.ForwardedHandler(EventName, Handler) is { } forwarded
                             && OwnerOf(forwarded) is { Framework: false } app)
-                            return ($"{app.Declaring}::{app.Method}#{EventName}", $"{app.Declaring}.{app.Method}");
+                            return ($"{app.Declaring}::{app.Method}#{EventName}", $"{app.Declaring}.{app.Method} via {Component.FullName}");
                         // A FRAMEWORK method is shared by every call site that uses it: each
                         // element @bind of one value type runs Blazor's own binder lambda, and a
                         // BlazorNative.Components wrapper runs its own handler for every
