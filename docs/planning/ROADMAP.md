@@ -3896,7 +3896,7 @@ the app's handler through a forwarding hook.
 - **Next:** 17.9, then 17.10.
 
 
-#### Phase 17.9: Pin-standard gaps, second pass [status: pending]
+#### Phase 17.9: Pin-standard gaps, second pass [status: active]
 **Goal:** Close #557, by owner decision on 2026-10-22.
 - Record a red under RS1 for each of the 13 assertion sites the 17.8 re-audit found: 7 anchors and 6 main assertions, across 10 pins. A pin that will not red is reworked to be stronger, or the RS1 clause-3 argument is written for it.
 - Correct the register cells that overclaim, `docs/pin-standard.md` `:499`, `:501`–`:502` and `:552`.
@@ -3904,6 +3904,9 @@ the app's handler through a forwarding hook.
 
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-22-phase-17.9-design.md`](../superpowers/specs/2026-10-22-phase-17.9-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.9-pin-gaps-2.md`](../superpowers/plans/2026-10-22-phase-17.9-pin-gaps-2.md)
+**Record:** [`docs/plans/2026-10-22-phase-17.9-record.md`](../plans/2026-10-22-phase-17.9-record.md)
 
 #### Phase 17.10: Re-audit and close [status: pending]
 **Goal:** Re-audit all eleven DoD items on live evidence, as 17.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
