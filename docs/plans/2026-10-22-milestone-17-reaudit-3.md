@@ -13,7 +13,7 @@
 - Its verdicts are a list of things to re-check, not evidence.
 - Every number below was measured on `a294e924`, with the command shown beside it.
 
-**Verdict:** **PASS WITH FINDINGS**: 5 MET, 5 MET NARROWLY, item 2 **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**. See [the verdict](#verdict).
+**Verdict:** **PASS WITH FINDINGS**: 6 MET, 5 MET NARROWLY. See [the verdict](#verdict).
 - Item 11 is MET NARROWLY, citing #568. Every site has a valid, fresh RS1 red with a quoted message: 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it. Nine of those quotes are recorded for the first time in [§11c](#11c-f1-nine-messages-quoted-here-for-the-first-time) of this report.
 - One finding is filed: **#568**, four register cells that cite stale reds without naming them stale or citing a re-run. No cell claims more than its rows, but Rule 7's part 4 says a stale red is re-run before it is cited, so item 11 is narrowed on it.
 
@@ -22,7 +22,7 @@
 | # | DoD item | Verdict |
 |---|---|---|
 | 1 | All planned phases complete | **MET**: 17.1–17.11 complete; 17.12 is this re-audit |
-| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**. Local .NET 1372/0/0 on `a294e924` |
+| 2 | All tests passing, both device lanes dispatched, `headSha` compared | **MET**: on the PR head `a60c4e71`, all at attempt 1 with no #551 or #564 hit, CI .NET 1372/0 and JVM 206/0, Android 247/0, iOS 288/0. Local .NET 1372/0/0 on `a294e924` |
 | 3 | #464 is fixed as decided | **MET** |
 | 4 | #494 is closed | **MET NARROWLY**: the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`, still has no red. The test names it, and so does `MILESTONE.md:84` |
 | 5 | #440 is fixed | **MET** |
@@ -88,17 +88,17 @@ for i in 464 494 440 425 426 435 454 424 458 537 538 557 561; do
 #   #561        CLOSED 2026-10-22  by #567
 ```
 
-## 2. All tests passing, both device lanes dispatched, `headSha` compared — **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**
+## 2. All tests passing, both device lanes dispatched, `headSha` compared — **MET**
 
 > All tests passing — .NET, JVM, **and both device lanes dispatched**, with each lane's `headSha`
 > compared against the PR head
 
 | lane | run | attempt | `headSha` | result | source |
 |---|---|---|---|---|---|
-| .NET, CI | **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]** | | | | |
-| JVM, CI | **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]** | | | | |
-| Android | **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]** | | | | |
-| iOS | **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]** | | | | |
+| .NET, CI | `ci.yml` `build-test` [39833923842](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39833923842), PR #569 | 1 | `a60c4e71` | **1372 / 0 / 0** | `dotnet test totals across 3 projects: passed=1372 skipped=0 failed=0`; no #551 or #564 hit |
+| JVM, CI | same run | 1 | `a60c4e71` | **206 / 0 / 0** | `JVM test totals across 34 suites: tests=206 failures=0 errors=0 skipped=0` |
+| Android | `android-instrumented.yml` [39833923969](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39833923969), PR #569 | 1 | `a60c4e71` | **247 / 0 / 0** | `Instrumented totals across 1 suite(s): tests=247 failures=0 errors=0 skipped=0` |
+| iOS | `ios.yml` [39833923852](https://github.com/MarcelRoozekrans/BlazorNative/actions/runs/39833923852), PR #569 | 1 | `a60c4e71` | **288 / 0** | `XCTest cases: passed=288 failed=0` |
 | .NET, local | detached worktree of `a294e924` | 1 | `a294e924` | **1372 / 0 / 0** | Analyzers 27, Renderer 147, Runtime 1198, exit 0; no #551 or #564 hit |
 
 ```bash
@@ -108,7 +108,7 @@ dotnet test BlazorNative.sln -c Debug --nologo      # one run, before any mutati
 - **One local run, not five,** as in 17.10: the five-run soak existed for #454, and #454 is closed.
 - **The device lanes** run on this phase's PR. It is docs-only against `a294e924`, so every lane exercises HEAD's code.
 
-**The rules the grade is set by,** unchanged from 17.10:
+**Grade: MET.** Every lane is green at attempt 1 on the PR head `a60c4e71`, and `git diff --stat origin/main a60c4e71 -- ':!docs'` is empty. **The rules the grade is set by,** unchanged from 17.10:
 - Only attempt 1 counts, and each lane's `headSha` must equal the PR head.
 - If `build-test` is green at attempt 1, and `git diff --stat origin/main <head> -- ':!docs'` is empty, item 2 is **MET**.
 - If `build-test` fails on #551's signature, `ShutdownQuiescenceTests.cs:300` at `:248`, "completing the held call delivered no frame even without shutdown", it is diagnosed against that signature and its job is re-run once. Both attempts are recorded, and item 2 is **MET NARROWLY**, citing #551.
@@ -477,16 +477,15 @@ Each issue is judged against the item it touches. None blocks the close on its o
 
 ## Verdict
 
-**PASS WITH FINDINGS**, provisional on item 2's lanes in Task 4.
+**PASS WITH FINDINGS.** M17 closes, and `complete-milestone` follows with no tag.
 
-- **Five items are MET:** 1, 3, 5, 7 and 10.
+- **Six items are MET:** 1, 2, 3, 5, 7 and 10.
 - **Five are MET NARROWLY,** each with its reason:
   - **item 4:** the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`;
   - **item 6:** #511;
   - **item 8:** #522;
   - **item 9:** #530;
   - **item 11:** #568, four cells citing stale reds without their re-run. Every site still has a valid, fresh, quoted RS1 red, 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it. The three named limits are MET NARROWLY within it.
-- **Item 2 is pending:** local .NET 1372/0/0 on `a294e924`; **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**.
 
 **The findings:**
 - **F1,** nine sites whose red was recorded by line only. Closed here by quoting their messages from a re-run on HEAD, §11c.
