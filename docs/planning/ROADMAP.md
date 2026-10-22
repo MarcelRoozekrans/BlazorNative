@@ -3931,7 +3931,7 @@ the app's handler through a forwarding hook.
 - **Item 2 MET NARROWLY** on a new CI flake, #564.
 
 
-#### Phase 17.11: Pin-standard gaps, third pass [status: pending]
+#### Phase 17.11: Pin-standard gaps, third pass [status: active]
 **Goal:** Close #561, by owner decision on 2026-10-22.
 - Write item 11's site unit and the red standard RS1 into `docs/pin-standard.md` as a rule, so later audits grade against a fixed unit.
 - Record an RS1 red for each of #561's 28 sites, including replacing the crash and NPE reds with assertion failures.
@@ -3940,6 +3940,9 @@ the app's handler through a forwarding hook.
 
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-22-phase-17.11-design.md`](../superpowers/specs/2026-10-22-phase-17.11-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.11-pin-gaps-3.md`](../superpowers/plans/2026-10-22-phase-17.11-pin-gaps-3.md)
+**Record:** [`docs/plans/2026-10-22-phase-17.11-record.md`](../plans/2026-10-22-phase-17.11-record.md)
 
 #### Phase 17.12: Re-audit and close [status: pending]
 **Goal:** Re-audit M17 against the written site unit. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
