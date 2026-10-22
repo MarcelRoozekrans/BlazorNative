@@ -3913,12 +3913,38 @@ the app's handler through a forwarding hook.
 - **Register:** the overclaiming cells are corrected, and the named limits now quote 11 of 15.
 - **Closed:** #557.
 
-#### Phase 17.10: Re-audit and close [status: active]
+#### Phase 17.10: Re-audit and close [status: complete]
 **Goal:** Re-audit all eleven DoD items on live evidence, as 17.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-22-phase-17.10-design.md`](../superpowers/specs/2026-10-22-phase-17.10-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.10-reaudit.md`](../superpowers/plans/2026-10-22-phase-17.10-reaudit.md)
+**Record:** [`docs/plans/2026-10-22-milestone-17-reaudit-2.md`](../plans/2026-10-22-milestone-17-reaudit-2.md)
+**Completed:** 2026-10-22 · [PR #563](https://github.com/MarcelRoozekrans/BlazorNative/pull/563).
+- **Verdict: FAIL.** The owner fixed item 11's site unit: every labelled anchor, plus the assertions that carry the claim in the test's name.
+- **Item 11 NOT MET** under that unit, on #561:
+  - 28 sites in 20 pins have no red.
+  - 17.4's M5 has gone stale and no longer reds.
+  - One red is a crash and one is a bare NPE.
+  - Three register cells overclaim.
+- **Deferred to M18:** the broader per-statement coverage, #562.
+- **Item 2 MET NARROWLY** on a new CI flake, #564.
+
+
+#### Phase 17.11: Pin-standard gaps, third pass [status: pending]
+**Goal:** Close #561, by owner decision on 2026-10-22.
+- Write item 11's site unit and the red standard RS1 into `docs/pin-standard.md` as a rule, so later audits grade against a fixed unit.
+- Record an RS1 red for each of #561's 28 sites, including replacing the crash and NPE reds with assertion failures.
+- Correct the overclaiming register cells, PS `:558`, `:552` and `:501`–`:502`.
+- Re-run the three device reds taken before later edits: S2 `:102`, S3 `:114` and L1a `:88`.
+
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 17.12: Re-audit and close [status: pending]
+**Goal:** Re-audit M17 against the written site unit. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
+**Surface:** Docs
+**HelpWanted:** no
 
 ---
 
