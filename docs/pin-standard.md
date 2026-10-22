@@ -605,6 +605,54 @@ the red after — a fix claimed without the before is a fix nobody can check. Wh
 check the reported `file:line` is the one a human would open; line-number fidelity through a
 stripper is exactly the kind of thing that breaks silently during a refactor.
 
+### Grading a pin: sites and reds
+
+A milestone audit's item 11 grades pins by **site**, and a site is covered only by a **red** that
+meets the four parts below. Grade against this section; a cell or record cites it instead of
+restating it.
+
+**1. The site unit.** By owner ruling, 2026-10-22, stated in
+[the 17.10 re-audit](plans/2026-10-22-milestone-17-reaudit-2.md) §11a. Item 11 grades:
+
+- **every labelled anchor**, meaning an assertion the test's own comment or message calls an
+  anchor. When the label names several statements, as `// anchor: both … ran` does, every line it
+  names is a site;
+- **every assertion that carries a claim in the test's NAME.** Each separate clause of the name is
+  a claim: `ShowsItAndResetsHistory` needs a red on the assertion that shows it and on the one that
+  resets history.
+
+Summary sub-clauses and sibling statements next to a redded statement are **not** graded. A phase
+may still record reds for them, and those reds stand; they are just not required. A control that
+plants its forms through one looped statement is one site.
+
+**2. The red standard, RS1.** Stated in [the 17.7 record](plans/2026-10-17-phase-17.7-record.md)
+§4 "Rulings" and ratified by the owner on 2026-10-21. A red is a run in which the site fails under
+one mutation of:
+
+1. **Subject code.** The product, or the helper the pin is named for. This is the default.
+2. **A planted input, or a weakened detector,** for drift, scan and stub pins: the source text it
+   scans, a stub it runs, or the detector of a planted-control fact.
+3. **A test fixture or test seam,** only with a written argument that no subject-side red exists
+   for that site, saying what was tried, and that the site reds with its own message. A fixture or
+   seam red beside a subject-side red is corroboration, not the red.
+
+Deleting or relaxing an assertion is never a red.
+
+**3. Its own assertion.** A red counts for a site only when **that site's assertion fails, at its
+own line, with its own message.** A process crash, a bare or unrelated exception, or an earlier
+line failing first does not count for the site, even when the test goes red.
+
+**4. Staleness.** A red is stale once its test file or its subject file has changed since **the
+red's own commit**. The phase's squash commit is not the reference point. Check with:
+
+```
+git diff --stat <red-commit> HEAD -- <test-file> <subject-file>
+```
+
+Any output means the red is stale, and it is re-run before it is cited. The scar: 17.4's M5 was
+taken before a later commit in the same phase and has been an equivalent mutant ever since, while
+three records and one register cell went on citing it.
+
 ---
 
 ## Rule 8 — Consolidate, do not port
