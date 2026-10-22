@@ -81,7 +81,7 @@ class BlazorNativeRuntime(
                 // NativeFrameAdapter.read copies everything (arena memory is
                 // valid only during this invocation), so onFrame receives a
                 // fully detached RenderFrame.
-                onFrame(NativeFrameAdapter.read(frame))
+                NativeFrameAdapter.read(frame) // 17.11 F1r: read, never delivered to onFrame
             } catch (t: Throwable) {
                 onError("frame dropped (adapter/consumer threw)", t)
             } finally {
