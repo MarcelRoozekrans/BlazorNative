@@ -89,7 +89,7 @@ features.** The user-visible outcomes:
 6. Phase 17.6 — audit and close [complete] — verdict FAIL: item 11 NOT MET, with 18/85 pins unredded, 26 pins with unentered anchors and 3 overstating register cells; #538 and #537 filed (#536)
 7. Phase 17.7 — pin-standard gaps (#538, #537) [complete] — every M17 pin has a recorded red under the ratified RS1; #537's hop; retire() proven on device; Android 245 → 247; #543, #544, #551 filed (#545)
 8. Phase 17.8 — re-audit and close [complete] — verdict FAIL: item 11 NOT MET on #557, 13 assertion sites without a red across 10 pins plus three overclaiming cells; the population was re-derived from git (#558)
-9. Phase 17.9 — pin-standard gaps, second pass (#557) [active]
+9. Phase 17.9 — pin-standard gaps, second pass (#557) [complete] — 29 sites across 10 pins, all with an RS1 red (17 subject, 12 detector); cells corrected (#560)
 10. Phase 17.10 — re-audit and close [pending]
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
