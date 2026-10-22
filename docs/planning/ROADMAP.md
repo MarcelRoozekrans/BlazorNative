@@ -3895,6 +3895,21 @@ the app's handler through a forwarding hook.
 - **Tests:** CI .NET 1372/0 and JVM 206/0; Android 247/0; iOS 288/0.
 - **Next:** 17.9, then 17.10.
 
+
+#### Phase 17.9: Pin-standard gaps, second pass [status: pending]
+**Goal:** Close #557, by owner decision on 2026-10-22.
+- Record a red under RS1 for each of the 13 assertion sites the 17.8 re-audit found: 7 anchors and 6 main assertions, across 10 pins. A pin that will not red is reworked to be stronger, or the RS1 clause-3 argument is written for it.
+- Correct the register cells that overclaim, `docs/pin-standard.md` `:499`, `:501`–`:502` and `:552`.
+- Build the coverage check from git, not from an audit's list, so the 17.10 re-audit re-derives the same population.
+
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 17.10: Re-audit and close [status: pending]
+**Goal:** Re-audit all eleven DoD items on live evidence, as 17.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
+**Surface:** Docs
+**HelpWanted:** no
+
 ---
 
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
