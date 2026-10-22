@@ -3880,10 +3880,12 @@ the app's handler through a forwarding hook.
 - **Counts:** Android 245 → 247.
 - **Issues:** #537 and #538 were closed by the merge; #543, #544 and #551 were filed.
 
-#### Phase 17.8: Re-audit and close [status: pending]
+#### Phase 17.8: Re-audit and close [status: active]
 **Goal:** Re-audit all eleven DoD items on live evidence, as 16.8 did. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-21-phase-17.8-design.md`](../superpowers/specs/2026-10-21-phase-17.8-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-21-phase-17.8-reaudit.md`](../superpowers/plans/2026-10-21-phase-17.8-reaudit.md)
 
 ---
 
