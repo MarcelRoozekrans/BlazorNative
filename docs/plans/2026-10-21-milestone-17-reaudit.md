@@ -31,7 +31,7 @@ command beside it.
 | 8 | #435 is fixed by a forwarding hook | **MET NARROWLY**: for a bound input with `:after`, the warning does not name the app's method (#522) |
 | 9 | #454, #424 and #458 are fixed | **MET NARROWLY**: the stall names the script, not the stalled command inside it (#530) |
 | 10 | No ABI change | **MET**: the same 10 exports, the 80-byte struct and `wire-vocabulary.json` are unchanged across the range |
-| 11 | Every new pin conforms to the pin standard | **NOT MET** (#557): 11 anchors or main assertions across 10 pins have no red under RS1, and two register cells claim more than their rows. Three named limits are MET NARROWLY |
+| 11 | Every new pin conforms to the pin standard | **NOT MET** (#557): 13 assertion sites across 10 pins have no red under RS1, 7 anchors and 6 main assertions, and two register cells claim more than their rows. Three named limits are MET NARROWLY |
 
 ---
 
@@ -607,8 +607,8 @@ O2.
 | 5 | #503 | `AFinishedDispatchsFault_InsideAWindow_IsNotTheWindows` `:1027` | `:1037` → FN0 | `:1039` → M1, M4; T3 M1 | `:497` | ok |
 | 6 | #503 | `…IsLoggedInStrictModeToo` `:1056` | `:1069` → FN0 | `:1070` → R1 §7 R1/R2; T3 M1 | `:498` | ok |
 | 7 | #503 | `AChildsBegunCall_DuringTheReRender_MarksTheDispatch_SoALaterRenderFaultIsRc0` `:799` | **`:809` begin → R1 M6 only, which removes the call from the test's own `BeginOnInitChild`; no argument. `:811` begin-before-throw order → no red at all** | `:814` → M7; T3 | `:499` | **F1, F2** |
-| 8 | #507 | `AndroidHostCallContractTest.biometrics_begin_returns_before_the_check_runs` `:119` | **`:105` gate reached → R2 A1 only, the `gateReachedForTest` seam; no argument** | `:107` → R2 M1; T3 D1 | `:552` | **F2** |
-| 9 | #507 | `secure_storage_begin_returns_before_the_keystore_work_runs` `:123` | **`:105` → R2 A1 only** | `:107` → M2; T3 D2 | `:552` | **F2** |
+| 8 | #507 | `AndroidHostCallContractTest.biometrics_begin_returns_before_the_check_runs` `:119` | **`:105` gate reached → R2 A1 only, the `gateReachedForTest` seam; no argument** | `:107` → R2 M1; T3 D1; the thread assertion `:115` → none, see F6 and O2 | `:552` | **F2** |
+| 9 | #507 | `secure_storage_begin_returns_before_the_keystore_work_runs` `:123` | **`:105` → R2 A1 only** | `:107` → M2; T3 D2; `:115` → none, see F6 and O2 | `:552` | **F2** |
 | 10 | #507 | `secure_storage_keeps_request_order` `:128` | — | `:136` → M3, a named race; T3 D1, red | `:552` | ok |
 | 11 | #507 | `a_throw_on_the_executor_completes_error_never_a_hang` `:142` | — | `:147` → M4, crashes the process; T3 D3 | `:552` | ok |
 | 12 | #507 | `the_after_auth_work_runs_on_the_secure_storage_executor` `:152` | `:162` → R7 MP | `:167` → M5, M6; T3 D1 | `:552` | ok |
@@ -629,7 +629,7 @@ O2.
 | 27 | #510 | `retire_waits_out_a_frame_callback_already_in_flight` `:90` | `:102` → F1 | `:107` → J2; T3 PR #556 | `:537` | ok |
 | 28 | #523 | `SlowHandlerWarningTests.TwoBnInputs_WithDifferentSlowHandlers_GetTwoWarnings_NamingTheAppsHandlers` `:612`, flipped | `:622` → A1 | `:625` → M1, M2 | `:558` | ok |
 | 29–33 | #523 | `ASlowBnCheckbox`, `ASlowBnPicker`, `ASlowBnSlider`, `ASlowBnSwitch`, `ASlowBnModalDismiss` `_NamesTheAppsHandler`, `:648`/`:656`/`:664`/`:672`/`:680` | `:638` → A2, R7 H1–H4 | `:640` → M1, M2 | `:558` | ok |
-| 34 | #523 | `AWrapperWithNoAppCallback_StillKeysByItsCallSite` `:691` | **`:700` `RunsOf("bn-check") == 0`, "the other checkbox's app handler did not run" → no red** | `:701`–`:702` → M5 | `:558` | **F3** |
+| 34 | #523 | `AWrapperWithNoAppCallback_StillKeysByItsCallSite` `:691` | **`:700` `RunsOf("bn-check") == 0`, "the other checkbox's app handler did not run" → no red** | `:698` rc → M5; **`:701` `Assert.Single` slow line and `:702` names the wrapper's call site → no red** | `:558` | **F3, F4** |
 | 35 | #523 | `AHookThatThrows_NeverFaultsTheDispatch_AndTheWarningFallsBackToTheTreeOwner` `:713` | `:720` → H5 | red first | `:558` | ok |
 | 36–37 | #523 | `TwoBoundBnInputs_OnTwoPages_…` `:732`, `TwoBoundBnInputs_OnOnePage_GetTwoWarnings` `:758` | `:739`, `:764` → A1 | M1, M2 | `:558` | ok |
 | 38–39 | #523 | `TwoPlainBoundBnInputs_…` `:778`, `AGetSetBoundBnInput_…` `:797` | `:784`, `:802` → H6 | M2 | `:558` | ok |
@@ -681,7 +681,10 @@ O2.
 **Counts:**
 - **Pins:** 87.
 - **Labelled anchors:** 67.
-- **No red under RS1:** 11 anchors or main assertions, across 10 pins. These are F1–F4.
+- **No red under RS1:** 13 assertion sites across 10 pins, which are F1–F4: 7 anchors, F1 1, F2 5 and F3 1, and 6 main assertions, F4.
+- **The unit.** An assertion site is one assertion statement at one file:line. `AndroidHostCallContractTest.kt:105` sits in a
+  helper that pins 1 and 2 share, so it is one site. `LogPrivacyDriftTests.cs:138` and `:139` are two sites, and so are
+  `SlowHandlerWarningTests.cs:701` and `:702`.
 - **Register cells that claim more than their rows:** 2, F5 and F6.
 
 **Comparison with R7 §7.** The coverage was re-derived from the register and the test files, then
@@ -690,7 +693,7 @@ compared with §7. Every red that §7 cites is in R7 with its run or row. These 
 | # | R7 §7 says | Measured here |
 |---|---|---|
 | a | 47 of 47 audit entries redded, and "None of these is an audit entry without a red" | True for those 47 entries. But two labelled anchors have no red, and neither the 17.6 audit nor §7 lists them: `FaultNoticeTests.cs:811` (F1) and `SlowHandlerWarningTests.cs:700` (F3) |
-| b | "Reds outside the subject" lists only R7's own non-subject reds | §7 still relies on the 17.1–17.3 test-side anchor reds R1 A2, A3 and M6, R2 A1, and R3 A3. None of them carries a clause-3 argument, and six anchors rest on them alone (F2) |
+| b | "Reds outside the subject" lists only R7's own non-subject reds | §7 still relies on the 17.1–17.3 test-side anchor reds R1 A2, A3 and M6, R2 A1, and R3 A3. None of them carries a clause-3 argument, and five anchor sites rest on them alone, one of them, `:105`, shared by two pins (F2) |
 | c | §11c rows 8–12: "the subject's change is on the denied path, which these pins do not drive" | That is reasoning, not a run. All five were re-redded on HEAD, D1–D3, and each red as recorded |
 | d | §11c rows 22, 24, 25, 72: "an import moved it one line", "body unchanged" | Re-redded on HEAD, D1 and D2, and each red as recorded |
 | e | §11c row 27: "moved by the rework above it; body unchanged" | J2 was re-run on HEAD through PR #556, and it red at `:107` |
@@ -773,6 +776,16 @@ git diff --shortstat <baseline> origin/main -- <test file> <subject files>
 - **Cleanup.** PR #556 is closed with its branch deleted. `git ls-remote origin
   'refs/heads/scratch/*'` is empty.
 
+**How many pins were re-redded on HEAD.** The unit is a pin, one test method of the 87.
+- **30 by intent**, each by the recorded mutation chosen for it:
+  - 18 local: rows 1–7, 13–21, 48 and 57;
+  - 11 device: rows 8–12, 22–25, 72 and 87;
+  - 1 JNA: row 27.
+- **2 more went red incidentally**, under a mutation aimed at another pin: pin 6, row 86, under D1's
+  M6, and row 58, under lp-serr at its floor. They are not counted in the 30.
+- So 32 distinct pins have a red on HEAD. Reds of pins outside the population, such as the 16.x
+  facts M7 and 17.3-M2 also reach, are not counted.
+
 ### 11e. RS1 clause 3
 
 **R7's own non-subject reds** each carry the written argument that clause 3 asks for:
@@ -811,7 +824,7 @@ nothing.
 - **Grade.** Each limit is a red that is not deterministic, named in its cell with its reason, so
   each is **MET NARROWLY**.
 - **Drift.** Both `GeneratorRunTests` rates measure lower today than recorded: 11 of 15 against 13
-  of 15 and 12 of 15. In each case a miss still reds the fact, one line later. The cells at PS
+  of 15 and 12 of 15. In each case a miss still reds the fact: the `:213` misses at `:221`, and the `:83` misses at `:82`, the launcher-exited anchor. The cells at PS
   `:563` and `:564` quote the old rates. The drift does not change the grade. It is noted on #557,
   and a gap phase can correct the rates while it is in that file.
 
@@ -820,13 +833,12 @@ nothing.
 **NOT MET.** The clause "its mutations are recorded, **including its anchors**" fails on six
 findings. All six are filed together as **#557**.
 
-- **F1. An anchor with no red.** `tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs:811` is the
+- **F1. An anchor with no red,** 1 site. `tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs:811` is the
   order anchor of `AChildsBegunCall_DuringTheReRender_…`, "the begin must come before the fault".
   - R1 §4 M6 removes the begin, so it reds `:809` first.
   - N7 swaps the siblings of the 16.7 sibling fact only.
   - No row enters `:811`.
-- **F2. Anchors whose only red is a test fixture or seam, with no clause-3 argument.** The anchors
-  are:
+- **F2. Anchors whose only red is a test fixture or seam, with no clause-3 argument,** 5 sites:
   - `FaultNoticeTests.cs:809`, by R1 M6;
   - `:998`, by R1 A3;
   - `:1016`, by R1 A2;
@@ -836,13 +848,18 @@ findings. All six are filed together as **#557**.
 
   All of these reds predate RS1, and no record makes the three arguments clause 3 asks for. No
   subject-side red is recorded for any of them.
-- **F3. An anchor with no red.** `tests/BlazorNative.Runtime.Tests/SlowHandlerWarningTests.cs:700`
+- **F3. An anchor with no red,** 1 site. `tests/BlazorNative.Runtime.Tests/SlowHandlerWarningTests.cs:700`
   is `RunsOf("bn-check") == 0`, "the other checkbox's app handler did not run". No row enters it.
-- **F4. Main assertions with no red.** Each of these pins has a red, but only on a precondition or
-  on its other half:
-  - `LogPrivacyDriftTests.cs:138`–`:139`, whose only red is at the precondition `:135`;
+- **F4. Main assertions with no red,** 6 sites. Each of these pins has a red, but only on a
+  precondition or on another assertion:
+  - `LogPrivacyDriftTests.cs:138` and `:139`, 2 sites, whose only red is at the precondition `:135`;
   - `LogPrivacyDriftTests.cs:174`, whose only red is at the precondition `:171`;
-  - `GeneratorRunTests.cs:335`, where M3 reds only the switched half, `:338`.
+  - `GeneratorRunTests.cs:335`, where M3 reds only the switched half, `:338`;
+  - `SlowHandlerWarningTests.cs:701` and `:702`, 2 sites, `Assert.Single(s.SlowLines())` and the
+    line naming `BnCheckbox`'s call site. R4 :109's M5 reds the rc at `:698`, "Expected: 0,
+    Actual: 2", a NullReferenceException faulting the dispatch, and never reaches them. R4 :31 calls
+    the fact "green by design". A red could make the fallback key by the tree owner instead of the
+    call site.
 
   The 17.6 audit called these "lesser notes, not counted". **On 2026-10-22 the owner ruled that a
   pin's main assertions need their own recorded red, the same as its anchors,** so F4 counts.
@@ -862,7 +879,7 @@ findings. All six are filed together as **#557**.
 - Every re-red on HEAD reproduced as recorded.
 - R7's own clause-3 reds each carry their argument.
 
-The item is graded on its words, and 11 assertions with no red under RS1, plus two overclaiming
+The item is graded on its words, and 13 assertion sites with no red under RS1, plus two overclaiming
 cells, fail them.
 
 **Observations, not graded:**
@@ -871,6 +888,8 @@ cells, fail them.
   each pin's main assertion was re-redded.
 - **O2. Secondary assertions with no red:**
   - `ForwardingHookTests.cs:94`, `:96` and `:98`;
+  - `AndroidHostCallContractTest.kt:115`, the thread assertion of pins 1 and 2. It is secondary, not F4: the claim in the
+    pins' names is that the begin returns first, `:107`. It is graded through F6, the cell that claims a red for it;
   - `RetireLateContinuationTest.kt:111`;
   - `RecreationTests.cs:186` and `:218`;
   - `GeneratorRunTests.cs:318` and `:320`;
@@ -893,7 +912,7 @@ of 2026-10-21.
 
 | issue | title | item | judgement | M18 phase |
 |---|---|---|---|---|
-| **#557** | m17 pins: eleven anchors and main assertions with no red under the red standard, and two register cells that claim more than their rows | 11 | **fails item 11.** Filed by this re-audit | **17.9**, the gap phase, before M18 |
+| **#557** | m17 pins: thirteen assertion sites with no red under the red standard, and two register cells that claim more than their rows | 11 | **fails item 11.** Filed by this re-audit | **17.9**, the gap phase, before M18 |
 | #500 | A re-render or queued work from another dispatch's continuation is charged to the window it runs in | 3 | adjacent, not contradicting: item 3 is about a fault A's own code raises; it needs a decision | 18.1 |
 | #506 | Android secure storage: an auth-bound set's encrypt runs after later requests on the same key | 5 | adjacent, not contradicting: the item does not speak to order across a prompt | 18.2 |
 | #511 | Android: an Activity recreated during boot can leave the new Activity blank | 6 | **narrows item 6**: `MainActivity.kt:475` retires only a booted runtime | 18.3 |
@@ -948,10 +967,12 @@ of 2026-10-21.
     `RecreationAndroidTest.kt:157`, red at `:170` without `retire()` on HEAD, D4.
 
 **Item 11 fails on six findings, F1–F6, all filed as #557:**
-- 11 anchors or main assertions, across 10 pins, have no red under RS1:
-  - F1 and F3: two anchors with no red;
-  - F2: five anchors resting on unargued fixture or seam reds;
-  - F4: three main-assertion sites, per the owner's 2026-10-22 ruling.
+- 13 assertion sites across 10 pins have no red under RS1. A site is one assertion at one
+  file:line, and a helper's assertion shared by two pins counts once:
+  - F1 and F3: 2 anchor sites with no red;
+  - F2: 5 anchor sites resting on unargued fixture or seam reds;
+  - F4: 6 main-assertion sites, per the owner's 2026-10-22 ruling, `SlowHandlerWarningTests.cs:701`
+    and `:702` among them.
 - Two register cells claim more than their rows: `docs/pin-standard.md:499`/`:501`–`:502`, F5, and
   `:552`, F6.
 
@@ -962,8 +983,9 @@ The three named limits are MET NARROWLY within item 11:
 
 **Next: a small gap phase, 17.9, followed by a short re-audit.** 17.9 does the following, all
 tracked in #557:
-1. **Record the missing reds.** Record a red for F1 and F3. Record a red for each F4 site, by
-   weakening its detector against the planted text. For F2, record a subject-side red, or write the
+1. **Record the missing reds.** Record a red for F1 and F3. Record a red for each F4 site: for
+   the scan and planted-call pins, by weakening the detector against the planted text; for
+   `SlowHandlerWarningTests.cs:701`–`:702`, by making the fallback key by another owner. For F2, record a subject-side red, or write the
    RS1 clause-3 argument into the record and the cell.
 2. **Correct the two cells,** `docs/pin-standard.md:499`, `:501`–`:502` and `:552`, to what their
    rows show. Either run a renamed executor, or reword the cell.
