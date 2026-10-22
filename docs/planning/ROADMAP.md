@@ -3945,7 +3945,7 @@ the app's handler through a forwarding hook.
 **Record:** [`docs/plans/2026-10-22-phase-17.11-record.md`](../plans/2026-10-22-phase-17.11-record.md)
 **Completed:** 2026-10-22 · [PR #567](https://github.com/MarcelRoozekrans/BlazorNative/pull/567).
 - **Rule written down:** `docs/pin-standard.md` "Grading a pin: sites and reds" now holds the owner's site unit, RS1, the own-assertion rule, and staleness checked against the red's own commit.
-- **Fresh reds:** all 224 sites across the 87 M17 pins have a fresh red that quotes its own message. A staleness sweep found 13 stale reds, and all were re-run.
+- **Fresh reds:** all 224 sites across the 87 M17 pins have a fresh red; 215 quote their own message, and the 17.12 re-audit quoted the other 9. A staleness sweep found 13 stale reds, and all were re-run.
 - **Closed:** #561.
 
 #### Phase 17.12: Re-audit and close [status: active]

@@ -13,9 +13,9 @@
 - Its verdicts are a list of things to re-check, not evidence.
 - Every number below was measured on `a294e924`, with the command shown beside it.
 
-**Verdict:** **PASS WITH FINDINGS**: 5 MET, 4 MET NARROWLY, item 11 MET, item 2 **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**. See [the verdict](#verdict).
-- Item 11 is MET: 224 of 224 sites have a valid, fresh RS1 red with a quoted message. Nine of those quotes are recorded for the first time in [§11c](#11c-f1-nine-messages-quoted-here-for-the-first-time) of this report.
-- One docs finding is filed: **#568**, four register cells that cite stale reds without naming them stale. No cell claims more than its rows.
+**Verdict:** **PASS WITH FINDINGS**: 5 MET, 5 MET NARROWLY, item 2 **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**. See [the verdict](#verdict).
+- Item 11 is MET NARROWLY, citing #568. Every site has a valid, fresh RS1 red with a quoted message: 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it. Nine of those quotes are recorded for the first time in [§11c](#11c-f1-nine-messages-quoted-here-for-the-first-time) of this report.
+- One finding is filed: **#568**, four register cells that cite stale reds without naming them stale or citing a re-run. No cell claims more than its rows, but Rule 7's part 4 says a stale red is re-run before it is cited, so item 11 is narrowed on it.
 
 ## Scorecard
 
@@ -31,7 +31,7 @@
 | 8 | #435 is fixed by a forwarding hook | **MET NARROWLY**: for a bound input with `:after`, the warning does not name the app's method (#522) |
 | 9 | #454, #424 and #458 are fixed | **MET NARROWLY**: the stall names the script, not the stalled command inside it (#530) |
 | 10 | No ABI change | **MET**: the same 10 exports, the 80-byte struct and `wire-vocabulary.json` are unchanged across the range |
-| 11 | Every new pin conforms to the pin standard | **MET**: 87 pins, 224 of 224 sites with a valid, fresh RS1 red and a quoted message. The three named limits are MET NARROWLY. #568 is a docs finding in four cells, not a narrowing |
+| 11 | Every new pin conforms to the pin standard | **MET NARROWLY** (#568): 87 pins; every site has a valid, fresh RS1 red and a quoted message, 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it. Four register cells cite stale reds without the re-run Rule 7's part 4 requires. The three named limits are MET NARROWLY |
 
 ---
 
@@ -156,6 +156,13 @@ git show origin/main:tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs | sed 
 **The rest holds on HEAD:**
 - **The rc claim is pinned.** `FaultNoticeTests.cs:415`'s "COVERED SINCE 17.1" note names its pin.
 - **The contract** sits between `BEGIN rc-contract` and `END rc-contract` at `Exports.cs:473`–`:484`.
+- **Both stale headers and the two `host_event` rc tables still match the contract.** The 17.8 re-audit §4 graded them on `36b2716f`, and the files that hold them are unchanged since, apart from the version string:
+
+  ```bash
+  git diff 36b2716f origin/main -- src/BlazorNative.Runtime/Exports.cs tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs | grep -E '^[-+][^-+]'
+  #   -    internal const string VersionNumber = "0.20.1"; // x-release-please-version
+  #   +    internal const string VersionNumber = "0.20.2"; // x-release-please-version
+  ```
 
 ## 5. #440 is fixed — **MET**
 
@@ -177,7 +184,7 @@ git show origin/main:templates/…/AndroidShellBridge.kt | cmp - <(git show orig
 - **The begin returns at once.** Both ops hand the work to a single-thread executor.
 - **Every denial hops through `afterAuth`,** onto the secure-storage executor.
 - **The template copy is byte-identical.**
-- **The pins:** `AndroidHostCallContractTest.kt:119`, `:123` and `:204`, with fresh reds in [§11](#11-every-new-pin-conforms-to-the-pin-standard--met).
+- **The pins:** `AndroidHostCallContractTest.kt:119`, `:123` and `:204`, with fresh reds in [§11](#11-every-new-pin-conforms-to-the-pin-standard--met-narrowly).
 
 **#506 is adjacent.** It concerns order across a prompt, and the item says nothing about order.
 
@@ -295,7 +302,7 @@ git log --format='%h %s' 23ffc4ab..origin/main | grep "chore(main)"
 
 ---
 
-## 11. Every new pin conforms to the pin standard — **MET**
+## 11. Every new pin conforms to the pin standard — **MET NARROWLY**
 
 > **Every new pin conforms to [`docs/pin-standard.md`](../pin-standard.md)** on Rules 2–5 and 7. Its
 > mutations are recorded, **including its anchors**, and its register row or census cell is written
@@ -307,7 +314,7 @@ git log --format='%h %s' 23ffc4ab..origin/main | grep "chore(main)"
 
 **The rule graded, and nothing broader.** PS "Grading a pin: sites and reds", `:608`–`:662`, identical on `origin/main` and this branch. A site is every labelled anchor, all of its lines, plus every assertion carrying a clause of the test's name. A site needs a red that:
 - follows RS1;
-- fails its own assertion, at its own line, with its own message, **quoted** in a record;
+- fails its own assertion, at its own line, with its own message. The 17.12 design §3.3 adds that the message be **quoted** in a record; the written section does not say it;
 - is fresh: `git diff --stat <red-commit> HEAD -- <test> <subject>` is empty, on both mirror copies of a two-copy subject.
 
 ### 11a. The population, from git — 87
@@ -328,7 +335,7 @@ Built from the squashes with `git show <squash> -- tests src/BlazorNative.Jni/sr
 
 **87 rows**: 84 added methods, 2 flipped and 1 Swift assertion. This matches R10 §11b row for row.
 
-### 11b. Sites, coverage and freshness — 224 of 224
+### 11b. Sites, coverage and freshness — 212 under the strict unit, 224 entries
 
 **The sites were derived independently** from the 87 method bodies on HEAD, then compared with 17.11 §4.
 - **The derivation reproduces 17.11 §4's 224 site entries.** Nothing under the written unit is missing from it.
@@ -343,7 +350,7 @@ Built from the squashes with `git show <squash> -- tests src/BlazorNative.Jni/sr
 
 **The message check.** Each valid red was traced to its row in R1–R5, R7–R10 or 17.11, and the site's own message was looked for there.
 - **215 of 224 sites** have their own message quoted in a record, or a message whose text is identical. `FaultNoticeTests.cs:978`, `:997` and `:1037` are in the identical-text case, under R7 §4 FN0's `:1069` quote.
-- **9 sites, F1,** had their red recorded by line only. This audit re-ran all nine on HEAD and quotes them in §11c. With that, **224 of 224** sites have a valid, fresh, quoted RS1 red.
+- **9 sites, F1,** had their red recorded by line only. This audit re-ran all nine on HEAD and quotes them in §11c. With that, every site has a valid, fresh, quoted RS1 red: 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it.
 
 **Twelve sampled reds, re-run on HEAD.** Ten come from pins 17.11 gave no new red.
 - They ran on a detached worktree of `a294e924`, one exact-match mutation at a time, each restored with `git checkout -- .`, and `git status --short` was empty before the first mutation and after every restore.
@@ -393,7 +400,7 @@ Read on HEAD: PS `:493`–`:499`, `:501`–`:502`, `:537`, `:549` and `:552`–`
 - **R10's three overclaims are gone.** `:558` no longer cites M5. `:552` calls M4 a crash and cites D4 and D1. `:501`–`:502` cite N1–N3 and X1071.
 - **The cells that touch F1 claim no more than their rows:** `:493`–`:497` say FN0 reds `RanInsideB`; `:554` says R2 reds "the lifecycle probe's navigate anchor and the late render anchor", exactly R2's two quoted sites; `:557` says F2 reds the null fact "at `Assert.Null`"; `:559` says C1 "reds the scan"; `:560` says R1 reds "the anchor `:244`".
 
-**Finding, filed as #568: four cells cite stale reds without naming them stale.** PS part 4 says a red taken before a later edit to its test or subject "is re-run before it is cited". Every site involved has a fresh red elsewhere, so this is a docs finding, not an overclaim and not a site gap. It does not narrow item 11.
+**Finding, filed as #568: four cells cite stale reds without naming them stale.** PS part 4 says a red taken before a later edit to its test or subject "is re-run before it is cited". Every site involved has a fresh red elsewhere, so this is not an overclaim and not a site gap. **It narrows item 11.** Part 4 is a duty in Rule 7, which the DoD names: `:552` and `:553` cite reds that were never re-run, and `:552` calls the never-re-run 17.2 M5 "its honest red", the same shape as the `:558` M5 that 17.10 caught as an equivalent mutant. Read on its words, that is a Rule 7 non-conformance in four pins' cells.
 
 | cell | stale red cited | fresh red that covers the site |
 |---|---|---|
@@ -435,9 +442,9 @@ Every other site's red, commit and freshness agrees with 17.11 §4.
 
 ### 11g. The grade
 
-**MET** under the written rule.
-- **87 pins, 224 sites.** Every site has a valid RS1 red that is fresh against HEAD on both mirror copies, and whose own message is quoted in a record: 215 in earlier records, 9 in §11c here.
-- **No register cell claims more than its rows.** Four cells cite stale reds beside fresh ones without naming them stale: #568, a docs finding.
+**MET NARROWLY**, citing #568.
+- **87 pins; 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it.** Every site has a valid RS1 red that is fresh against HEAD on both mirror copies, and whose own message is quoted in a record: 215 in earlier records, 9 in §11c here.
+- **No register cell claims more than its rows.** But four cells cite stale reds beside fresh ones without naming them stale or citing the re-run, which Rule 7's part 4 requires: #568. That is the narrowing. Every site still has a fresh red.
 - **12 of 12 sampled reds reproduce on HEAD.**
 - **The three named limits are MET NARROWLY:** `GeneratorRunTests.cs:213` and `:83`, and `RecreationAndroidTest.kt:116`.
 
@@ -459,7 +466,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
 | #564 | flaky: a FaultNoticeTests dispatch misses its 1 s bound on the windows ci runner and leaks a notice into the next fact | 2 | the same rule as #551 | 18.7; the owner may move this phase first |
 | #530 | reference generator: something outlives dotnet publish and holds its output pipe | 9 | **narrows item 9** | 18.8 |
 | #562 | m17 pins: per-statement coverage beyond the name and anchor unit, 30 sites with no recorded red | 11 | outside the written unit, so it does not narrow item 11. P73's assertion-free pin belongs here too | M18 |
-| **#568** | m17 pin-standard cells: four register cells cite stale reds without naming them stale | 11 | a docs finding: no cell overclaims and no site is uncovered, so it does not narrow item 11. Filed by this re-audit | M18 |
+| **#568** | m17 pin-standard cells: four register cells cite stale reds without naming them stale | 11 | **narrows item 11:** Rule 7's part 4 says a stale red is re-run before it is cited. No cell overclaims and no site is uncovered. Filed by this re-audit | M18 |
 | #491 | The JVM dev loop runs on Windows only: Gradle hardcodes the win-x64 publish folder | 2 | adjacent: the reason the JNA tests do not run locally on Linux. It predates M17 | adjacent, not in the M18 phase list |
 
 ## What M17 taught
@@ -473,16 +480,16 @@ Each issue is judged against the item it touches. None blocks the close on its o
 **PASS WITH FINDINGS**, provisional on item 2's lanes in Task 4.
 
 - **Five items are MET:** 1, 3, 5, 7 and 10.
-- **Four are MET NARROWLY,** each with its reason:
+- **Five are MET NARROWLY,** each with its reason:
   - **item 4:** the cancellation fact's rc assertion, `FaultNoticeTests.cs:729`;
   - **item 6:** #511;
   - **item 8:** #522;
-  - **item 9:** #530.
-- **Item 11 is MET:** 224 of 224 sites have a valid, fresh, quoted RS1 red. The three named limits are MET NARROWLY within it.
-- **Item 2:** local .NET 1372/0/0 on `a294e924`; **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**.
+  - **item 9:** #530;
+  - **item 11:** #568, four cells citing stale reds without their re-run. Every site still has a valid, fresh, quoted RS1 red, 212 sites under a strict reading of the unit, 224 with the 12 entries recorded beyond it. The three named limits are MET NARROWLY within it.
+- **Item 2 is pending:** local .NET 1372/0/0 on `a294e924`; **[filled in Task 4 from the PR's lanes, #551/#564 rules applied]**.
 
 **The findings:**
 - **F1,** nine sites whose red was recorded by line only. Closed here by quoting their messages from a re-run on HEAD, §11c.
-- **#568,** four register cells that cite stale reds without naming them stale. Docs only, carried to M18.
+- **#568,** four register cells that cite stale reds without naming them stale. It narrows item 11, and the cell fix is carried to M18.
 
 **Next:** if Task 4 leaves the verdict standing, `complete-milestone` runs as its own PR, then M18 is planned. No tag is cut: `CONVENTIONS.md` records `Milestone completion tags a release: no`.
