@@ -31,7 +31,7 @@
 | 8 | #435 is fixed by a forwarding hook | **MET NARROWLY**: for a bound input with `:after`, the warning does not name the app's method (#522) |
 | 9 | #454, #424 and #458 are fixed | **MET NARROWLY**: the stall names the script, not the stalled command inside it (#530) |
 | 10 | No ABI change | **MET**: the same 10 exports, the 80-byte struct and `wire-vocabulary.json` are unchanged across the range |
-| 11 | Every new pin conforms to the pin standard | **NOT MET** (#561): 26 sites in 19 pins have no red under RS1, 22 name-claim sites and the 4 second lines of two-line anchors, and three register cells claim more than their rows. The three named limits are MET NARROWLY |
+| 11 | Every new pin conforms to the pin standard | **NOT MET** (#561): 28 sites in 20 pins have no red under RS1, 24 name-claim sites and the 4 second lines of two-line anchors, and three register cells claim more than their rows. The three named limits are MET NARROWLY |
 
 ---
 
@@ -129,7 +129,7 @@ git show origin/main:src/BlazorNative.Renderer/NativeRenderer.cs | grep -n \
   "anotherDispatchs\|ReferenceEquals(s_flowingScope.Value, scope)\|scope.ShellCallBegun = true"
 #   631:            bool anotherDispatchs = owner is not null
 #   634:            if (!anotherDispatchs)
-#   1641:        if t_syncScope is { Fault: null } scope && ReferenceEquals(s_flowingScope.Value, scope)
+#   1641:        if (t_syncScope is { Fault: null } scope && ReferenceEquals(s_flowingScope.Value, scope))
 #   1642:            scope.ShellCallBegun = true;
 ```
 
@@ -142,7 +142,7 @@ git show origin/main:src/BlazorNative.Renderer/NativeRenderer.cs | grep -n \
 
 **Grade: MET.** Both outcomes are pinned and have recorded reds, so the item's words hold. Item 11 grades pin by pin whether every name clause of these pins has its own red. Two of these pins have open name-clause sites, at `:963`, `:966` and `:979`, and they are graded there, under #561.
 
-`:963` and `:966` assert item 3's own wording, "delivered as A's late FaultNotice under A's handler id". If 17.11 reds them, item 3 holds without narrowing. Until then, item 3 is MET on M1's red of the pin.
+`:963` and `:966` assert item 3's own wording, "delivered as A's late FaultNotice under A's handler id". If 17.11 reds them, item 3 holds without narrowing. Until then, item 3 is MET on the two outcomes the DoD asks to be mutation-proven: A's fault reaching A, by 17.1-M1 at `:981`, and B's own fault surviving, by 17.1-M2 at `:1000`. "Under A's handler id", at `:966` and `:984`, has no red until 17.11.
 
 `#464`: `CLOSED` by #503.
 
@@ -327,6 +327,7 @@ All grading is under RS1. A red is an assertion that fails at its line, with tha
 - **A labelled anchor** is an assertion that the test's own comment or message calls an anchor. That is 17.8's definition.
   - A cell that calls a line an anchor does not make it one.
   - A label that names more than one statement, such as `// anchor: both … ran` on the first of two lines, labels every statement it names. Coordinator ruling, 2026-10-22.
+- **`ForwardingHookTests.cs:94`, `:96` and `:98` are in the hard set by coordinator ruling,** 2026-10-22. Task 2 graded them as summary clauses. The ruling keeps them because the name's "TheHook" is claimed of every wrapper, and each wrapper implements its own `ForwardedHandler`.
 - **A name clause** is each separate claim in the method name.
   - For example, `ShowsItAndResetsHistory` makes two claims. Each needs the assertion that carries it to have its own red.
 
@@ -368,8 +369,8 @@ Task 2 first mapped every pin under the broad unit. That unit covers every asser
   - 1 is a red named without its line or message.
 
 Each of the 58 was then graded under the ruling's unit:
-- **26 are sites under the unit.** They are the hard set, filed as **#561** for 17.11.
-- **32 are not.** They are filed as **#562** for M18.
+- **28 are sites under the unit.** They are the hard set, filed as **#561** for 17.11.
+- **30 are not.** They are filed as **#562** for M18.
 
 A site with "none" has no row in R1–R5, R7, 17.9, the 17.6 audit or the 17.8 re-audit that enters its line with its own message. Each was checked by grepping every record for the line number in context.
 
@@ -450,7 +451,7 @@ A site with "none" has no row in R1–R5, R7, 17.9, the 17.6 audit or the 17.8 r
 | 73 | #528 | `GeneratorRunTests.AChildThatLeavesItsPipeHeld_FailsNamedWithinTheBound_AndLeavesNoProcess` `:57` | `:563` | 14 | 9 (1 NL) | — | `:94`, `:98`, `:99`, `:100`, `:101` |
 | 74 | #528 | `GeneratorRunTests.AScriptStillRunningAtTheBound_FailsSayingItWasStillRunning` `:140` | `:564` | 6 | 3 | `:167` | `:168`, `:170` |
 | 75 | #528 | `GeneratorRunTests.AScriptThatExitsWithItsPipeHeld_FailsSayingItExited` `:189` | `:564` | 9 | 6 (1 NL) | — | `:222`, `:224`, `:225` |
-| 76 | #528 | `GeneratorRunTests.GenerateReference_RunsEveryMSBuildCallWithNodeReuseOff` `:301` | `:565` | 3 | 1 | — | `:318`, `:320` |
+| 76 | #528 | `GeneratorRunTests.GenerateReference_RunsEveryMSBuildCallWithNodeReuseOff` `:301` | `:565` | 3 | 1 | `:318`, `:320` | — |
 | 77 | #528 | `GeneratorRunTests.GenerateReference_NodeReusePin_CatchesAPlantedCall` `:330` | `:565` | 9 | 9 | — | — |
 | 78 | #528 | `NativeRuntimeInputDriftTests.TheJvmTasksThatLoadTheRuntime_DeclareItAsAnInput` `:61` | `:566` | 1 | 1 | — | — |
 | 79 | #528 | `NativeRuntimeInputDriftTests.TheTemplatesTestTask_DeclaresTheRuntimeAsAnInput` `:66` | `:566` | 1 | 1 | — | — |
@@ -462,11 +463,11 @@ A site with "none" has no row in R1–R5, R7, 17.9, the 17.6 audit or the 17.8 r
 | 85 | #528 | `BnGeolocationTests.testUnknownOpCompletesErrorNeverCrashes, the 17.5 assertion` `BnGeolocationTests.swift:219` | `:569` | 1 | 1 | — | — |
 | 86 | #545 | `AndroidHostCallContractTest.a_denied_storage_prompt_completes_on_the_secure_storage_executor` `:204` | `:553` | 6 | 6 | — | — |
 | 87 | #545 | `RecreationAndroidTest.a_rotation_retires_the_previous_activitys_runtime` `:157` | `:556` | 4 | 4 | — | — |
-| | | **total, 87 pins** | | **263** | **205** | **26** | **32** |
+| | | **total, 87 pins** | | **263** | **205** | **28** | **30** |
 
-### 11d. The hard set: 26 sites in 19 pins, each graded under the unit
+### 11d. The hard set: 28 sites in 20 pins, each graded under the unit
 
-The hard set has two parts. Rows 1–22 are name clauses, apart from one red named without its line, `:243`. Rows 23–26 are labelled anchors: the second line of each two-line anchor whose `// anchor: both …` comment names both lines. Every other labelled anchor in the 87 pins has an RS1 red. Fixes are in #561.
+The hard set has two parts. Rows 1–22, 27 and 28 are name clauses, apart from one red named without its line, `:243`. Rows 23–26 are labelled anchors: the second line of each two-line anchor whose `// anchor: both …` comment names both lines. Every other labelled anchor in the 87 pins has an RS1 red. Fixes are in #561.
 
 | # | file:line | pin | name clause | why it is a site, and why it has no red |
 |---|---|---|---|---|
@@ -496,9 +497,11 @@ The hard set has two parts. Rows 1–22 are name clauses, apart from one red nam
 | 24 | `SlowHandlerWarningTests.cs:740` | `TwoBoundBnInputs_OnTwoPages_GetTwoWarnings_NamingThePages` | anchor, second line | "anchor: both :after methods ran" on `:739`, which R4 A1 and R7 H6 red. No row enters `:740` |
 | 25 | `SlowHandlerWarningTests.cs:765` | `TwoBoundBnInputs_OnOnePage_GetTwoWarnings` | anchor, second line | "anchor: both :after methods ran" on `:764`, which R4 A1 and R7 H6 red. No row enters `:765` |
 | 26 | `SlowHandlerWarningTests.cs:785` | `TwoPlainBoundBnInputs_OnOnePage_GetTwoWarnings_NamingThePage` | anchor, second line | "anchor: both setters ran" on `:784`, which R7 H6 reds. No row enters `:785` |
+| 27 | `GeneratorRunTests.cs:318` | `GenerateReference_RunsEveryMSBuildCallWithNodeReuseOff` | Every…NodeReuseOff | `:309` checks only the calls `MsBuildCalls` recognises. The pin's DOES NOT COVER, `:293`–`:298`, names three call forms the recogniser cannot see, and ends: "For all of them the environment variable still covers it." So the name's "Every" rests on `:318`, the env line is set, for those calls. The same shape as `LogPrivacyDriftTests.cs:293`. G-M3 reds `:309` only |
+| 28 | `GeneratorRunTests.cs:320` | the same | the same | `:320`, the env line comes before the first call, carries "Every" for the same unseen calls. No row enters it |
 
 **Task 2's other findings, each decided under the unit.** Task 2 graded 28 FA, name or summary clauses; 29 FB, claimed siblings; and 1 FC, a red with no line. The hard set above takes:
-- **19 of the FA:** each FA that states a clause of the name;
+- **21 of the FA:** each FA that states a clause of the name, `GeneratorRunTests.cs:318` and `:320` among them, for the name's "Every";
 - **the FC,** `:243`;
 - **6 of the FB:**
   - `SlowHandlerWarningTests.cs:623`, `:740`, `:765` and `:785`, the second lines of the two-line anchors, by the coordinator's ruling;
@@ -512,12 +515,12 @@ The rest are not sites under the unit:
   - **PS `:558` still overclaims it** (11e).
 - **Summary-only clauses, not graded:**
   - `SlowHandlerWarningTests.cs:723` and `:770`;
-  - `GeneratorRunTests.cs:170`, `:224`, `:225`, `:318` and `:320`;
+  - `GeneratorRunTests.cs:170`, `:224` and `:225`;
   - `NativeRuntimeInputDriftTests.cs:95`.
 
   Each states a clause of the doc summary, not of the name. `:770`'s pin name, for instance, is `…_GetTwoWarnings`, with no NamingThePage.
 - **Siblings beside a redded carrier of the same clause:**
-  - `FaultNoticeTests.cs:986`; `:981` carries A's notice, and `:979`, now in the hard set, carries LeavesTheWindowsOwnFault.
+  - `FaultNoticeTests.cs:986` asserts that B's own fault is not sent as a notice, a no-double-report property. It is an extra claim beside the name, not its clause: LeavesTheWindowsOwnFault_Rc2 is carried by `:979`'s rc. `:979` has no red today, and it is in #561.
   - `AndroidHostCallContractTest.kt:138`. `:136` carries keeps_request_order. PS `:552` calls `:138` an anchor, but the test does not.
   - `RecreationAndroidTest.kt:80`. It is the screen check, which R3 L2 showed is blind. `:84` carries never_shows. It may be better re-scoped than redded.
   - `RecreationAndroidTest.kt:136`; `:133` carries stays_on_the_page.
@@ -529,7 +532,7 @@ The rest are not sites under the unit:
   - `BnDiagnosticsTest.kt:54`; `:52` carries replaceable.
   - `GeneratorRunTests.cs:94` and `:98`–`:101`, `:168` and `:222`. Each is beside a redded `Fails` and a redded message line.
 
-All 32 are listed by file in #562.
+All 30 are listed by file in #562.
 
 ### 11e. Register cells that claim more than their rows
 
@@ -605,7 +608,8 @@ Each is a non-deterministic red, named in its cell with its reason, so each is *
 | `FaultNoticeTests.cs:979` | 17.8 graded `:981` as row 2's main | the name's Rc2 is `:979`. Hard set |
 | `LogPrivacyDriftTests.cs:243` | 17.8: "`:243` → R7 P1" | P1 gives no line or message. Hard set |
 | `ForwardingHookTests.cs:94/:96/:98`, `RecreationTests.cs:186/:218` | 17.8 O2, secondary | name claims. Hard set |
-| `GeneratorRunTests.cs:318/:320`, `NativeRuntimeInputDriftTests.cs:95`, `RetireLateContinuationTest.kt:111` | 17.8 O2, secondary | summary or sibling. #562 |
+| `GeneratorRunTests.cs:318/:320` | 17.8 O2, secondary | the name's "Every" for calls the recogniser cannot see. Hard set |
+| `NativeRuntimeInputDriftTests.cs:95`, `RetireLateContinuationTest.kt:111` | 17.8 O2, secondary | summary or sibling. #562 |
 
 **Every other site that 17.8 or 17.9 graded as covered is covered here too.**
 - 17.9 §4 counts `:105` and `:107` once for P4 and P5. Here they count once per pin.
@@ -614,8 +618,8 @@ Each is a non-deterministic red, named in its cell with its reason, so each is *
 ### 11i. The grade
 
 **NOT MET** on #561:
-- **26 sites in 19 pins have no red under RS1:**
-  - 22 name-claim sites. Twenty-one have none at all, or only a crash or an escaping exception. One, `:243`, has a red named without its line or message;
+- **28 sites in 20 pins have no red under RS1:**
+  - 24 name-claim sites. Twenty-three have none at all, or only a crash or an escaping exception. One, `:243`, has a red named without its line or message;
   - 4 labelled anchors, the second lines of the two-line anchors at `SlowHandlerWarningTests.cs:623`, `:740`, `:765` and `:785`.
 - **Three register cells claim more than their rows:** PS `:558`, `:552` and `:501`–`:502`.
 
@@ -633,8 +637,8 @@ Each issue is judged against the item it touches. None blocks the close on its o
 
 | issue | title | item | judgement | M18 phase |
 |---|---|---|---|---|
-| **#561** | m17 pins: twenty-six name-claim and anchor sites with no assertion red, and three register cells that claim more than their rows | 11 | **fails item 11.** Filed by this re-audit | **17.11**, the gap phase, before M18 |
-| **#562** | m17 pins: per-statement coverage beyond the name and anchor unit, 32 sites with no recorded red | 11 | outside the ruled unit, so it does not narrow item 11. Filed by this re-audit | M18 |
+| **#561** | m17 pins: twenty-eight name-claim and anchor sites with no assertion red, and three register cells that claim more than their rows | 11 | **fails item 11.** Filed by this re-audit | **17.11**, the gap phase, before M18 |
+| **#562** | m17 pins: per-statement coverage beyond the name and anchor unit, 30 sites with no recorded red | 11 | outside the ruled unit, so it does not narrow item 11. Filed by this re-audit | M18 |
 | #551 | flaky: ShutdownQuiescenceTests' positive control sees no frame for 10 s on the windows ci runner | 2 | narrows item 2 only if it fires on this phase's `build-test`; Task 4 applies the rule. **It has hit 3 times. The owner may move it to the front of M18** | 18.7 |
 | #500 | A re-render or queued work from another dispatch's continuation is charged to the window it runs in | 3 | adjacent: item 3 is about a fault A's own code raises. Needs a decision | 18.1 |
 | #506 | Android secure storage: an auth-bound set's encrypt runs after later requests on the same key | 5 | adjacent: the item says nothing about order across a prompt | 18.2 |
@@ -669,14 +673,14 @@ Every one of these is `OPEN` on 2026-10-22, from `gh issue view <n> --json state
   - **item 8:** #522;
   - **item 9:** #530.
 - **Item 11 is NOT MET on #561:**
-  - 26 sites in 19 pins have no RS1 red: 22 name-claim sites and 4 second lines of two-line anchors;
+  - 28 sites in 20 pins have no RS1 red: 24 name-claim sites and 4 second lines of two-line anchors;
   - three register cells claim more than their rows: PS `:558`, `:552` and `:501`–`:502`.
 
   The three named limits are MET NARROWLY within item 11.
 
 **Next: a small gap phase, 17.11, on #561, followed by a short re-audit.** 17.11 does four things:
 1. **It writes the site unit into `docs/pin-standard.md` as a rule.**
-2. **It records a red for each of the 26 sites,** each an assertion failing at its line with its message. #561 suggests a mutation for each.
+2. **It records a red for each of the 28 sites,** each an assertion failing at its line with its message. #561 suggests a mutation for each.
 3. **It corrects the three cells.**
 4. **It re-runs the three pre-edit device reds,** S2, S3 and L1a, on its lane.
 
