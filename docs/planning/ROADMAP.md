@@ -3931,7 +3931,7 @@ the app's handler through a forwarding hook.
 - **Item 2 MET NARROWLY** on a new CI flake, #564.
 
 
-#### Phase 17.11: Pin-standard gaps, third pass [status: active]
+#### Phase 17.11: Pin-standard gaps, third pass [status: complete]
 **Goal:** Close #561, by owner decision on 2026-10-22.
 - Write item 11's site unit and the red standard RS1 into `docs/pin-standard.md` as a rule, so later audits grade against a fixed unit.
 - Record an RS1 red for each of #561's 28 sites, including replacing the crash and NPE reds with assertion failures.
@@ -3943,11 +3943,17 @@ the app's handler through a forwarding hook.
 **Design:** [`docs/superpowers/specs/2026-10-22-phase-17.11-design.md`](../superpowers/specs/2026-10-22-phase-17.11-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.11-pin-gaps-3.md`](../superpowers/plans/2026-10-22-phase-17.11-pin-gaps-3.md)
 **Record:** [`docs/plans/2026-10-22-phase-17.11-record.md`](../plans/2026-10-22-phase-17.11-record.md)
+**Completed:** 2026-10-22 · [PR #567](https://github.com/MarcelRoozekrans/BlazorNative/pull/567).
+- **Rule written down:** `docs/pin-standard.md` "Grading a pin: sites and reds" now holds the owner's site unit, RS1, the own-assertion rule, and staleness checked against the red's own commit.
+- **Fresh reds:** all 224 sites across the 87 M17 pins have a fresh red; 215 quote their own message, and the 17.12 re-audit quoted the other 9. A staleness sweep found 13 stale reds, and all were re-run.
+- **Closed:** #561.
 
-#### Phase 17.12: Re-audit and close [status: pending]
+#### Phase 17.12: Re-audit and close [status: active]
 **Goal:** Re-audit M17 against the written site unit. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
 **Surface:** Docs
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-22-phase-17.12-design.md`](../superpowers/specs/2026-10-22-phase-17.12-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.12-reaudit.md`](../superpowers/plans/2026-10-22-phase-17.12-reaudit.md)
 
 ---
 
