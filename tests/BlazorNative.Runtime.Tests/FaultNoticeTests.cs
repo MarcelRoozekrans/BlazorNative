@@ -100,7 +100,6 @@ public sealed class FaultNoticeTests
             // Once it has returned, the dispatch has handed its notice send to the tap.
             overrun.Join(Budget);
         }
-        s_tearDownWaitingForNoticeSends?.Invoke();
         WaitForNoticeSends();
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
@@ -125,7 +124,8 @@ public sealed class FaultNoticeTests
     private static void WaitForNoticeSends()
     {
         Task[] sends;
-        lock (s_noticeSends) sends = s_noticeSends.ToArray();
+        lock (s_noticeSends) sends = s_noticeSends.Where(t => !t.IsCompleted).ToArray();
+        s_waitingForNoticeSends?.Invoke(sends.Length);
         Task.WaitAll(sends.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
         lock (s_noticeSends) s_noticeSends.RemoveAll(t => t.IsCompleted);
     }
@@ -165,9 +165,10 @@ public sealed class FaultNoticeTests
     /// DispatchEventCore on, the shell's dispatch lane in these facts.</summary>
     private static volatile int s_lastDispatchThread;
 
-    /// <summary>18.1 (#564): called by <see cref="TearDown"/> just before it waits for the
-    /// FaultNotice sends still in flight. A fact sets it to learn that TearDown is waiting.</summary>
-    private static Action? s_tearDownWaitingForNoticeSends;
+    /// <summary>18.1 (#564): called by <see cref="WaitForNoticeSends"/>, from TearDown or a
+    /// fact, just before it waits, with the number of sends still in flight that it is about
+    /// to wait for. A fact sets it to learn that a send it holds is being waited on.</summary>
+    private static Action<int>? s_waitingForNoticeSends;
 
     /// <summary>The worker of the last <see cref="DispatchBounded"/> that overran its budget
     /// and may still be running, until <see cref="TearDown"/> waits for it.</summary>
@@ -1242,13 +1243,13 @@ public sealed class FaultNoticeTests
         // The leak's narrow half. The overrun dispatch's FaultNotice is sent from the pool once
         // the dispatch returns, and here the fake shell holds that notice's begin at a gate, as a
         // pool item scheduled late or a shell slow to take the call would. TearDown must wait
-        // for the send itself: the gate opens only when TearDown signals that it is waiting, or
-        // else when the next fact's StartSession resets the fake, which logs the held notice
-        // into the next fact.
+        // for the send itself: the gate opens only when a wait on at least one live send
+        // begins, or else when the next fact's StartSession resets the fake, which logs the
+        // held notice into the next fact.
         Action<ulong, string, Task>? outer = Exports.PendingDispatchObserver;
         using var noticeGate = new ManualResetEventSlim(false);
         ShellCallProbe.Gate.Reset();
-        s_tearDownWaitingForNoticeSends = noticeGate.Set;
+        s_waitingForNoticeSends = live => { if (live > 0) noticeGate.Set(); };
         try
         {
             Exception? overran = Record.Exception(() => DispatchProbe("gated-begin-then-throw", release: () =>
@@ -1276,7 +1277,7 @@ public sealed class FaultNoticeTests
         }
         finally
         {
-            s_tearDownWaitingForNoticeSends = null;
+            s_waitingForNoticeSends = null;
             noticeGate.Set();
             ShellCallProbe.Gate.Set();
             Exports.PendingDispatchObserver = outer;
