@@ -98,6 +98,11 @@ internal static unsafe class FakeShellHost
     /// thread fact reads it: a notice must never be begun on the thread that dispatched.</summary>
     public static readonly Dictionary<long, int> HostCallBeginThreads = new();
 
+    /// <summary>18.1 (#564): when set, a FaultNotice begin waits on this gate, bounded at
+    /// 10 s, before it is logged, as a shell slow to take the notice would. A fact sets it
+    /// and either opens it itself or leaves <see cref="Reset"/> to open and clear it.</summary>
+    public static volatile ManualResetEventSlim? FaultNoticeBeginGate;
+
     /// <summary>The thread <paramref name="requestId"/> was begun on, or -1.</summary>
     public static int HostCallBeginThread(long requestId)
     {
@@ -145,9 +150,13 @@ internal static unsafe class FakeShellHost
         HostCallPayloadJson = null;
         lock (HostCallLog)
         {
+            // Cleared first, so a notice held at the gate is logged after the clear.
             HostCallLog.Clear();
             HostCallBeginThreads.Clear();
         }
+        ManualResetEventSlim? gate = FaultNoticeBeginGate;
+        FaultNoticeBeginGate = null;
+        gate?.Set();
     }
 
     public static BlazorNativeBridgeCallbacks BuildCallbacks() => new()
@@ -286,6 +295,8 @@ internal static unsafe class FakeShellHost
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int HostCallBeginFn(long requestId, int op, byte* argsUtf8)
     {
+        if (op == (int)HostCallOp.FaultNotice && FaultNoticeBeginGate is { } noticeGate)
+            noticeGate.Wait(TimeSpan.FromSeconds(10));
         // Copy — the args string dies when we return (the ABI lifetime rule).
         LastHostCallRequestId = requestId;
         LastHostCallOp = op;

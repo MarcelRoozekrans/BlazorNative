@@ -111,6 +111,10 @@ public sealed class FaultNoticeTests
         NativeShellBridge.ResetForTests();
     }
 
+    /// <summary>Waits for the FaultNotice sends already queued to have begun.</summary>
+    private static void WaitForNoticeSends()
+        => WaitUntil(() => ThreadPool.PendingWorkItemCount == 0, ExportBudget);
+
     private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
     {
         var sw = Stopwatch.StartNew();
@@ -145,6 +149,10 @@ public sealed class FaultNoticeTests
     /// <summary>The managed thread the last <see cref="DispatchBounded"/> called
     /// DispatchEventCore on, the shell's dispatch lane in these facts.</summary>
     private static volatile int s_lastDispatchThread;
+
+    /// <summary>18.1 (#564): called by <see cref="TearDown"/> just before it waits for the
+    /// FaultNotice sends still in flight. A fact sets it to learn that TearDown is waiting.</summary>
+    private static Action? s_tearDownWaitingForNoticeSends;
 
     /// <summary>The worker of the last <see cref="DispatchBounded"/> that overran its budget
     /// and may still be running, until <see cref="TearDown"/> waits for it.</summary>
@@ -1209,6 +1217,53 @@ public sealed class FaultNoticeTests
         {
             ShellCallProbe.Gate.Set();
             lateReader?.Join(Budget);
+            Exports.PendingDispatchObserver = outer;
+        }
+    }
+
+    [Fact]
+    public void ADispatchPastItsBudget_WhoseNoticeIsSlowToBegin_StillLeavesTheNextFactOnlyItsOwnNotice()
+    {
+        // The leak's narrow half. The overrun dispatch's FaultNotice is sent from the pool once
+        // the dispatch returns, and here the fake shell holds that notice's begin at a gate, as a
+        // pool item scheduled late or a shell slow to take the call would. TearDown must wait
+        // for the send itself: the gate opens only when TearDown signals that it is waiting, or
+        // else when the next fact's StartSession resets the fake, which logs the held notice
+        // into the next fact.
+        Action<ulong, string, Task>? outer = Exports.PendingDispatchObserver;
+        using var noticeGate = new ManualResetEventSlim(false);
+        ShellCallProbe.Gate.Reset();
+        s_tearDownWaitingForNoticeSends = noticeGate.Set;
+        try
+        {
+            Exception? overran = Record.Exception(() => DispatchProbe("gated-begin-then-throw", release: () =>
+            {
+                FakeShellHost.FaultNoticeBeginGate = noticeGate;
+                ShellCallProbe.Gate.Set();
+            }));
+            // anchor: the gated dispatch really overran its budget. Without it there is nothing to leak.
+            Assert.True(overran is not null && overran.Message.Contains("did not return within", StringComparison.Ordinal),
+                $"anchor: the gated dispatch did not overrun its budget; got: {overran?.Message ?? "no exception"}.");
+
+            var (_, _, pending, previous) = DispatchProbe("begin-then-throw");
+            try
+            {
+                Assert.True(WaitUntil(() => Notices().Any(n => MessageOf(n.Args) == "after-begin"), Budget),
+                    "anchor: the next fact's own FaultNotice never arrived, so it cannot show what else did.");
+                WaitForNoticeSends();
+                List<string> messages = Notices().Select(n => MessageOf(n.Args)).ToList();
+                Assert.True(messages.All(m => m == "after-begin"),
+                    $"the next fact saw a FaultNotice that is not its own: [{string.Join(", ", messages)}]. "
+                    + "'after-gate' is the overrun dispatch's fault, whose send was still in flight when its "
+                    + "fact's TearDown finished: TearDown did not wait for the send (#564).");
+            }
+            finally { TearDown(pending, previous); }
+        }
+        finally
+        {
+            s_tearDownWaitingForNoticeSends = null;
+            noticeGate.Set();
+            ShellCallProbe.Gate.Set();
             Exports.PendingDispatchObserver = outer;
         }
     }
