@@ -92,7 +92,7 @@ features.** The user-visible outcomes:
 9. Phase 17.9 — pin-standard gaps, second pass (#557) [complete] — 29 sites across 10 pins, all with an RS1 red (17 subject, 12 detector); cells corrected (#560)
 10. Phase 17.10 — re-audit and close [complete] — FAIL: the site unit is fixed by the owner; item 11 NOT MET on #561, 28 sites in 20 pins plus a stale red, two non-assertion reds and three cells; #562 to M18; item 2 narrowed by #564 (#563)
 11. Phase 17.11 — pin-standard gaps, third pass (#561) [complete] — rule written into the pin standard; 224/224 sites with a fresh RS1 red across 87 pins (#567)
-12. Phase 17.12 — re-audit and close [active]
+12. Phase 17.12 — re-audit and close [complete] — PASS WITH FINDINGS against the written rule; items 4, 6, 8, 9 and 11 MET NARROWLY (#569)
 
 > 17.1 goes first because it changes the fault path that 17.4 then redacts and names. 17.2 and
 > 17.3 are independent. 17.5 may move earlier if #454 or #424 bites during the others.
