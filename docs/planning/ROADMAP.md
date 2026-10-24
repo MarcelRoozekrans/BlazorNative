@@ -3786,7 +3786,8 @@ item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 
 ---
 
-### 🔄 Milestone 17 — Close the Dispatch Lane's Debt  *(active — started 2026-10-14)* [status: active]
+### ✅ Milestone 17 — Close the Dispatch Lane's Debt  *(complete — 2026-10-14 to 2026-10-24)* [status: complete]
+**Completed:** 2026-10-24 · verdict **PASS WITH FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md), PR #569. No tag, per `CONVENTIONS.md`.
 
 **Goal:** Close the defects M16 carried in and around the dispatch lane, so the lane, its fault
 path and its Android host calls enter 1.0 with no known defect. No new features.

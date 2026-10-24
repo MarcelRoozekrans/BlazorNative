@@ -1,7 +1,8 @@
 # Milestone 17: Close the Dispatch Lane's Debt
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-10-14
+**Completed:** 2026-10-24 · verdict **PASS WITH FINDINGS** ([final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md), #569)
 
 **Design:** [`docs/superpowers/specs/2026-10-14-milestone-17-design.md`](../superpowers/specs/2026-10-14-milestone-17-design.md)
 **Predecessor:** Milestone 16 — Unblock the Dispatch Lane (complete 2026-10-14, verdict **PASS WITH
