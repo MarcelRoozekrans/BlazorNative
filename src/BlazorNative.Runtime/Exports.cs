@@ -325,6 +325,12 @@ public static class Exports
             // the BN0020 boundary shape: nothing may throw across the C-ABI.
             BnLog.Error("Exports", "shutdown failed", ex);
         }
+        finally
+        {
+            // 18.1 (#564): BnLog's lines are queued, and a NativeAOT library may never see
+            // ProcessExit, so the exit the framework controls drains them, bounded.
+            BnLog.Flush(BnLogQueue.ExitDrainBudget);
+        }
     }
 
     [UnmanagedCallersOnly(EntryPoint = "blazornative_version", CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -461,6 +467,13 @@ public static class Exports
     /// directly by the export whether or not this is set.</summary>
     internal static Action<ulong, string, Task>? PendingDispatchObserver;
 
+    /// <summary>TEST TAP: also receives the Task that sends the FaultNotice for a dispatch
+    /// that faulted after beginning a shell call, with the handler id and the event name
+    /// (Phase 18.1, #564). The send runs on the pool after the export returns, so a test that
+    /// must not let it outlive its fact waits for this Task. Null in production, and delivery
+    /// never depends on it.</summary>
+    internal static Action<ulong, string, Task>? LateFaultNoticeObserver;
+
     /// <summary>
     /// Managed core of blazornative_dispatch_event (testable without the ABI
     /// crossing). Args are flat JSON via the 3.1 FlatJson parser
@@ -582,7 +595,8 @@ public static class Exports
                 {
                     Exception fault = outcome.Fault!;
                     BnLog.Error("Exports", $"dispatch_event handler {handlerId} '{name}' faulted after beginning a shell call", fault);
-                    _ = Task.Run(() => NativeShellBridge.SendFaultNotice(handlerId, name, fault));
+                    Task send = Task.Run(() => NativeShellBridge.SendFaultNotice(handlerId, name, fault));
+                    LateFaultNoticeObserver?.Invoke(handlerId, name, send);
                 }
                 break;
 

@@ -15,9 +15,19 @@ namespace BlazorNative.Core;
 //   - a caller only takes a short lock and adds the line to a bounded queue;
 //   - one background thread drains the queue to the line's writer;
 //   - a full queue drops the line and counts it, and the next line that fits
-//     carries the count, so the drain writes one "N lines dropped" line first;
+//     carries the count, so the drain writes one "N lines dropped" line first.
+//     When the drain empties the queue with drops still counted, as at the end
+//     of a burst followed by nothing, it writes that line itself, to the writer
+//     of the line it just wrote;
+//   - the drop line is always tagged W, whatever BnLog.Level is, so a lost
+//     Error is still announced at the Error threshold (BnLog.Level says so);
 //   - the default instance drains at process exit and on an unhandled exception,
 //     best effort and bounded by `ExitDrainBudget`.
+//
+// NO INHERITED CONTEXT. The drain is started by whichever thread logs first, on
+// a device usually the render thread inside a dispatch, whose AsyncLocals hold
+// the dispatch scope and the renderer. `UnsafeStart` starts it without that
+// thread's ExecutionContext, so it roots none of them for the life of the process.
 //
 // ONE LINE, ONE WRITE. The drain writes each line with one `WriteLine`, as the
 // caller did, so a pump never sees half a line from one call. Lines keep the
@@ -113,7 +123,8 @@ internal sealed class BnLogQueue
     private Thread StartDrain()
     {
         var thread = new Thread(Drain) { IsBackground = true, Name = "BlazorNative-LogDrain" };
-        thread.Start();
+        // UnsafeStart: no ExecutionContext is captured, so no caller's AsyncLocal is rooted.
+        thread.UnsafeStart();
         return thread;
     }
 
@@ -129,17 +140,18 @@ internal sealed class BnLogQueue
                 entry = _queue.Dequeue();
             }
 
-            try
+            Write(entry.Writer, entry.DroppedBefore, entry.Line);
+
+            // Drops counted while the queue was full and not yet carried by a later line:
+            // if the queue is now empty, no later line may come, so report them here.
+            int trailing;
+            lock (_lock)
             {
-                if (entry.DroppedBefore > 0)
-                    entry.Writer.WriteLine(DroppedLine(entry.DroppedBefore));
-                entry.Writer.WriteLine(entry.Line);
+                trailing = _queue.Count == 0 ? _dropped : 0;
+                _dropped -= trailing;
             }
-            catch
-            {
-                // A writer that throws loses its line and nothing else: the drain keeps
-                // going, as BnLog's own catch kept a throwing sink from faulting a caller.
-            }
+            if (trailing > 0)
+                Write(entry.Writer, trailing, line: null);
 
             lock (_lock)
             {
@@ -149,8 +161,26 @@ internal sealed class BnLogQueue
         }
     }
 
+    private static void Write(TextWriter writer, int dropped, string? line)
+    {
+        try
+        {
+            if (dropped > 0)
+                writer.WriteLine(DroppedLine(dropped));
+            if (line is not null)
+                writer.WriteLine(line);
+        }
+        catch
+        {
+            // A writer that throws loses its line and nothing else: the drain keeps
+            // going, as BnLog's own catch kept a throwing sink from faulting a caller.
+        }
+    }
+
     /// <summary>The line that reports dropped lines, in BnLog's line format at Warn, so
-    /// the shells' pumps map it like any other framework line.</summary>
+    /// the shells' pumps map it like any other framework line. Always Warn, deliberately,
+    /// and emitted whatever the threshold: Warn is the level for "something was dropped",
+    /// and a threshold of Error must still learn that errors were lost.</summary>
     internal static string DroppedLine(int count)
         => BnLog.FormatLine(BnLogLevel.Warn, "BnLog",
             $"{count} {(count == 1 ? "line" : "lines")} dropped: the log queue was full");

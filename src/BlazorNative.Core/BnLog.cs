@@ -110,7 +110,12 @@ public static class BnLog
     /// </list>
     /// Assigning <c>BnLogLevel.Unset</c> or an out-of-range value resolves
     /// to <see cref="DefaultLevel"/> — the same safe non-lying rule
-    /// <c>Exports.ToPlatformKind</c> applies to the neighbouring ordinal.</remarks>
+    /// <c>Exports.ToPlatformKind</c> applies to the neighbouring ordinal.
+    /// <para>ONE DELIBERATE EXCEPTION to "at this level or more severe": when the built-in
+    /// writer's queue was full and dropped lines, it writes one
+    /// <c>[BN|W|BnLog] N lines dropped</c> line whatever the threshold. It is tagged Warn,
+    /// the level for something dropped, and it is not gated, because at a threshold of
+    /// <c>Error</c> the dropped lines may themselves be errors.</para></remarks>
     public static BnLogLevel Level
     {
         get => (BnLogLevel)s_level;
@@ -130,8 +135,15 @@ public static class BnLog
     /// always was: only the built-in writer is queued. A sink that can block should
     /// queue for itself.</para>
     /// <para>The built-in writer queues at most 1024 lines behind a stderr that is
-    /// not draining. Past that it drops lines, and the next line it writes is
-    /// preceded by one <c>[BN|W|BnLog] N lines dropped</c> line.</para></remarks>
+    /// not draining. Past that it drops lines and reports how many in one
+    /// <c>[BN|W|BnLog] N lines dropped</c> line: before the next line it writes, or
+    /// once its queue empties if no line follows. That line is always Warn and never
+    /// gated by <see cref="Level"/>.</para>
+    /// <para>EVERY LEVEL IS ASYNCHRONOUS, Error included, by rule (18.1): a synchronous
+    /// write on any level is #564 again, a full stderr pipe holding the render thread.
+    /// The accepted cost is that lines still queued when the OS kills the process are
+    /// lost. The queue drains, bounded, at <c>blazornative_shutdown</c>, at process exit
+    /// and on an unhandled exception.</para></remarks>
     public static Action<BnLogLevel, string, string>? Sink { get; set; }
 
     /// <summary>Maps a raw ordinal — the value a shell put in the init-input

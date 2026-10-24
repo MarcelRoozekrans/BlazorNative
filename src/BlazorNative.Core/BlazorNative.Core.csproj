@@ -53,6 +53,8 @@
     <InternalsVisibleTo Include="BlazorNative.Renderer" />
     <!-- Phase 17.4: ForwardingHookTests calls IForwardsUiEvent directly. -->
     <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
+    <!-- Phase 18.1: blazornative_shutdown drains BnLog's queue through the internal BnLog.Flush. -->
+    <InternalsVisibleTo Include="BlazorNative.Runtime" />
   </ItemGroup>
 
   <ItemGroup>

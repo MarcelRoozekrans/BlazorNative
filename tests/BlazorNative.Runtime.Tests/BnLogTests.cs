@@ -209,6 +209,7 @@ public sealed class BnLogTests
         Action<BnLogLevel, string, string>? originalSink = BnLog.Sink;
         TextWriter originalErr = Console.Error;
         var capture = new StringWriter();
+        bool drained = false;
         try
         {
             BnLog.Sink = null;
@@ -217,10 +218,12 @@ public sealed class BnLogTests
         }
         finally
         {
-            BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+            drained = BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
             Console.SetError(originalErr);
             BnLog.Sink = originalSink;
         }
+
+        Assert.True(drained, "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
 
         Assert.Contains("[BN|E|HostSession] mount 'X' failed", capture.ToString());
     }

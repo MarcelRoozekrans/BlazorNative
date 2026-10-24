@@ -653,7 +653,8 @@ public sealed class NavigationTests
             Assert.Equal("/settings", nav.CurrentRoute);
 
             // Contained is not swallowed: the fault reached stderr.
-            BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+            // 18.1: the default sink queues; drain before reading.
+            Assert.True(BnLog.Flush(TimeSpan.FromSeconds(10)), "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
             Assert.Contains("test: strict listener bug", stderr.ToString());
         }
         finally

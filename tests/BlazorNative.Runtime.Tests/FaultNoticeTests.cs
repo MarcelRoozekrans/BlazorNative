@@ -72,6 +72,10 @@ public sealed class FaultNoticeTests
 
     private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
+        // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it.
+        // Installed before the reset and never removed, so a send from an earlier fact that
+        // is still in flight is recorded too, wherever it lands.
+        Exports.LateFaultNoticeObserver = (_, _, send) => { lock (s_noticeSends) s_noticeSends.Add(send); };
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();
@@ -84,8 +88,8 @@ public sealed class FaultNoticeTests
     /// <summary>Tears a fact down. <paramref name="release"/> frees whatever the fact holds
     /// open, such as a gate a handler waits on, so a dispatch that overran its budget can
     /// finish. When the last <see cref="DispatchBounded"/> overran, this first waits for that
-    /// dispatch to return and for the pool work it queued to start, so its late FaultNotice
-    /// lands in this fact and not in the next one (18.1, #564).</summary>
+    /// dispatch to return. Then it waits for every late FaultNotice send to complete, so each
+    /// notice lands in this fact and not in the next one (18.1, #564).</summary>
     private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
@@ -93,11 +97,11 @@ public sealed class FaultNoticeTests
         if (s_overrunDispatch is { } overrun)
         {
             s_overrunDispatch = null;
+            // Once it has returned, the dispatch has handed its notice send to the tap.
             overrun.Join(Budget);
-            // A FaultedAfterShellCall dispatch sends its notice through Task.Run just before it
-            // returns. Once the pool has taken every queued item, that send has begun.
-            WaitUntil(() => ThreadPool.PendingWorkItemCount == 0, ExportBudget);
         }
+        s_tearDownWaitingForNoticeSends?.Invoke();
+        WaitForNoticeSends();
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
         // that already completed answers rc 1, which is benign here.
@@ -111,9 +115,20 @@ public sealed class FaultNoticeTests
         NativeShellBridge.ResetForTests();
     }
 
-    /// <summary>Waits for the FaultNotice sends already queued to have begun.</summary>
+    /// <summary>Every late FaultNotice send <see cref="Exports.LateFaultNoticeObserver"/>
+    /// has handed on and <see cref="WaitForNoticeSends"/> has not yet seen complete.</summary>
+    private static readonly List<Task> s_noticeSends = [];
+
+    /// <summary>Waits, bounded by <see cref="Budget"/>, until every recorded FaultNotice send
+    /// has completed, so its notice is in the fake's log. A send whose task is complete has
+    /// begun its host call, because SendNotice begins it synchronously.</summary>
     private static void WaitForNoticeSends()
-        => WaitUntil(() => ThreadPool.PendingWorkItemCount == 0, ExportBudget);
+    {
+        Task[] sends;
+        lock (s_noticeSends) sends = s_noticeSends.ToArray();
+        Task.WaitAll(sends.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        lock (s_noticeSends) s_noticeSends.RemoveAll(t => t.IsCompleted);
+    }
 
     private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
     {
@@ -1199,8 +1214,8 @@ public sealed class FaultNoticeTests
             {
                 Assert.True(WaitUntil(() => Notices().Any(n => MessageOf(n.Args) == "after-begin"), Budget),
                     "anchor: the next fact's own FaultNotice never arrived, so it cannot show what else did.");
-                // A notice already queued on the pool lands before the log is read.
-                WaitUntil(() => ThreadPool.PendingWorkItemCount == 0, ExportBudget);
+                // Every notice send recorded so far has landed before the log is read.
+                WaitForNoticeSends();
                 List<string> messages = Notices().Select(n => MessageOf(n.Args)).ToList();
                 Assert.True(messages.All(m => m == "after-begin"),
                     $"the next fact saw a FaultNotice that is not its own: [{string.Join(", ", messages)}]. "
