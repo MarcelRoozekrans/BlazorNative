@@ -3964,6 +3964,60 @@ the app's handler through a forwarding hook.
 
 ---
 
+### 🔄 Milestone 18 — Acknowledged Bugs  *(active — started 2026-10-24)* [status: active]
+
+**Goal:** Fix every bug M17 left acknowledged but unfixed, starting with the CI flakes so the suites are honest. No new features.
+**Started:** 2026-10-24
+**Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md) · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+
+#### Phase 18.1: CI flakes at their cause (#551, #564, #453, #444, #407) [status: pending]
+**Goal:** Find and fix the cause of each Windows .NET flake and each device flake, so every later M18 PR gets clean CI. No fix raises a bound to hide a slow path.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 18.2: Fault attribution for queued work (#500) [status: pending]
+**Goal:** A fault in a re-render or a `RunAfterDispatch` action is charged to the dispatch that queued it, by owner decision of 2026-10-24.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 18.3: Secure-storage per-key ordering (#506) [status: pending]
+**Goal:** On Android, same-key secure-storage requests queue behind a pending auth, and iOS is matched, by owner decision of 2026-10-24.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 18.4: Recreation during boot (#511) [status: pending]
+**Goal:** An Activity recreated before boot completes shows its page.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 18.5: Slow-handler naming for bound inputs (#522) [status: pending]
+**Goal:** Name the page and the wrapper's position, never a compiler lambda, by owner decision of 2026-10-24.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 18.6: Test-suite honesty, part two (#543, #544) [status: pending]
+**Goal:** A bounded host-call wait plus a Gradle per-test timeout, by owner decision of 2026-10-24, and in-turn `isFinishing` checks in the back tests.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 18.7: Twin divergences (#401, #396) [status: pending]
+**Goal:** The stderr level gate and unenrolled-device secure storage each get one documented behaviour on both shells, with a twin pin.
+**Surface:** Mixed
+**HelpWanted:** no
+
+#### Phase 18.8: The generator's pipe holder (#530) [status: pending]
+**Goal:** Identify and fix what holds the reference generator's output pipe after `dotnet publish`.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 18.9: Audit and close (#568) [status: pending]
+**Goal:** Fix #568's cells, audit M18 against its DoD under the written grading rule, and close it. **No tag**, per `CONVENTIONS.md`.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG
