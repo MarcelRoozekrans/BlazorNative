@@ -32,6 +32,13 @@ namespace BlazorNative.Core;
 // `android.util.Log` / `os.Logger`. `FormatLine` is a pure function so the pin
 // asserts behaviour rather than a claim.
 //
+// THE DEFAULT SINK NEVER BLOCKS ITS CALLER (18.1, #564). It formats the line on
+// the caller's thread, so the level and the redaction are decided there exactly as
+// before, then hands it to `BnLogQueue`, whose one background thread writes it to
+// `Console.Error`. A full stderr pipe now stalls that thread and nothing else. A
+// line is therefore on stderr shortly AFTER the call returns, not when it returns;
+// code that reads stderr back in-process calls `Flush` first.
+//
 // See docs/plans/2026-07-21-phase-11.4-design.md §3 (the seam), §5.4 (the level
 // rides the init input at zero byte cost), §5.5 (the format) and §7 (redaction).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +93,10 @@ public static class BnLog
     // the whole gate.
     private static volatile int s_level = (int)DefaultLevel;
 
+    // The default sink's queue: bounded, drained by one background thread, and
+    // drained again, bounded, at process exit (18.1, #564).
+    private static readonly BnLogQueue s_queue = BnLogQueue.CreateDefault();
+
     /// <summary>The current threshold: a message at this level or MORE SEVERE
     /// (numerically lower) is emitted.</summary>
     /// <remarks>THREE PLACES SET THIS, and the last write wins:
@@ -108,13 +119,19 @@ public static class BnLog
 
     /// <summary>The one sink every framework line goes through. <see langword="null"/>
     /// (the default) means the built-in level-tagged <c>Console.Error</c> writer of
-    /// <see cref="FormatLine"/>.</summary>
+    /// <see cref="FormatLine"/>, which queues the line and never blocks its caller.</summary>
     /// <remarks>Deliberately the NARROWEST extension point that works — level,
     /// category, message. A consumer wanting structured sinks (Serilog,
     /// OpenTelemetry, JSON-per-line) builds on this; the framework does not grow an
     /// <c>ILoggerProvider</c> ecosystem to host them (design §12).
     /// A sink that THROWS is swallowed: a logger that faults its caller is worse
-    /// than a logger that is quiet.</remarks>
+    /// than a logger that is quiet.
+    /// <para>A sink set here is called on the logging thread, synchronously, as it
+    /// always was: only the built-in writer is queued. A sink that can block should
+    /// queue for itself.</para>
+    /// <para>The built-in writer queues at most 1024 lines behind a stderr that is
+    /// not draining. Past that it drops lines, and the next line it writes is
+    /// preceded by one <c>[BN|W|BnLog] N lines dropped</c> line.</para></remarks>
     public static Action<BnLogLevel, string, string>? Sink { get; set; }
 
     /// <summary>Maps a raw ordinal — the value a shell put in the init-input
@@ -169,7 +186,9 @@ public static class BnLog
         Action<BnLogLevel, string, string>? sink = Sink;
         try
         {
-            if (sink is null) Console.Error.WriteLine(FormatLine(level, category, message));
+            // Console.Error is read here, on the caller's thread, so the line goes to the
+            // writer that was stderr when it was logged.
+            if (sink is null) s_queue.TryEnqueue(Console.Error, FormatLine(level, category, message));
             else sink(level, category, message);
         }
         catch
@@ -179,6 +198,12 @@ public static class BnLog
             // across the C-ABI (BN0020's boundary shape).
         }
     }
+
+    /// <summary>Waits until every line the built-in writer queued before this call is
+    /// on its writer, or until <paramref name="timeout"/> passes. For a test that
+    /// captures <c>Console.Error</c> and reads it back.</summary>
+    /// <returns><see langword="true"/> if those lines were all written in time.</returns>
+    internal static bool Flush(TimeSpan timeout) => s_queue.Flush(timeout);
 
     /// <summary>THE LINE FORMAT (design §5.5) — <c>[BN|E|category] message</c>.</summary>
     /// <remarks>A pure function, and it has to be: Gate B/C's stderr pump sees

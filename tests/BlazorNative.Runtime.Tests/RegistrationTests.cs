@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using BlazorNative.SampleApp;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -221,6 +222,7 @@ public sealed class RegistrationTests
             }
             finally
             {
+                BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
                 Console.SetError(original);
             }
 
@@ -249,6 +251,7 @@ public sealed class RegistrationTests
         }
         finally
         {
+            BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
             Console.SetError(original);
         }
 

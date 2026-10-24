@@ -140,7 +140,11 @@ public sealed class HostNavigateTests
             Console.SetError(capture);
             int rc;
             try { rc = Exports.DispatchHostEventCore("navigate", "/layout"); }
-            finally { Console.SetError(original); }
+            finally
+            {
+                BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+                Console.SetError(original);
+            }
 
             Assert.Equal(2, rc);
             Assert.Contains("navigate", capture.ToString());

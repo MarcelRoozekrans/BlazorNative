@@ -217,6 +217,7 @@ public sealed class BnLogTests
         }
         finally
         {
+            BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
             Console.SetError(originalErr);
             BnLog.Sink = originalSink;
         }
@@ -270,6 +271,47 @@ public sealed class BnLogTests
         Assert.True(WaitUntil(() => stderr.Lines.Contains("[BN|E|BnLogTests] logged-while-blocked"), TimeSpan.FromSeconds(10)),
             "the line logged while stderr was blocked never reached stderr after it drained; lines seen: ["
             + string.Join(" | ", stderr.Lines) + "].");
+    }
+
+    /// <summary>18.1, #564: A FULL QUEUE DROPS AND COUNTS, AND THE NEXT WRITE REPORTS THE
+    /// COUNT. The default sink's queue is bounded so a stderr that never drains cannot grow
+    /// the heap, and a bound that drops silently would lose lines with nothing to say so.
+    /// Two claims, one per clause of the name: lines past the bound are dropped, not written
+    /// late; and the next line that fits is preceded by one line giving how many were lost.
+    ///
+    /// A private queue with a capacity of 4, not BnLog's own: the queue is process-wide, and
+    /// tests in other collections log into it in parallel, so its count would not be exact.
+    /// DOES NOT COVER: BnLog's default capacity, or that BnLog uses this type; the stderr
+    /// pin above covers BnLog's path, not its bound.</summary>
+    [Fact]
+    public void AFullQueue_DropsLines_AndTheNextWriteReportsHowMany()
+    {
+        var queue = new BnLogQueue(capacity: 4);
+        var stderr = new GatedWriter();
+        TimeSpan budget = TimeSpan.FromSeconds(10);
+        try
+        {
+            queue.TryEnqueue(stderr, "first");
+            // anchor: the drain thread holds "first" and is parked inside the blocked writer, so
+            // the queue behind it is empty and its 4 slots are all free.
+            Assert.True(stderr.WaitEntered(budget), "anchor: the drain thread never reached the writer.");
+            for (int i = 0; i < 4; i++)
+                Assert.True(queue.TryEnqueue(stderr, $"fill {i}"), $"anchor: fill {i} did not fit in a queue of 4.");
+            for (int i = 0; i < 3; i++)
+                queue.TryEnqueue(stderr, $"dropped {i}");
+        }
+        finally { stderr.Open(); }
+
+        Assert.True(queue.Flush(budget), "anchor: the queue did not drain once stderr opened.");
+        queue.TryEnqueue(stderr, "after");
+        Assert.True(queue.Flush(budget), "anchor: the queue did not drain the line after the drops.");
+        List<string> lines = stderr.Lines;
+
+        Assert.True(!lines.Any(l => l.StartsWith("dropped", StringComparison.Ordinal)),
+            $"a line past the queue's bound was written anyway: [{string.Join(" | ", lines)}]. A full queue must drop.");
+        Assert.True(lines.SequenceEqual(["first", "fill 0", "fill 1", "fill 2", "fill 3",
+                BnLog.FormatLine(BnLogLevel.Warn, "BnLog", "3 lines dropped: the log queue was full"), "after"]),
+            $"expected the 3 dropped lines to be reported once, just before the next line written; got: [{string.Join(" | ", lines)}].");
     }
 
     // ── 5. The line format — §5.5, and §11's R1 ──────────────────────────────

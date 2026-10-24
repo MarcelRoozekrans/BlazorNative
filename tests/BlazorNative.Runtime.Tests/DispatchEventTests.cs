@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using BlazorNative.Renderer;
 using BlazorNative.Runtime;
 using Microsoft.AspNetCore.Components;
@@ -70,7 +71,11 @@ public sealed class DispatchEventTests
         using var capture = new StringWriter();
         Console.SetError(capture);
         try { action(); }
-        finally { Console.SetError(original); }
+        finally
+        {
+            BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+            Console.SetError(original);
+        }
         return capture.ToString();
     }
 
