@@ -128,36 +128,43 @@ internal sealed class BnLogQueue
         return thread;
     }
 
+    // The loop body is its own method on purpose: with it inlined, coverlet's IL
+    // instrumentation, which ci.yml's coverage run uses, produced an invalid program
+    // in this never-returning loop and crashed the test host (measured in 18.1).
     private void Drain()
     {
         while (true)
+            DrainOne();
+    }
+
+    /// <summary>Writes the next queued line, waiting for one if the queue is empty.</summary>
+    private void DrainOne()
+    {
+        Entry entry;
+        lock (_lock)
         {
-            Entry entry;
-            lock (_lock)
-            {
-                while (_queue.Count == 0)
-                    Monitor.Wait(_lock);
-                entry = _queue.Dequeue();
-            }
+            while (_queue.Count == 0)
+                Monitor.Wait(_lock);
+            entry = _queue.Dequeue();
+        }
 
-            Write(entry.Writer, entry.DroppedBefore, entry.Line);
+        Write(entry.Writer, entry.DroppedBefore, entry.Line);
 
-            // Drops counted while the queue was full and not yet carried by a later line:
-            // if the queue is now empty, no later line may come, so report them here.
-            int trailing;
-            lock (_lock)
-            {
-                trailing = _queue.Count == 0 ? _dropped : 0;
-                _dropped -= trailing;
-            }
-            if (trailing > 0)
-                Write(entry.Writer, trailing, line: null);
+        // Drops counted while the queue was full and not yet carried by a later line:
+        // if the queue is now empty, no later line may come, so report them here.
+        int trailing;
+        lock (_lock)
+        {
+            trailing = _queue.Count == 0 ? _dropped : 0;
+            _dropped -= trailing;
+        }
+        if (trailing > 0)
+            Write(entry.Writer, trailing, line: null);
 
-            lock (_lock)
-            {
-                _written++;
-                Monitor.PulseAll(_lock);
-            }
+        lock (_lock)
+        {
+            _written++;
+            Monitor.PulseAll(_lock);
         }
     }
 
