@@ -3971,10 +3971,13 @@ the app's handler through a forwarding hook.
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md) · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
 
-#### Phase 18.1: CI flakes at their cause (#551, #564, #453, #444, #407) [status: pending]
+#### Phase 18.1: CI flakes at their cause (#551, #564, #453, #444, #407) [status: active]
 **Goal:** Find and fix the cause of each Windows .NET flake and each device flake, so every later M18 PR gets clean CI. No fix raises a bound to hide a slow path.
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-24-phase-18.1-design.md`](../superpowers/specs/2026-10-24-phase-18.1-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-24-phase-18.1-flakes.md`](../superpowers/plans/2026-10-24-phase-18.1-flakes.md)
+**Record:** [`docs/plans/2026-10-24-phase-18.1-record.md`](../plans/2026-10-24-phase-18.1-record.md)
 
 #### Phase 18.2: Fault attribution for queued work (#500) [status: pending]
 **Goal:** A fault in a re-render or a `RunAfterDispatch` action is charged to the dispatch that queued it, by owner decision of 2026-10-24.
