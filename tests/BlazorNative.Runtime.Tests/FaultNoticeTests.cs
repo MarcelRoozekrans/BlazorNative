@@ -1175,10 +1175,11 @@ public sealed class FaultNoticeTests
 
             // The late reader. Like a stderr reader that drains only once the next fact has begun,
             // it opens the gate after the next fact's StartSession has cleared the host-call log.
-            // When the overrun fact tore itself down, the gate is open already and this does nothing.
+            // When the overrun fact tore itself down, the gate is open already and this stands down
+            // at once: the next fact's empty log can be too brief to see.
             lateReader = new Thread(() =>
             {
-                WaitUntil(() => FakeShellHost.HostCalls().Count == 0, Budget);
+                WaitUntil(() => ShellCallProbe.Gate.IsSet || FakeShellHost.HostCalls().Count == 0, Budget);
                 ShellCallProbe.Gate.Set();
             })
             { IsBackground = true, Name = "fault-notice-late-reader" };
