@@ -224,6 +224,54 @@ public sealed class BnLogTests
         Assert.Contains("[BN|E|HostSession] mount 'X' failed", capture.ToString());
     }
 
+    /// <summary>18.1, #564: THE DEFAULT SINK NEVER BLOCKS ITS CALLER. Stderr is a pipe, and a
+    /// pipe whose reader lags blocks the writer: on the Windows runner a full one held the
+    /// render thread inside `BnLog.Error` past a dispatch's budget. Here `Console.Error` is a
+    /// writer that blocks until the test opens it, so a synchronous write cannot return.
+    /// Two claims, one per clause of the name: the call returns while stderr is blocked, and
+    /// the line is not lost, it reaches stderr once stderr drains.
+    ///
+    /// DOES NOT COVER: a full queue, which drops and counts (the queue's own pin below), and
+    /// a dispatch, which `FaultNoticeTests` pins through the real render thread.</summary>
+    [Fact]
+    public void WhileStderrIsBlocked_AnErrorReturnsAtOnce_AndItsLineAppearsOnceStderrDrains()
+    {
+        Action<BnLogLevel, string, string>? originalSink = BnLog.Sink;
+        TextWriter originalErr = Console.Error;
+        var stderr = new GatedWriter();
+        bool returnedAtOnce;
+        try
+        {
+            BnLog.Sink = null;
+            Console.SetError(stderr);
+            using var returned = new ManualResetEventSlim(false);
+            var caller = new Thread(() =>
+            {
+                BnLog.Error("BnLogTests", "logged-while-blocked");
+                returned.Set();
+            })
+            { IsBackground = true, Name = "bnlog-blocked-caller" };
+            caller.Start();
+            returnedAtOnce = returned.Wait(TimeSpan.FromSeconds(1));
+            stderr.Open();
+            // Let the caller leave before `returned` is disposed, whichever way it went.
+            caller.Join(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            stderr.Open();
+            Console.SetError(originalErr);
+            BnLog.Sink = originalSink;
+        }
+
+        Assert.True(returnedAtOnce,
+            "BnLog.Error did not return within 1 s while stderr was blocked: the default sink wrote "
+            + "synchronously, so a full stderr pipe holds its caller, the render thread included (#564).");
+        Assert.True(WaitUntil(() => stderr.Lines.Contains("[BN|E|BnLogTests] logged-while-blocked"), TimeSpan.FromSeconds(10)),
+            "the line logged while stderr was blocked never reached stderr after it drained; lines seen: ["
+            + string.Join(" | ", stderr.Lines) + "].");
+    }
+
     // ── 5. The line format — §5.5, and §11's R1 ──────────────────────────────
 
     /// <summary>THE FORMAT, STATED LITERALLY. Written by C# and parsed by Kotlin AND
@@ -404,6 +452,18 @@ public sealed class BnLogTests
             catch (Exception inner) { throw new InvalidOperationException("outer-boom", inner); }
         }
         catch (Exception ex) { return ex; }
+    }
+
+    private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < budget)
+        {
+            if (condition())
+                return true;
+            Thread.Sleep(10);
+        }
+        return condition();
     }
 
     private static void WithLevel(BnLogLevel level, Action body)
