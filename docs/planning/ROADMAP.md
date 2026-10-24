@@ -3786,7 +3786,8 @@ item is MET, or MET NARROWLY with its reason. **No tag**, per `CONVENTIONS.md`.
 
 ---
 
-### 🔄 Milestone 17 — Close the Dispatch Lane's Debt  *(active — started 2026-10-14)* [status: active]
+### ✅ Milestone 17 — Close the Dispatch Lane's Debt  *(complete — 2026-10-14 to 2026-10-24)* [status: complete]
+**Completed:** 2026-10-24 · verdict **PASS WITH FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md), PR #569. No tag, per `CONVENTIONS.md`.
 
 **Goal:** Close the defects M16 carried in and around the dispatch lane, so the lane, its fault
 path and its Android host calls enter 1.0 with no known defect. No new features.
@@ -3948,12 +3949,18 @@ the app's handler through a forwarding hook.
 - **Fresh reds:** all 224 sites across the 87 M17 pins have a fresh red; 215 quote their own message, and the 17.12 re-audit quoted the other 9. A staleness sweep found 13 stale reds, and all were re-run.
 - **Closed:** #561.
 
-#### Phase 17.12: Re-audit and close [status: active]
+#### Phase 17.12: Re-audit and close [status: complete]
 **Goal:** Re-audit M17 against the written site unit. On PASS or PASS WITH FINDINGS, run `complete-milestone`. **No tag**, per `CONVENTIONS.md`. M18 planning follows.
 **Surface:** Docs
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-22-phase-17.12-design.md`](../superpowers/specs/2026-10-22-phase-17.12-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-22-phase-17.12-reaudit.md`](../superpowers/plans/2026-10-22-phase-17.12-reaudit.md)
+**Record:** [`docs/plans/2026-10-22-milestone-17-reaudit-3.md`](../plans/2026-10-22-milestone-17-reaudit-3.md)
+**Completed:** 2026-10-24 · [PR #569](https://github.com/MarcelRoozekrans/BlazorNative/pull/569).
+- **Verdict:** PASS WITH FINDINGS, graded against the written rule.
+- **MET:** items 1, 2, 3, 5, 7 and 10.
+- **MET NARROWLY:** items 4, 6 (#511), 8 (#522), 9 (#530) and 11 (#568).
+- **Item 11:** every one of the 224 sites has a fresh, quoted red.
 
 ---
 
