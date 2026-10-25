@@ -189,7 +189,7 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 | .NET | `dotnet test` | 1372 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 206 | `ci.yml` → `build-test` — **required, gates the PR** |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 247 | `android-instrumented.yml` — advisory (nightly/dispatch) |
-| iOS (XCTest, simulator) | `xcodebuild test` | 288 | `ios.yml` — advisory (on-merge/dispatch) |
+| iOS (XCTest, simulator) | `xcodebuild test` | 289 | `ios.yml` — advisory (on-merge/dispatch) |
 
 ## Prerequisites
 

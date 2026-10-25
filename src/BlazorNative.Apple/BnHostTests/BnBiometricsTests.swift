@@ -331,6 +331,7 @@ final class BnBiometricsTests: BnHostTestCase {
         BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in box.arm(reply) }
         let form = try bootSecureDemo()
         let bio = try XCTUnwrap(runtime?.bridge.biometrics)
+        try awaitContextWarmUp(on: bio) // the named step: the boot warm-up, before the tap (18.1, #453)
 
         try tapButton("Authenticate", in: form)
         let reply = try XCTUnwrap(awaitArmedReply(box, on: bio, deadline: 30),
@@ -348,6 +349,7 @@ final class BnBiometricsTests: BnHostTestCase {
         BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in box.arm(reply) }
         let form = try bootSecureDemo()
         let bio = try XCTUnwrap(runtime?.bridge.biometrics)
+        try awaitContextWarmUp(on: bio) // the named step: the boot warm-up, before the tap (18.1, #453)
 
         try tapButton("Authenticate", in: form)
         let reply = try XCTUnwrap(awaitArmedReply(box, on: bio, deadline: 30),
@@ -471,5 +473,133 @@ final class BnBiometricsTests: BnHostTestCase {
             if cond() { return true }
         }
         return cond()
+    }
+
+    // ── 18.1 (#453): boot warms one LAContext, off the boot path, before any request ──
+    //
+    // WHAT IT PINS. The first `LAContext()` in a process is a cold LocalAuthentication
+    // start, and on a freshly booted simulator it took 26 to 41 s (the 18.1
+    // investigation, #453). Since 18.1 `BnRuntime.start` enqueues one context creation
+    // on the biometrics queue at boot, so an app pays that cost early and once, not on
+    // its first Authenticate. Through `contextFactoryForTest`, held shut at boot, this
+    // shows the three parts of that contract, each at its own assertion:
+    //   1. AT BOOT: the factory is entered with no biometric request made, before the tap.
+    //   2. OFF THE BOOT PATH: `start` returned and the form rendered while that creation
+    //      was still held. A warm-up on the boot path would hold boot until the factory's
+    //      own 20 s guard let go, and this reds on that instead of hanging.
+    //   3. BEFORE THE FIRST REQUEST: the creation ran on the biometrics queue, the serial
+    //      queue that arms every request, so a request can only be armed after it. The
+    //      queue's label is read inside the factory; a warm-up on any other queue or
+    //      thread reds here.
+    // Then it runs the rest of the flow: the tap is recorded while the warm-up is held,
+    // the warm-up finishes on release, the request creates exactly one more context, and
+    // the reply completes the call Cancelled.
+    //
+    // HOW IT STAYS DETERMINISTIC. Every red above is a forced state, not a race: the
+    // factory does not return until the test releases it, so "entered", "still held" and
+    // "the queue it ran on" are each read while the warm-up is provably mid-creation.
+    //
+    // WHAT IT DOES NOT COVER. It does not make a cold start faster, and it cannot see the
+    // real cold cost: the factory stands in for it. The iOS lane's fresh-boot runs are
+    // that proof (the 18.1 record, section 4). It does not pin `BnSecureStorage`, which
+    // creates its own contexts; the process-wide cold start this warms is shared by both.
+
+    func testBootWarmsOneLAContextOffTheBootPathBeforeTheFirstBiometricRequest() throws {
+        let box = ArmedReply()
+        BnBiometrics.evaluatePolicyReplyOverrideForTest = { _, reply in box.arm(reply) }
+        let factory = HeldContextFactory()
+        BnBiometrics.contextFactoryForTest = factory.make
+        // Whatever the outcome, let the queue finish before tearDown resets the seams.
+        defer { factory.release(); runtime?.bridge.biometrics.drainForTest() }
+
+        let form = try bootSecureDemo()
+        let bio = try XCTUnwrap(runtime?.bridge.biometrics)
+
+        // 1. At boot: a context was created with no request made.
+        let enteredAtBoot = factory.entered.wait(timeout: .now() + 10)
+        XCTAssertEqual(enteredAtBoot, .success,
+                       "boot created no LAContext within 10 s: the shell does not warm LocalAuthentication at boot, "
+                       + "so the first biometric request pays the cold start itself (#453)")
+        guard enteredAtBoot == .success else { return }
+        XCTAssertFalse(bio.hasInFlightRequestForTest(), "anchor: the boot creation ran with no biometric request in flight")
+
+        // 2. Off the boot path: boot returned while that creation was still held.
+        XCTAssertFalse(factory.firstCallReturned,
+                       "boot waited for the LAContext warm-up: start returned only after the held creation let go, "
+                       + "so a cold LocalAuthentication start would hold the app's boot (#453)")
+
+        // 3. Before the first request: on the serial queue that arms every request.
+        XCTAssertEqual(factory.firstCallQueueLabel, "io.blazornative.biometrics",
+                       "the boot warm-up ran on '\(factory.firstCallQueueLabel ?? "nil")', not on the biometrics queue, "
+                       + "so the first biometric request is not ordered behind it and can still pay the cold start (#453)")
+
+        // The tap is recorded at once; its context waits behind the held warm-up.
+        try tapButton("Authenticate", in: form)
+        XCTAssertTrue(pollUntil { bio.hasInFlightRequestForTest() }, "the tap never reached the biometrics op")
+        XCTAssertFalse(bio.contextIsWarmForTest(), "the warm-up reported warm while its creation was still held")
+
+        factory.release()
+        try awaitContextWarmUp(on: bio)
+        let reply = try XCTUnwrap(awaitArmedReply(box, on: bio, deadline: 30),
+                                  "Authenticate never reached the evaluation after the warm-up finished")
+        XCTAssertEqual(factory.calls, 2,
+                       "expected exactly two LAContext creations, the boot warm-up and the request's own, got \(factory.calls)")
+        reply(false, LAError(.userCancel))
+        XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:Cancelled" },
+                      "the request armed after the warm-up never completed to the echo")
+    }
+
+    /// The pin's `contextFactoryForTest`. Its FIRST call, the boot warm-up, blocks until
+    /// `release()`, bounded by a 20 s guard so a warm-up on the boot path reds instead of
+    /// hanging; later calls return at once. It records the queue each first call ran on,
+    /// and whether that call had returned. Lock-guarded: it runs on the biometrics queue
+    /// and the test reads on main.
+    final class HeldContextFactory {
+        let entered = DispatchSemaphore(value: 0)
+        private let gate = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var count = 0
+        private var label: String?
+        private var returned = false
+        private var released = false
+
+        func make() -> LAContext {
+            lock.lock()
+            count += 1
+            let first = count == 1
+            if first { label = String(cString: __dispatch_queue_get_label(nil)) }
+            lock.unlock()
+            if first {
+                entered.signal()
+                _ = gate.wait(timeout: .now() + 20)
+                lock.lock(); returned = true; lock.unlock()
+            }
+            return LAContext()
+        }
+
+        func release() {
+            lock.lock(); let already = released; released = true; lock.unlock()
+            if !already { gate.signal() }
+        }
+
+        var calls: Int { lock.lock(); defer { lock.unlock() }; return count }
+        var firstCallQueueLabel: String? { lock.lock(); defer { lock.unlock() }; return label }
+        var firstCallReturned: Bool { lock.lock(); defer { lock.unlock() }; return returned }
+    }
+
+    struct WarmUpTimeout: Error {}
+
+    /// 18.1 (#453): THE NAMED WARM-UP STEP the boot tests take before they tap. The shell
+    /// starts one `LAContext` creation at boot; this waits for it to finish. A cold
+    /// LocalAuthentication start now fails HERE, saying so, instead of eating the tap's
+    /// 30 s wait for the armed reply, whose bound is unchanged.
+    private func awaitContextWarmUp(on bio: BnBiometrics, deadline seconds: TimeInterval = 30,
+                                    file: StaticString = #filePath, line: UInt = #line) throws {
+        guard pollUntil(deadline: seconds, { bio.contextIsWarmForTest() }) else {
+            XCTFail("the LAContext warm-up the shell starts at boot did not finish within \(seconds) s: a cold "
+                    + "LocalAuthentication start (#453), not a biometrics regression. Look for the "
+                    + "'slow LAContext creation' warning.", file: file, line: line)
+            throw WarmUpTimeout()
+        }
     }
 }

@@ -140,6 +140,12 @@ final class BnBiometrics {
     /// CLLocationManager retention lesson for LocalAuthentication). Cleared by `complete`.
     private var inFlightContext: LAContext?
 
+    /// 18.1 (#453): true once the boot warm-up's `LAContext` exists. Written on
+    /// `workQueue` under `lock`, read by `contextIsWarmForTest()`. No production code
+    /// waits on it: the warm-up exists so the first request does not pay the cold start,
+    /// and a request that arrives while it runs simply queues behind it.
+    private var contextWarm = false
+
     // ── Test seams (static, reset in teardown — the BnGeolocation/BnNotifications twins) ──
 
     /// Overrides the read of `canEvaluatePolicy` so a hosted test drives `check`
@@ -194,6 +200,10 @@ final class BnBiometrics {
     /// The LAContext is retained for the call's duration — the retention pin as a
     /// PROPERTY (no observable otherwise sees the hold, the CLLocationManager precedent).
     func contextIsRetainedForTest() -> Bool { lock.lock(); defer { lock.unlock() }; return inFlightContext != nil }
+    /// 18.1 (#453): the boot warm-up has created its `LAContext`. The boot tests wait for
+    /// this as a named step before they tap, so a cold LocalAuthentication start fails
+    /// there, named, and not inside the tap's wait for the armed reply.
+    func contextIsWarmForTest() -> Bool { lock.lock(); defer { lock.unlock() }; return contextWarm }
 
     // ── The op entry (AppleShellBridge.hostCallBegin forwards here for op=Biometrics) ──
 
