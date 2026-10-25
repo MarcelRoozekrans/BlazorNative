@@ -187,9 +187,11 @@ public sealed unsafe class ShutdownQuiescenceTests
     /// <paramref name="holdPool"/> runs just before the completion, and what it returns is
     /// disposed once the frame wait ends; <paramref name="frameBudget"/> replaces
     /// <see cref="Budget"/> for that wait. Both are PoolStarvationTests' (#551).
-    /// <paramref name="log"/> takes the control's frame latency and the pool's queue delay.</summary>
+    /// <paramref name="log"/> takes the control's frame latency and the pool's queue delay.
+    /// <paramref name="complete"/> false skips the completion, so no frame comes while the
+    /// pool stays free: PoolStarvationTests' contrast for the starvation message.</summary>
     internal static Task RunHeldCall(bool shutdown, Func<IDisposable>? holdPool = null, TimeSpan? frameBudget = null,
-        Action<string>? log = null)
+        Action<string>? log = null, bool complete = true)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -242,8 +244,11 @@ public sealed unsafe class ShutdownQuiescenceTests
             // delay at the completion, to name starvation when that is why the frame is late.
             PoolProbe probe = PoolProbe.Queue();
             var sinceCompletion = Stopwatch.StartNew();
-            NativeShellBridge.CompleteHostCall(requestId, (int)CameraStatus.Cancelled, null);
-            requestId = -1;
+            if (complete)
+            {
+                NativeShellBridge.CompleteHostCall(requestId, (int)CameraStatus.Cancelled, null);
+                requestId = -1;
+            }
 
             if (shutdown)
             {

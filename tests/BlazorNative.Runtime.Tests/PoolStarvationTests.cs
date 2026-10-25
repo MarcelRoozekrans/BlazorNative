@@ -93,6 +93,59 @@ public sealed class PoolStarvationTests
             "the positive control named thread-pool starvation, but the frame did not arrive once the "
             + "pool was released, so it was lost, not late: " + ex?.Message);
     }
+
+    /// <summary>Text of the positive control's message for a missed frame with a free pool.</summary>
+    private const string BlamesTheDemo = "Has BnCameraDemo stopped re-rendering";
+
+    /// <summary>
+    /// PIN, #551, the contrast for the fact above: with the pool free and no completion,
+    /// so no frame can come, the positive control blames BnCameraDemo and does not name
+    /// thread-pool starvation. Its probe ran, so the pool was not starved, and the message
+    /// must say what is really wrong. ANCHOR: the control failed.
+    /// </summary>
+    [Fact]
+    public Task ThePositiveControl_WithAFreePoolAndNoFrame_BlamesBnCameraDemo_NotStarvation() => OffPool.Run(() =>
+    {
+        Exception? ex = Record.Exception(() => { ShutdownQuiescenceTests.RunHeldCall(
+            shutdown: false, frameBudget: ContrastBudget, complete: false); });
+
+        Assert.True(ex is not null, "anchor: the positive control passed with no completion, so no frame was missed");
+        Assert.False(ex.Message.Contains(Starvation, StringComparison.Ordinal),
+            "the positive control named thread-pool starvation with a free pool, so a real regression would "
+            + "read as starvation (#551): " + ex.Message);
+        Assert.Contains(BlamesTheDemo, ex.Message);
+    });
+
+    /// <summary>The frame wait in the contrast fact. No frame can come, so a longer wait
+    /// would only make the fact slower.</summary>
+    private static readonly TimeSpan ContrastBudget = TimeSpan.FromSeconds(1);
+
+    /// <summary>The rule, as RunHeldCall's refusal states it.</summary>
+    private const string ControlRule = "positive control must not run on a thread-pool thread";
+
+    /// <summary>
+    /// PIN, #551: ShutdownQuiescenceTests.RunHeldCall's positive control, called on a
+    /// thread-pool thread, fails before it starts a session, naming the rule. It
+    /// sleep-polls for a frame that crosses the pool once, so on a pool thread it holds
+    /// one of the threads its own frame needs. ANCHOR: the call really ran on a pool
+    /// thread.
+    /// </summary>
+    [Fact]
+    public async Task ThePositiveControl_OnAPoolThread_FailsNamingTheRule()
+    {
+        bool onPool = false;
+        Exception? ex = await Task.Run(() =>
+        {
+            onPool = Thread.CurrentThread.IsThreadPoolThread;
+            return Record.Exception(() => { ShutdownQuiescenceTests.RunHeldCall(shutdown: false); });
+        });
+        Assert.True(onPool, "anchor: Task.Run did not run the call on a thread-pool thread");
+        Assert.True(ex is InvalidOperationException,
+            "RunHeldCall ran its positive control on a thread-pool thread instead of refusing: "
+            + (ex is null ? "it returned normally" : $"it threw {ex.GetType().Name}: {ex.Message}")
+            + ". It sleep-polls for a frame that crosses the pool, so it holds a thread its own frame needs (#551).");
+        Assert.Contains(ControlRule, ex!.Message);
+    }
 }
 
 /// <summary>Holds every worker thread of the pool on one gate until disposed. The
