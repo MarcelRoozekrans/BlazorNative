@@ -413,4 +413,75 @@ public sealed class GeneratorRunTests
         catch (InvalidOperationException) { /* exited meanwhile */ }
         catch (System.ComponentModel.Win32Exception) { /* not ours to read, so not ours to kill */ }
     }
+
+    // ── #551: RunBounded never blocks a thread-pool thread ─────────────────────
+
+    /// <summary>A script that prints one line and exits with the code it is given.</summary>
+    private static string ExitStub => Path.Combine(
+        BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "TestData", "exit-code.ps1");
+
+    /// <summary>The rule, as <see cref="BoundedScript.RunBounded"/>'s refusal states it.</summary>
+    private const string PoolRule = "must not be called on a thread-pool thread";
+
+    /// <summary>
+    /// PIN, #551: <see cref="BoundedScript.RunBounded"/> called on a thread-pool thread
+    /// fails before it starts the script, naming the rule. Its waits hold the calling
+    /// thread for up to the bound. On a pool thread that starved the test process's own
+    /// pool, and ShutdownQuiescenceTests' positive control, whose frame crosses the pool
+    /// once, saw no frame for 10 s on the Windows runner. ANCHOR: the call really ran on a
+    /// pool thread.
+    ///
+    /// <para>DOES NOT COVER: blocking waits other than RunBounded's. A test body that
+    /// sleep-polls on a pool thread is not refused; PoolStarvationTests pins that the
+    /// positive control names pool starvation when that is why it failed.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunBounded_OnAPoolThread_FailsNamingTheRule()
+    {
+        Assert.True(File.Exists(ExitStub), $"the stub is missing: {ExitStub}");
+        bool onPool = false;
+        Exception? ex = await Task.Run(() =>
+        {
+            onPool = Thread.CurrentThread.IsThreadPoolThread;
+            return Record.Exception(() => BoundedScript.RunBounded(ExitStub, ["-Code", "7"], Bound));
+        });
+        Assert.True(onPool, "anchor: Task.Run did not run the call on a thread-pool thread");
+        Assert.True(ex is InvalidOperationException,
+            "RunBounded ran a script on a thread-pool thread instead of refusing: "
+            + (ex is null ? "it returned normally" : $"it threw {ex.GetType().Name}: {ex.Message}")
+            + ". Its waits hold the calling thread for up to the bound, and a held pool thread "
+            + "delays every continuation queued behind it (#551).");
+        Assert.Contains(PoolRule, ex!.Message);
+    }
+
+    /// <summary>The control for the pin above: the same call on a dedicated thread runs
+    /// the script and returns its exit code and output, so the refusal is about the
+    /// thread, not the script. The fact awaits the thread, so it holds no pool thread
+    /// itself.</summary>
+    [Fact]
+    public async Task RunBounded_OnADedicatedThread_RunsTheScript()
+    {
+        Assert.True(File.Exists(ExitStub), $"the stub is missing: {ExitStub}");
+        GeneratorRun? run = null;
+        Exception? ex = null;
+        bool onPool = true;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                onPool = Thread.CurrentThread.IsThreadPoolThread;
+                ex = Record.Exception(() => run = BoundedScript.RunBounded(ExitStub, ["-Code", "7"], Bound));
+            }
+            finally { done.TrySetResult(); }
+        })
+        { IsBackground = true, Name = "run-bounded-control" };
+        worker.Start();
+        Task first = await Task.WhenAny(done.Task, Task.Delay(Outer));
+        Assert.True(first == done.Task, $"RunBounded on a dedicated thread did not return within {Outer.TotalSeconds} s");
+        Assert.False(onPool, "anchor: the dedicated thread reported itself a pool thread");
+        Assert.True(ex is null, $"RunBounded refused or failed on a dedicated thread: {ex}");
+        Assert.Equal(7, run!.ExitCode);
+        Assert.Contains("exit-code stub ran", run.Log);
+    }
 }

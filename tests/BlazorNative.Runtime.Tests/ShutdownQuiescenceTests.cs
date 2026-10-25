@@ -90,7 +90,7 @@ public sealed unsafe class ShutdownQuiescenceTests
         HostSession.SetFrameCallback((IntPtr)fn);
     }
 
-    private static int Frames => Volatile.Read(ref s_frames);
+    internal static int Frames => Volatile.Read(ref s_frames);
 
     /// <summary>blazornative_shutdown, called through its own function pointer.</summary>
     private static void ShutdownExport()
@@ -183,14 +183,18 @@ public sealed unsafe class ShutdownQuiescenceTests
     // ── 1. A continuation after shutdown never reaches the callback ─────────
 
     /// <summary>A Take Photo handler suspended on an open host call; the call is
-    /// completed only AFTER shutdown (or, for the control, without one).</summary>
-    private static Task RunHeldCall(bool shutdown)
+    /// completed only AFTER shutdown (or, for the control, without one). For the control,
+    /// <paramref name="holdPool"/> runs just before the completion, and what it returns is
+    /// disposed once the frame wait ends; <paramref name="frameBudget"/> replaces
+    /// <see cref="Budget"/> for that wait. Both are PoolStarvationTests' (#551).</summary>
+    internal static Task RunHeldCall(bool shutdown, Func<IDisposable>? holdPool = null, TimeSpan? frameBudget = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previousObserver = Exports.PendingDispatchObserver;
         Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
         long requestId = -1;
+        IDisposable? hold = null;
         try
         {
             NativeRenderer renderer = StartSession(frames);
@@ -231,6 +235,7 @@ public sealed unsafe class ShutdownQuiescenceTests
             }
 
             int before = Frames;
+            if (!shutdown) hold = holdPool?.Invoke();
             NativeShellBridge.CompleteHostCall(requestId, (int)CameraStatus.Cancelled, null);
             requestId = -1;
 
@@ -245,7 +250,10 @@ public sealed unsafe class ShutdownQuiescenceTests
             {
                 // Rule 3 positive control: the same completion, without shutdown, DOES
                 // deliver a frame through the same callback.
-                Assert.True(WaitUntil(() => Frames > before, Budget),
+                bool framed;
+                try { framed = WaitUntil(() => Frames > before, frameBudget ?? Budget); }
+                finally { hold?.Dispose(); }
+                Assert.True(framed,
                     "completing the held call delivered no frame even without shutdown, so the "
                     + "post-shutdown pin's 'no frame' proves nothing. Has BnCameraDemo stopped re-rendering "
                     + "on a cancelled capture?");
@@ -254,6 +262,7 @@ public sealed unsafe class ShutdownQuiescenceTests
         }
         finally
         {
+            hold?.Dispose();
             if (requestId >= 0)
                 NativeShellBridge.CompleteHostCall(requestId, (int)CameraStatus.Cancelled, null);
             if (!shutdown)
