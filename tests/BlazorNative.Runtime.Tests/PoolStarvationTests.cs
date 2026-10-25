@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace BlazorNative.Runtime.Tests;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,11 +15,14 @@ namespace BlazorNative.Runtime.Tests;
 //
 // THE INVARIANT. The frame path needs one free pool thread, by the product's
 // design today, so a starved pool always delays it. The fix therefore keeps the
-// TEST SUITE's blocking waits off the pool: BoundedScript.RunBounded refuses a pool
-// thread, which GeneratorRunTests pins. This file pins the other half: when the
-// pool really is starved, the positive control says so, and the frame was late,
-// not lost. If the product stops hopping through the pool, the frame arrives under
-// the hold and this fact still passes, by its first branch.
+// TEST SUITE's blocking waits off the pool. BoundedScript.RunBounded refuses a pool
+// thread, which GeneratorRunTests pins; the reference fixtures and GeneratorRunTests
+// await RunBoundedAsync; and the two positive controls run on a dedicated thread
+// through OffPool, since their sleep-poll waits for that same pool hop. This file
+// pins the other half: when the pool really is starved, the positive control says
+// so, and the frame was late, not lost. If the product stops hopping through the
+// pool, the frame arrives under the hold and this fact still passes, by its first
+// branch.
 //
 // WHY ITS OWN COLLECTION. Holding every pool thread stalls every test that runs at
 // the same time. A collection with parallelization disabled runs after all the
@@ -127,5 +132,32 @@ internal sealed class PoolHold : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _gate.Set();
         ThreadPool.SetMaxThreads(_maxWorkers, _maxIo);
+    }
+}
+
+/// <summary>A work item queued on the thread pool that records how long it waited to
+/// run: the pool's queue delay at the moment it was queued (#551).</summary>
+internal sealed class PoolProbe
+{
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private long _ranAtTicks = -1;
+
+    public static PoolProbe Queue()
+    {
+        var probe = new PoolProbe();
+        ThreadPool.UnsafeQueueUserWorkItem(
+            static p => Interlocked.Exchange(ref ((PoolProbe)p!)._ranAtTicks, ((PoolProbe)p!)._clock.ElapsedTicks), probe);
+        return probe;
+    }
+
+    public bool HasRun => Interlocked.Read(ref _ranAtTicks) >= 0;
+
+    /// <summary>The queue delay in milliseconds, or that it has not run yet.</summary>
+    public string Describe()
+    {
+        long ticks = Interlocked.Read(ref _ranAtTicks);
+        return ticks < 0
+            ? $"not run after {_clock.Elapsed.TotalMilliseconds:F0} ms"
+            : $"{ticks * 1000.0 / Stopwatch.Frequency:F1} ms";
     }
 }

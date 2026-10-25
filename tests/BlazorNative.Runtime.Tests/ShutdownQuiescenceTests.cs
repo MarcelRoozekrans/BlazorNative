@@ -186,8 +186,10 @@ public sealed unsafe class ShutdownQuiescenceTests
     /// completed only AFTER shutdown (or, for the control, without one). For the control,
     /// <paramref name="holdPool"/> runs just before the completion, and what it returns is
     /// disposed once the frame wait ends; <paramref name="frameBudget"/> replaces
-    /// <see cref="Budget"/> for that wait. Both are PoolStarvationTests' (#551).</summary>
-    internal static Task RunHeldCall(bool shutdown, Func<IDisposable>? holdPool = null, TimeSpan? frameBudget = null)
+    /// <see cref="Budget"/> for that wait. Both are PoolStarvationTests' (#551).
+    /// <paramref name="log"/> takes the control's frame latency and the pool's queue delay.</summary>
+    internal static Task RunHeldCall(bool shutdown, Func<IDisposable>? holdPool = null, TimeSpan? frameBudget = null,
+        Action<string>? log = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -236,6 +238,10 @@ public sealed unsafe class ShutdownQuiescenceTests
 
             int before = Frames;
             if (!shutdown) hold = holdPool?.Invoke();
+            // #551: the frame crosses the pool once, so the control measures the pool's queue
+            // delay at the completion, to name starvation when that is why the frame is late.
+            PoolProbe probe = PoolProbe.Queue();
+            var sinceCompletion = Stopwatch.StartNew();
             NativeShellBridge.CompleteHostCall(requestId, (int)CameraStatus.Cancelled, null);
             requestId = -1;
 
@@ -251,12 +257,22 @@ public sealed unsafe class ShutdownQuiescenceTests
                 // Rule 3 positive control: the same completion, without shutdown, DOES
                 // deliver a frame through the same callback.
                 bool framed;
-                try { framed = WaitUntil(() => Frames > before, frameBudget ?? Budget); }
+                bool starved = false;
+                TimeSpan wait = frameBudget ?? Budget;
+                try
+                {
+                    framed = WaitUntil(() => Frames > before, wait);
+                    starved = !framed && !probe.HasRun;
+                }
                 finally { hold?.Dispose(); }
-                Assert.True(framed,
-                    "completing the held call delivered no frame even without shutdown, so the "
+                log?.Invoke($"#551 positive control: completion->frame={(framed ? $"{sinceCompletion.Elapsed.TotalMilliseconds:F1} ms" : "none")} "
+                    + $"poolProbe={probe.Describe()} threads={ThreadPool.ThreadCount} pending={ThreadPool.PendingWorkItemCount}");
+                Assert.True(framed, framed ? "" : starved
+                    ? StarvationMessage(wait, WaitUntil(() => Frames > before, Budget), sinceCompletion.Elapsed)
+                    : "completing the held call delivered no frame even without shutdown, so the "
                     + "post-shutdown pin's 'no frame' proves nothing. Has BnCameraDemo stopped re-rendering "
-                    + "on a cancelled capture?");
+                    + $"on a cancelled capture? A work item queued on the thread pool just before the completion "
+                    + $"ran after {probe.Describe()}, so the pool was not starved.");
             }
             return handler;
         }
@@ -276,11 +292,25 @@ public sealed unsafe class ShutdownQuiescenceTests
         }
     }
 
+    /// <summary>The positive control's message when the pool was starved for the whole
+    /// wait (#551). <paramref name="arrivedAfter"/> is whether the frame came once the
+    /// wait ended and the pool was released.</summary>
+    private static string StarvationMessage(TimeSpan wait, bool arrivedAfter, TimeSpan sinceCompletion)
+        => $"completing the held call delivered no frame within {wait.TotalSeconds:F0} s, and a work item queued "
+            + "on the thread pool just before the completion had not run either. This is "
+            + $"{PoolStarvationTests.Starvation} in the test process, not a BnCameraDemo regression (#551). "
+            + "The frame crosses the pool once, where NativeShellBridge.InvokeHostCallAsync resumes, so a test "
+            + "that holds pool threads in blocking waits delays it. "
+            + (arrivedAfter
+                ? $"The frame {PoolStarvationTests.ArrivedOnRelease}, {sinceCompletion.TotalMilliseconds:F0} ms "
+                    + "after the completion, so it was late, not lost."
+                : "The frame did not arrive even after the pool was released, so something else is wrong as well.");
+
     [Fact]
     public void NoFrameReachesTheCallback_AfterShutdownReturns() => RunHeldCall(shutdown: true);
 
     [Fact]
-    public void NoFrameReachesTheCallback_AfterShutdownReturns_PositiveControl() => RunHeldCall(shutdown: false);
+    public Task NoFrameReachesTheCallback_AfterShutdownReturns_PositiveControl() => OffPool.Run(() => { RunHeldCall(shutdown: false, log: _output.WriteLine); });
 
     // ── 1b. Decision 5: the pending handler's Task ends CANCELLED at shutdown ─
     //
@@ -301,16 +331,16 @@ public sealed unsafe class ShutdownQuiescenceTests
     }
 
     [Fact]
-    public void APendingHandler_EndsCancelled_WhenItsCallCompletesAfterShutdown_PositiveControl()
+    public Task APendingHandler_EndsCancelled_WhenItsCallCompletesAfterShutdown_PositiveControl() => OffPool.Run(() =>
     {
         // Rule 3: without shutdown, the same observed Task completes NORMALLY, so the
         // mirror carries the handler's real outcome and the pin above is not reading
         // a Task that is always cancelled.
-        Task handler = RunHeldCall(shutdown: false);
+        Task handler = RunHeldCall(shutdown: false, log: _output.WriteLine);
         Assert.True(WaitUntil(() => handler.IsCompleted, Budget),
             $"the pending handler's Task never completed without shutdown: {handler.Status}");
         Assert.Equal(TaskStatus.RanToCompletion, handler.Status);
-    }
+    });
 
     // ── 1c. Decision 5 for the reserved host events, back and navigate ───────
     //
@@ -952,6 +982,12 @@ public sealed unsafe class ShutdownQuiescenceTests
     }
 
     // ── Probe ────────────────────────────────────────────────────────────────
+
+    /// <summary>Takes the positive controls' #551 latency line; it shows in a test
+    /// results file, and in the console at detailed verbosity.</summary>
+    private readonly ITestOutputHelper _output;
+
+    public ShutdownQuiescenceTests(ITestOutputHelper output) => _output = output;
 
     /// <summary>"block" runs a SYNCHRONOUS handler that blocks the render thread until
     /// the test releases it, then changes its text so the re-render emits a frame.

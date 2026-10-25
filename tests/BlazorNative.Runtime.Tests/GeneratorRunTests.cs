@@ -64,8 +64,8 @@ public sealed class GeneratorRunTests
         try
         {
             var clock = Stopwatch.StartNew();
-            Task<GeneratorRun> run = Task.Run(() =>
-                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile], Bound));
+            Task<GeneratorRun> run =
+                BoundedScript.RunBoundedAsync(Stub, ["-PidFile", pidFile], Bound);
 
             // ANCHOR: the launcher is gone, the stub and the sleeper are alive, and the
             // run has not returned. Polled, because each role is a pwsh start-up.
@@ -147,8 +147,8 @@ public sealed class GeneratorRunTests
         try
         {
             var clock = Stopwatch.StartNew();
-            Task<GeneratorRun> run = Task.Run(() =>
-                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile, "-Role", "sleeper"], SleeperBound));
+            Task<GeneratorRun> run =
+                BoundedScript.RunBoundedAsync(Stub, ["-PidFile", pidFile, "-Role", "sleeper"], SleeperBound);
 
             Dictionary<string, int> pids = new();
             while (!run.IsCompleted && clock.Elapsed < Outer)
@@ -196,8 +196,8 @@ public sealed class GeneratorRunTests
         try
         {
             var clock = Stopwatch.StartNew();
-            Task<GeneratorRun> run = Task.Run(() =>
-                BoundedScript.RunBounded(Stub, ["-PidFile", pidFile, "-Role", "launcher"], ExitedBound));
+            Task<GeneratorRun> run =
+                BoundedScript.RunBoundedAsync(Stub, ["-PidFile", pidFile, "-Role", "launcher"], ExitedBound);
 
             Dictionary<string, int> pids = new();
             while (!run.IsCompleted && clock.Elapsed < Outer)
