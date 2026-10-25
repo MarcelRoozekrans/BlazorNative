@@ -483,6 +483,31 @@ jobs:
           echo "Selected simulator: $name ($udid)"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
+      # ── 18.1 (#453): boot the simulator, and wait for it, BEFORE the test ─────
+      # `xcodebuild test` used to boot the selected simulator itself and start testing
+      # at once, so the suite ran on a device still finishing its boot. The first
+      # LAContext() of the run then took up to 41 s, and the biometrics boot test's
+      # 30 s wait failed on it three times. This boots the SAME udid the destination
+      # below names, and `bootstatus -b` blocks until the device reports booted, so
+      # the suite starts on a settled simulator. `simctl boot` on a device that is
+      # already booted exits non-zero with "Unable to boot device in current state:
+      # Booted"; that state is accepted, and `bootstatus` still has to confirm it.
+      # The shell's own boot warm-up (BnBiometrics.warmUpContext) is the other half.
+      - name: Boot the selected simulator and wait until it has booted
+        if: ${{ matrix.runs_tests }}
+        run: |
+          set -euo pipefail
+          udid="${{ steps.sim.outputs.udid }}"
+          start=$(date +%s)
+          if ! out=$(xcrun simctl boot "$udid" 2>&1); then
+            case "$out" in
+              *"current state: Booted"*) echo "Simulator $udid was already booted" ;;
+              *) echo "$out" >&2; echo "::error::xcrun simctl boot $udid failed" >&2; exit 1 ;;
+            esac
+          fi
+          xcrun simctl bootstatus "$udid" -b
+          echo "Simulator $udid booted and settled in $(( $(date +%s) - start )) s"
+
       - name: xcodebuild test (hosted XCTest — the DoD #2 render proof)
         if: ${{ matrix.runs_tests }}
         working-directory: src/BlazorNative.Apple
