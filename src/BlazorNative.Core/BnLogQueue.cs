@@ -128,9 +128,14 @@ internal sealed class BnLogQueue
         return thread;
     }
 
-    // The loop body is its own method on purpose: with it inlined, coverlet's IL
-    // instrumentation, which ci.yml's coverage run uses, produced an invalid program
-    // in this never-returning loop and crashed the test host (measured in 18.1).
+    // The loop body is its own method on purpose: a workaround for #574. With the
+    // body inlined, coverlet.collector 10.1.0's instrumentation of a Release build,
+    // which is ci.yml's coverage run, made this method invalid IL and crashed the
+    // test host with InvalidProgramException. A standalone repro needs all of: a loop
+    // that never returns, and an `if` directly before a try/finally (a `lock`). The
+    // pre-18.1 Drain was already `while (true)` and did not crash, so the loop alone
+    // is not the trigger; why the combination breaks is a hypothesis in #574. Do not
+    // re-inline the body until coverlet is bumped past the bug.
     private void Drain()
     {
         while (true)
