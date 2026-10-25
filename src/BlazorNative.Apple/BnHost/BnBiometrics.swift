@@ -44,6 +44,12 @@
 // request and enqueues. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
 // and its `check` twin in BnBiometricsTests, which block `contextFactoryForTest` and
 // require `hostCallBegin` to return while the factory is still blocked.
+//
+// THE BOOT WARM-UP (18.1, #453). Keeping the cold start off the calling thread did not
+// make it shorter: on a freshly booted simulator it reached 41 s, and the first
+// Authenticate still waited for it on `workQueue`. So `BnRuntime.start` calls
+// `warmUpContext()`, which enqueues one creation on `workQueue` at boot and returns. The
+// pin is `testBootWarmsOneLAContextOffTheBootPathBeforeTheFirstBiometricRequest`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -233,6 +239,37 @@ final class BnBiometrics {
     /// resolves rather than leaking a pending entry (the geolocation unknown-op posture).
     func completeUnknownOp(requestId: Int64) {
         complete(requestId, BnBiometricStatus.error, nil)
+    }
+
+    // ── The boot warm-up (18.1, #453) ─────────────────────────────────────────────
+
+    /// Called once by `BnRuntime.start`, first thing at boot. Enqueues ONE `LAContext`
+    /// creation on `workQueue` and returns at once; nothing waits for it.
+    ///
+    /// WHY. The first `LAContext()` in a process starts LocalAuthentication cold. On a
+    /// freshly booted simulator that took 26 to 41 s (#453), and before 18.1 the first
+    /// Authenticate paid it, on this queue, between recording the request and arming the
+    /// evaluation. Paying it at boot moves the cost to a time no user is waiting on, once.
+    ///
+    /// WHY ON `workQueue`. The queue is serial and arms every request, so a request that
+    /// arrives while the warm-up runs queues behind it and reuses the warm process: it
+    /// can never start a second cold creation alongside it. And it keeps the cost off the
+    /// boot path, which is the main thread.
+    ///
+    /// The factory is read HERE, on the calling thread, not on the queue: a warm-up still
+    /// queued when a later test installs its own `contextFactoryForTest` must not call it.
+    /// In production the factory is nil and this is a real `LAContext()`, timed like every
+    /// other, so a slow cold start still logs its warning. The context is dropped once
+    /// made: the cost being paid is the process's, not the object's.
+    func warmUpContext() {
+        let factory = Self.contextFactoryForTest
+        workQueue.async { [weak self] in
+            _ = BnLAContextTiming.timed("BnBiometrics") { factory?() ?? LAContext() }
+            guard let self = self else { return }
+            self.lock.lock()
+            self.contextWarm = true
+            self.lock.unlock()
+        }
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────────
