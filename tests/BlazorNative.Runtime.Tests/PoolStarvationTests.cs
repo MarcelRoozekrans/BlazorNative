@@ -17,12 +17,12 @@ namespace BlazorNative.Runtime.Tests;
 // design today, so a starved pool always delays it. The fix therefore keeps the
 // TEST SUITE's blocking waits off the pool. BoundedScript.RunBounded refuses a pool
 // thread, which GeneratorRunTests pins; the reference fixtures and GeneratorRunTests
-// await RunBoundedAsync; and the two positive controls run on a dedicated thread
-// through OffPool, since their sleep-poll waits for that same pool hop. This file
-// pins the other half: when the pool really is starved, the positive control says
-// so, and the frame was late, not lost. If the product stops hopping through the
-// pool, the frame arrives under the hold and this fact still passes, by its first
-// branch.
+// await RunBoundedAsync; and RunHeldCall's positive control refuses a pool thread,
+// so every fact that runs it goes through OffPool, since its sleep-poll waits for
+// that same pool hop. This file pins the other half: when the pool really is
+// starved, the positive control says so, and the frame was late, not lost. If the
+// product stops hopping through the pool, the frame arrives under the hold and this
+// fact still passes, by its first branch.
 //
 // WHY ITS OWN COLLECTION. Holding every pool thread stalls every test that runs at
 // the same time. A collection with parallelization disabled runs after all the
@@ -68,7 +68,7 @@ public sealed class PoolStarvationTests
     /// held.
     /// </summary>
     [Fact]
-    public void ThePositiveControl_WithEveryPoolThreadHeld_GetsItsFrameOrNamesPoolStarvation_AndTheFrameArrivesOnRelease()
+    public Task ThePositiveControl_WithEveryPoolThreadHeld_GetsItsFrameOrNamesPoolStarvation_AndTheFrameArrivesOnRelease() => OffPool.Run(() =>
     {
         bool? held = null;
         Exception? ex = Record.Exception(() => { ShutdownQuiescenceTests.RunHeldCall(
@@ -92,7 +92,7 @@ public sealed class PoolStarvationTests
         Assert.True(ex is null || ex.Message.Contains(ArrivedOnRelease, StringComparison.Ordinal),
             "the positive control named thread-pool starvation, but the frame did not arrive once the "
             + "pool was released, so it was lost, not late: " + ex?.Message);
-    }
+    });
 
     /// <summary>Text of the positive control's message for a missed frame with a free pool.</summary>
     private const string BlamesTheDemo = "Has BnCameraDemo stopped re-rendering";

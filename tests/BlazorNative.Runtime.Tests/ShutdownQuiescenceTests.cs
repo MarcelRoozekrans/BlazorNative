@@ -193,6 +193,13 @@ public sealed unsafe class ShutdownQuiescenceTests
     internal static Task RunHeldCall(bool shutdown, Func<IDisposable>? holdPool = null, TimeSpan? frameBudget = null,
         Action<string>? log = null, bool complete = true)
     {
+        // #551: the control sleep-polls for a frame that crosses the pool once, so on a pool
+        // thread it would hold one of the threads its own frame needs.
+        if (!shutdown && Thread.CurrentThread.IsThreadPoolThread)
+            throw new InvalidOperationException(
+                "RunHeldCall's positive control must not run on a thread-pool thread: it sleep-polls for a "
+                + "frame that crosses the pool once, so it would hold a thread its own frame needs (#551). "
+                + "Run the fact through OffPool.Run.");
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previousObserver = Exports.PendingDispatchObserver;
