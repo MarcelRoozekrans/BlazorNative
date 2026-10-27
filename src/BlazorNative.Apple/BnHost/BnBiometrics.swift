@@ -69,9 +69,19 @@ import LocalAuthentication
 /// THE THRESHOLD, 5000 ms, and why. The phase record logged cold creation at 525, 909
 /// and 1667 ms, warm at 3 to 5 ms, and one synchronous part of 33381 ms that was almost
 /// all creation. 5 s is three times the slowest normal cold start, so an ordinary
-/// first prompt never warns, and it is six times below the boot tests' 30 s wait, so a
-/// recurrence of the 33 s case is logged long before a test gives up. It is also a
-/// delay no user should see before a Face ID sheet appears.
+/// cold start never warns, and it is six times below the 30 s the boot tests' named
+/// warm-up step waits (18.1, #453), so a cold start of 30 s or more is logged long
+/// before that step gives up. It is also a delay no user should see before a Face ID
+/// sheet appears.
+///
+/// SINCE 18.1 the first creation in a process is usually `BnBiometrics.warmUpContext`'s,
+/// at boot, so this warning usually times the warm-up, not a request. A request made
+/// while the warm-up runs waits for it.
+///
+/// THE FIRST CREATION IS RECORDED (18.1, #453): `firstCreationMsForTest` keeps the
+/// duration of the first creation in the process, whatever its length, so a hosted test
+/// can log it. It is two stores under the lock, once per process, and nothing reads it
+/// in production.
 ///
 /// ONCE PER PROCESS, one flag for both handlers: a cold start is a property of the
 /// process, and after the first slow creation every later one is warm. The message
@@ -83,11 +93,19 @@ enum BnLAContextTiming {
 
     private static let lock = NSLock()
     private static var warned = false
+    private static var firstCreationMs: UInt64?
+
+    /// The duration of the first `LAContext` creation in this process, or nil before it
+    /// has finished. Test-only, read by the boot tests' named warm-up step to log it.
+    static var firstCreationMsForTest: UInt64? { lock.lock(); defer { lock.unlock() }; return firstCreationMs }
 
     static func timed(_ category: String, _ create: () -> LAContext) -> LAContext {
         let start = DispatchTime.now().uptimeNanoseconds
         let context = create()
         let elapsedMs = (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        lock.lock()
+        if firstCreationMs == nil { firstCreationMs = elapsedMs }
+        lock.unlock()
         guard elapsedMs > slowCreationThresholdMs else { return context }
         lock.lock()
         let first = !warned
@@ -96,7 +114,8 @@ enum BnLAContextTiming {
         if first {
             BnLog.warn(category, "slow LAContext creation: \(elapsedMs) ms, over the "
                 + "\(slowCreationThresholdMs) ms threshold. A cold LocalAuthentication start; "
-                + "the first biometric prompt waits for it. Warned once per process.",
+                + "a biometric or keychain-auth request made meanwhile waits for it. "
+                + "Warned once per process.",
                 privacy: .safe)
         }
         return context
