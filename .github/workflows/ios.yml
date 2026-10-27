@@ -513,40 +513,6 @@ jobs:
           xcrun simctl bootstatus "$udid" -b
           echo "Simulator $udid booted and settled in $(( $(date +%s) - start )) s"
 
-      # ── 18.1 (#453), VERIFICATION: warm LocalAuthentication on the device ──────
-      # Experimental, by owner decision 2026-10-27: does creating one LAContext in a
-      # separate process on the booted device leave the test process warm? A ten-line
-      # simulator binary creates one LAContext and calls canEvaluatePolicy, twice, in
-      # two separate processes, and logs each duration. The boot tests log the test
-      # process's own first creation ("first LAContext creation in this process").
-      # Never fails the job: it measures, and the decision follows from the record.
-      - name: Warm LocalAuthentication on the simulator, and time it
-        if: ${{ matrix.runs_tests }}
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          udid="${{ steps.sim.outputs.udid }}"
-          dir="$RUNNER_TEMP/lawarm"; mkdir -p "$dir"
-          cat > "$dir/lawarm.swift" <<'SWIFT'
-          import Foundation
-          import LocalAuthentication
-          let t0 = Date()
-          let context = LAContext()
-          let t1 = Date()
-          var error: NSError?
-          let can = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
-          let t2 = Date()
-          print("LAWARM create_ms=\(Int(t1.timeIntervalSince(t0) * 1000)) canEvaluate_ms=\(Int(t2.timeIntervalSince(t1) * 1000)) canEvaluate=\(can) error=\(error?.code ?? 0)")
-          SWIFT
-          xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios15.0-simulator \
-            -o "$dir/lawarm" "$dir/lawarm.swift"
-          codesign --force --sign - "$dir/lawarm"
-          for i in 1 2; do
-            s=$(date +%s)
-            xcrun simctl spawn "$udid" "$dir/lawarm"
-            echo "LAWARM spawn $i took $(( $(date +%s) - s )) s"
-          done
-
       - name: xcodebuild test (hosted XCTest — the DoD #2 render proof)
         if: ${{ matrix.runs_tests }}
         working-directory: src/BlazorNative.Apple
