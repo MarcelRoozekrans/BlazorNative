@@ -421,6 +421,15 @@ final class BnNotificationsTests: BnHostTestCase {
     // alive to route it; the probe says whether usernotificationsd still answered
     // other requests at 5 s. A passing show logs the same line, so the latency is on
     // record. None of it changes the bound: the poll is still 10 s in all.
+    //
+    // What the add waits on: lane run 40624968569 showed that the center completes an
+    // IMMEDIATE request's add only after the app has answered `willPresent`, which it
+    // delivers on the main thread, and that it waited at least 15 s for an answer a
+    // delegate held. Both shows here run with no delegate, because tearDown clears it
+    // and the test boot does not install one, so the framework answers `willPresent`
+    // itself. The simulator log the lane collects on failure shows that exchange:
+    // SpringBoard's "Send willPresentNotification", "delivery succeeded" and "Received
+    // response", then the app's "Added notification request".
 
     private static var notificationIdSeq = 0
 
