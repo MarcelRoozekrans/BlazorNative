@@ -240,6 +240,11 @@ final class BnRuntime {
         // frame can never find a nil singleton.
         BnRuntime.shared = self
 
+        // 18.1 (#453): start LocalAuthentication now, off this thread, so the first
+        // biometric request does not pay a cold start of up to 51 s. Enqueued on the
+        // biometrics queue and never waited for; see BnBiometrics.warmUpContext.
+        bridge.biometrics.warmUpContext()
+
         // Phase 11.4 Gate C (#155): resolve the verbosity BEFORE the first line is
         // written, and apply it to BOTH sides of the boundary — the Swift seam here
         // and, through `bn_init_options.logLevel` at offset 28 below, the managed

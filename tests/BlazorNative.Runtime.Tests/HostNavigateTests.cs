@@ -139,8 +139,15 @@ public sealed class HostNavigateTests
             using var capture = new StringWriter();
             Console.SetError(capture);
             int rc;
+            bool drained = false;
             try { rc = Exports.DispatchHostEventCore("navigate", "/layout"); }
-            finally { Console.SetError(original); }
+            finally
+            {
+                drained = BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+                Console.SetError(original);
+            }
+
+            Assert.True(drained, "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
 
             Assert.Equal(2, rc);
             Assert.Contains("navigate", capture.ToString());

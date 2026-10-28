@@ -44,6 +44,12 @@
 // request and enqueues. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
 // and its `check` twin in BnBiometricsTests, which block `contextFactoryForTest` and
 // require `hostCallBegin` to return while the factory is still blocked.
+//
+// THE BOOT WARM-UP (18.1, #453). Keeping the cold start off the calling thread did not
+// make it shorter: on a freshly booted simulator it reached 51 s, and the first
+// Authenticate still waited for it on `workQueue`. So `BnRuntime.start` calls
+// `warmUpContext()`, which enqueues one creation on `workQueue` at boot and returns. The
+// pin is `testBootWarmsOneLAContextOffTheBootPathBeforeTheFirstBiometricRequest`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -63,9 +69,19 @@ import LocalAuthentication
 /// THE THRESHOLD, 5000 ms, and why. The phase record logged cold creation at 525, 909
 /// and 1667 ms, warm at 3 to 5 ms, and one synchronous part of 33381 ms that was almost
 /// all creation. 5 s is three times the slowest normal cold start, so an ordinary
-/// first prompt never warns, and it is six times below the boot tests' 30 s wait, so a
-/// recurrence of the 33 s case is logged long before a test gives up. It is also a
-/// delay no user should see before a Face ID sheet appears.
+/// cold start never warns, and it is six times below the 30 s the boot tests' named
+/// warm-up step waits (18.1, #453), so a cold start of 30 s or more is logged long
+/// before that step gives up. It is also a delay no user should see before a Face ID
+/// sheet appears.
+///
+/// SINCE 18.1 the first creation in a process is usually `BnBiometrics.warmUpContext`'s,
+/// at boot, so this warning usually times the warm-up, not a request. A request made
+/// while the warm-up runs waits for it.
+///
+/// THE FIRST CREATION IS RECORDED (18.1, #453): `firstCreationMsForTest` keeps the
+/// duration of the first creation in the process, whatever its length, so a hosted test
+/// can log it. It is two stores under the lock, once per process, and nothing reads it
+/// in production.
 ///
 /// ONCE PER PROCESS, one flag for both handlers: a cold start is a property of the
 /// process, and after the first slow creation every later one is warm. The message
@@ -77,11 +93,19 @@ enum BnLAContextTiming {
 
     private static let lock = NSLock()
     private static var warned = false
+    private static var firstCreationMs: UInt64?
+
+    /// The duration of the first `LAContext` creation in this process, or nil before it
+    /// has finished. Test-only, read by the boot tests' named warm-up step to log it.
+    static var firstCreationMsForTest: UInt64? { lock.lock(); defer { lock.unlock() }; return firstCreationMs }
 
     static func timed(_ category: String, _ create: () -> LAContext) -> LAContext {
         let start = DispatchTime.now().uptimeNanoseconds
         let context = create()
         let elapsedMs = (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        lock.lock()
+        if firstCreationMs == nil { firstCreationMs = elapsedMs }
+        lock.unlock()
         guard elapsedMs > slowCreationThresholdMs else { return context }
         lock.lock()
         let first = !warned
@@ -90,7 +114,8 @@ enum BnLAContextTiming {
         if first {
             BnLog.warn(category, "slow LAContext creation: \(elapsedMs) ms, over the "
                 + "\(slowCreationThresholdMs) ms threshold. A cold LocalAuthentication start; "
-                + "the first biometric prompt waits for it. Warned once per process.",
+                + "a biometric or keychain-auth request made meanwhile waits for it. "
+                + "Warned once per process.",
                 privacy: .safe)
         }
         return context
@@ -139,6 +164,12 @@ final class BnBiometrics {
     /// deallocated context can never cancel the in-flight `evaluatePolicy` (the
     /// CLLocationManager retention lesson for LocalAuthentication). Cleared by `complete`.
     private var inFlightContext: LAContext?
+
+    /// 18.1 (#453): true once the boot warm-up's `LAContext` exists. Written on
+    /// `workQueue` under `lock`, read by `contextIsWarmForTest()`. No production code
+    /// waits on it: the warm-up exists so the first request does not pay the cold start,
+    /// and a request that arrives while it runs simply queues behind it.
+    private var contextWarm = false
 
     // ── Test seams (static, reset in teardown — the BnGeolocation/BnNotifications twins) ──
 
@@ -194,6 +225,10 @@ final class BnBiometrics {
     /// The LAContext is retained for the call's duration — the retention pin as a
     /// PROPERTY (no observable otherwise sees the hold, the CLLocationManager precedent).
     func contextIsRetainedForTest() -> Bool { lock.lock(); defer { lock.unlock() }; return inFlightContext != nil }
+    /// 18.1 (#453): the boot warm-up has created its `LAContext`. The boot tests wait for
+    /// this as a named step before they tap, so a cold LocalAuthentication start fails
+    /// there, named, and not inside the tap's wait for the armed reply.
+    func contextIsWarmForTest() -> Bool { lock.lock(); defer { lock.unlock() }; return contextWarm }
 
     // ── The op entry (AppleShellBridge.hostCallBegin forwards here for op=Biometrics) ──
 
@@ -223,6 +258,37 @@ final class BnBiometrics {
     /// resolves rather than leaking a pending entry (the geolocation unknown-op posture).
     func completeUnknownOp(requestId: Int64) {
         complete(requestId, BnBiometricStatus.error, nil)
+    }
+
+    // ── The boot warm-up (18.1, #453) ─────────────────────────────────────────────
+
+    /// Called once by `BnRuntime.start`, first thing at boot. Enqueues ONE `LAContext`
+    /// creation on `workQueue` and returns at once; nothing waits for it.
+    ///
+    /// WHY. The first `LAContext()` in a process starts LocalAuthentication cold. On a
+    /// freshly booted simulator that took 26 to 51 s (#453), and before 18.1 the first
+    /// Authenticate paid it, on this queue, between recording the request and arming the
+    /// evaluation. Paying it at boot moves the cost to a time no user is waiting on, once.
+    ///
+    /// WHY ON `workQueue`. The queue is serial and arms every request, so a request that
+    /// arrives while the warm-up runs queues behind it and reuses the warm process: it
+    /// can never start a second cold creation alongside it. And it keeps the cost off the
+    /// boot path, which is the main thread.
+    ///
+    /// The factory is read HERE, on the calling thread, not on the queue: a warm-up still
+    /// queued when a later test installs its own `contextFactoryForTest` must not call it.
+    /// In production the factory is nil and this is a real `LAContext()`, timed like every
+    /// other, so a slow cold start still logs its warning. The context is dropped once
+    /// made: the cost being paid is the process's, not the object's.
+    func warmUpContext() {
+        let factory = Self.contextFactoryForTest
+        workQueue.async { [weak self] in
+            _ = BnLAContextTiming.timed("BnBiometrics") { factory?() ?? LAContext() }
+            guard let self = self else { return }
+            self.lock.lock()
+            self.contextWarm = true
+            self.lock.unlock()
+        }
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────────

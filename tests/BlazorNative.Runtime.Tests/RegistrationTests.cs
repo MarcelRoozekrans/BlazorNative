@@ -1,3 +1,4 @@
+using BlazorNative.Core;
 using BlazorNative.SampleApp;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -215,14 +216,18 @@ public sealed class RegistrationTests
             TextWriter original = Console.Error;
             Console.SetError(stderr);
             int rc;
+            bool drained = false;
             try
             {
                 rc = HostSession.TryMount("BnDemo");
             }
             finally
             {
+                drained = BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
                 Console.SetError(original);
             }
+
+            Assert.True(drained, "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
 
             Assert.Equal(1, rc);
             string diagnostic = stderr.ToString();
@@ -243,14 +248,18 @@ public sealed class RegistrationTests
         TextWriter original = Console.Error;
         Console.SetError(stderr);
         int rc;
+        bool drained = false;
         try
         {
             rc = HostSession.TryMount("NoSuchComponent");
         }
         finally
         {
+            drained = BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
             Console.SetError(original);
         }
+
+        Assert.True(drained, "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
 
         Assert.Equal(1, rc);
         Assert.DoesNotContain("no pages are registered", stderr.ToString());

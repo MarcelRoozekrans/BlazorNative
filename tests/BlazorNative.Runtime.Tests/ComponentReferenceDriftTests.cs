@@ -28,17 +28,27 @@ namespace BlazorNative.Runtime.Tests;
 /// renders, and the reference simply has no components in it. A count is the only
 /// witness.
 /// </summary>
-public sealed class ComponentReferenceFixture : IDisposable
+public sealed class ComponentReferenceFixture : IAsyncLifetime
 {
+    private readonly IMessageSink _sink;
+
     public string OutputDirectory { get; }
-    public string GeneratorLog { get; }
+    public string GeneratorLog { get; private set; } = "";
 
     /// <param name="sink">Takes the generation's timing line; it prints when xUnit
     /// diagnostic messages are on.</param>
     public ComponentReferenceFixture(IMessageSink sink)
     {
+        _sink = sink;
         OutputDirectory = Path.Combine(
             Path.GetTempPath(), "bn-docs-reference-" + Guid.NewGuid().ToString("N"));
+    }
+
+    /// <summary>Generates the reference. Asynchronous (#551), as
+    /// <see cref="ReferenceFixtureBase.InitializeAsync"/> is: the generation runs on a
+    /// dedicated thread, so no pool thread waits on it.</summary>
+    public async Task InitializeAsync()
+    {
 
         // THE PIN RUNS THE LANE'S OWN PIPELINE, and that is the whole reason
         // generation is a script. scripts/generate-reference.ps1 is what
@@ -59,21 +69,22 @@ public sealed class ComponentReferenceFixture : IDisposable
         // BOUNDED (#454), with the sibling fixtures' bound: a held output pipe
         // fails, named, instead of hanging the suite.
         var clock = Stopwatch.StartNew();
-        GeneratorRun run = BoundedScript.RunBounded(
+        GeneratorRun run = await BoundedScript.RunBoundedAsync(
             script, ["-Package", "Components", "-OutputPath", OutputDirectory],
             ReferenceFixtureBase.GenerationBound);
         GeneratorLog = run.Log;
-        sink.OnMessage(new DiagnosticMessage(
+        _sink.OnMessage(new DiagnosticMessage(
             $"generate-reference.ps1 -Package Components: {clock.Elapsed.TotalSeconds:F1} s, exit {run.ExitCode}"));
 
         Assert.True(run.ExitCode == 0,
             $"generate-reference.ps1 failed (exit {run.ExitCode}):\n{GeneratorLog}");
     }
 
-    public void Dispose()
+    public Task DisposeAsync()
     {
         try { if (Directory.Exists(OutputDirectory)) Directory.Delete(OutputDirectory, true); }
         catch (IOException) { /* a temp dir that outlives the run is not a failure */ }
+        return Task.CompletedTask;
     }
 }
 

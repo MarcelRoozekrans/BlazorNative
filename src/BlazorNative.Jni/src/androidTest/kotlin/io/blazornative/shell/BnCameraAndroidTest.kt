@@ -18,8 +18,10 @@ import io.blazornative.jni.CameraStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -232,13 +234,14 @@ class BnCameraAndroidTest {
 
         CameraHarness.launchDemo().use { scenario ->
             assertNotNull("BnCameraDemo never rendered within 60s", CameraHarness.pollForProbe(scenario))
+            // The page state below, the echo and then the photo's src, lives on this activity's
+            // page. Both polls fail naming a recreation instead of waiting on a fresh page (#407).
+            val started = scenario.currentActivity()
 
             CameraHarness.tapButton(scenario, "Take Photo")
             assertTrue("Take Photo never echoed a 'captured:' result within 15s (the capture " +
                 "never completed — a HANG, or the FileProvider write failed)",
-                CameraHarness.pollTrue(15_000) {
-                    CameraHarness.echoTextOn(scenario)?.startsWith("captured:") == true
-                })
+                CameraHarness.pollCapturedEcho(scenario, started))
 
             // The echo carries the FINAL dims + byte size — proof the file the path names has bytes.
             val echo = CameraHarness.echoTextOn(scenario)!!
@@ -251,9 +254,7 @@ class BnCameraAndroidTest {
             // THE COMPOSITION, on screen: the BnImage measures at the demo's DEFINITE 240×320 box
             // (a multi-megapixel photo cannot reflow the layout — the M6/M7 ledger discharge) and
             // PAINTS the loaded local file (Coil loaded the file:// path).
-            assertTrue("the captured file never loaded into the BnImage within 15s (Coil did not " +
-                "load the local file:// path)",
-                CameraHarness.pollTrue(15_000) { CameraHarness.imageDrawableOn(scenario) != null })
+            CameraHarness.assertPhotoLoads(scenario, started)
 
             scenario.onActivity { act ->
                 val image = CameraHarness.imageIn(act)!!
@@ -267,6 +268,46 @@ class BnCameraAndroidTest {
         }
     }
 
+    // ── #407: a recreation during the image poll is NAMED, not a bare timeout ──
+
+    /**
+     * Phase 18.1 (#407). On the lane, the emulator's post-boot package churn once relaunched
+     * MainActivity between the echo check and the image poll. The photo's `src` is page state, so
+     * the new page never loads it, and the poll timed out naming Coil, which was never asked.
+     *
+     * The race is forced: `scenario.recreate()` runs between the echo and the image poll, the
+     * window the lane hit. The poll the composition test uses must then fail naming the
+     * recreation.
+     *
+     * DOES NOT COVER: what recreated the activity. The poll sees a new instance, not its cause.
+     */
+    @Test
+    fun a_recreation_before_the_image_poll_fails_the_poll_naming_it() {
+        AndroidShellBridge.cameraCaptureHook = { capture -> capture.captureScene(makeJpeg(640, 480)) }
+
+        CameraHarness.launchDemo().use { scenario ->
+            assertNotNull("BnCameraDemo never rendered within 60s", CameraHarness.pollForProbe(scenario))
+            val before = scenario.currentActivity()
+
+            CameraHarness.tapButton(scenario, "Take Photo")
+            assertTrue("Take Photo never echoed a 'captured:' result within 15s",
+                CameraHarness.pollCapturedEcho(scenario, before))
+
+            scenario.recreate()
+            assertNotSame("anchor: recreate() must put a new MainActivity under the scenario before the poll",
+                before, scenario.currentActivity())
+
+            try {
+                CameraHarness.assertPhotoLoads(scenario, before)
+            } catch (e: AssertionError) {
+                assertEquals("the activity was recreated while the test still expected the one it started on",
+                    e.message)
+                return
+            }
+            fail("the image poll passed on a recreated activity instead of failing naming it")
+        }
+    }
+
     // ── A Cancelled capture is DATA within a bounded await — NO HANG ──────────
 
     @Test
@@ -277,13 +318,12 @@ class BnCameraAndroidTest {
 
         CameraHarness.launchDemo().use { scenario ->
             assertNotNull("BnCameraDemo never rendered within 60s", CameraHarness.pollForProbe(scenario))
+            val started = scenario.currentActivity()
 
             CameraHarness.tapButton(scenario, "Take Photo")
             assertTrue("a cancelled capture never reached the echo within 10s (a HANG — cancel " +
                 "was not data)",
-                CameraHarness.pollTrue(10_000) {
-                    CameraHarness.echoTextOn(scenario) == "status:Cancelled"
-                })
+                CameraHarness.pollEcho(scenario, started, 10_000, "status:Cancelled"))
             // …and no path was set, so the BnImage painted nothing.
             scenario.onActivity { act ->
                 assertNull("a Cancelled capture carries NO path — the BnImage stays empty",
@@ -300,12 +340,11 @@ class BnCameraAndroidTest {
         // <queries>) it resolves Captured (available). MUTATION: drop the <queries> → Unavailable.
         CameraHarness.launchDemo().use { scenario ->
             assertNotNull("BnCameraDemo never rendered within 60s", CameraHarness.pollForProbe(scenario))
+            val started = scenario.currentActivity()
 
             CameraHarness.tapButton(scenario, "Check")
             assertTrue("Check never echoed an availability status within 10s",
-                CameraHarness.pollTrue(10_000) {
-                    CameraHarness.echoTextOn(scenario) == "status:Captured"
-                })
+                CameraHarness.pollEcho(scenario, started, 10_000, "status:Captured"))
         }
     }
 
@@ -364,10 +403,26 @@ private object CameraHarness {
         return null
     }
 
-    fun imageDrawableOn(scenario: ActivityScenario<MainActivity>): Any? {
-        val out = AtomicReference<Any?>(null)
-        scenario.onActivity { act -> out.set(imageIn(act)?.drawable) }
-        return out.get()
+    /** The capture's echo reads "captured:…" on [activity]'s page, within 15 s. */
+    fun pollCapturedEcho(scenario: ActivityScenario<MainActivity>, activity: MainActivity): Boolean =
+        pollUntilOnSameActivity(scenario, activity, 15_000) { act ->
+            echoText(act)?.text?.toString()?.startsWith("captured:") == true
+        }
+
+    /** The echo reads exactly [expected] on [activity]'s page, within [deadlineMs]. */
+    fun pollEcho(scenario: ActivityScenario<MainActivity>, activity: MainActivity, deadlineMs: Long,
+                 expected: String): Boolean =
+        pollUntilOnSameActivity(scenario, activity, deadlineMs) { act ->
+            echoText(act)?.text?.toString() == expected
+        }
+
+    /** The composition's on-screen half: the captured file loads into the demo's BnImage on
+     * [activity]'s page. A recreated activity fails with [RECREATED_WHILE_POLLED] (#407): its
+     * fresh page never had the photo's src. */
+    fun assertPhotoLoads(scenario: ActivityScenario<MainActivity>, activity: MainActivity) {
+        assertTrue("the captured file never loaded into the BnImage within 15s (Coil did not " +
+            "load the local file:// path)",
+            pollUntilOnSameActivity(scenario, activity, 15_000) { act -> imageIn(act)?.drawable != null })
     }
 
     /** Polls until the demo's mount shape is on screen (2 buttons + image + echo). */
@@ -394,15 +449,6 @@ private object CameraHarness {
             if (button != null) { button.performClick(); clicked.set(true) }
         }
         assertTrue("Button '$label' not found on screen", clicked.get())
-    }
-
-    fun pollTrue(deadlineMs: Long, predicate: () -> Boolean): Boolean {
-        val deadline = System.currentTimeMillis() + deadlineMs
-        while (System.currentTimeMillis() < deadline) {
-            if (predicate()) return true
-            Thread.sleep(200)
-        }
-        return predicate()
     }
 
     private fun firstMatch(view: View, predicate: (View) -> Boolean): View? {

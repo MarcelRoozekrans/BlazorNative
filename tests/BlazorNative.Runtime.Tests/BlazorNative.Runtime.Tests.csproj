@@ -75,6 +75,10 @@
          the docs-sample generator and the CI compile step use — so the pin and the
          build cannot disagree about what a fence is (pin standard Rule 8). -->
     <ProjectReference Include="..\..\tools\BlazorNative.DocSamples\BlazorNative.DocSamples.csproj" />
+    <!-- 18.1, #564: BnLogProcessExitDrainTests runs the probe as a child process, to pin
+         BnLog's drain at ProcessExit and on an unhandled exception. Referenced so that it
+         is built, with its runtimeconfig, next to the tests. -->
+    <ProjectReference Include="..\BlazorNative.LogExitProbe\BlazorNative.LogExitProbe.csproj" />
   </ItemGroup>
 
   <ItemGroup>

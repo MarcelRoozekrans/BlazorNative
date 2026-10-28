@@ -23,11 +23,13 @@ public readonly record struct BnSafeAreaInsets(double Top, double Right, double 
     /// <see cref="ResetForTests"/>.</summary>
     /// <remarks>FRAMEWORK-OWNED: the reserved <c>safeAreaChanged</c> host-event arm
     /// (<c>Exports.DispatchHostSafeArea</c>, <c>BlazorNative.Runtime</c>) is the only
-    /// production writer, via <see cref="Report"/>. There is no
-    /// <c>InternalsVisibleTo</c> from this package to Runtime — Runtime calls the same
-    /// public <see cref="Report"/> method app code could call, the same trade
+    /// production writer, via <see cref="Report"/>. Runtime calls the same public
+    /// <see cref="Report"/> method app code could call, the same trade
     /// <see cref="BnLog.Level"/> makes for the same reason (see that type's remarks):
-    /// a public, honestly-named seam beats an InternalsVisibleTo web.</remarks>
+    /// a public, honestly-named seam beats an InternalsVisibleTo web. Since 18.1 this
+    /// package does grant Runtime <c>InternalsVisibleTo</c>, for one member only:
+    /// <c>BnLog.Flush</c>, which <c>blazornative_shutdown</c> calls to drain BnLog's queue
+    /// and which app code has no reason to call. <see cref="Report"/> stays public.</remarks>
     public static BnSafeAreaInsets Current => s_current;
 
     /// <summary>Raised by <see cref="Report"/> every time the shell reports new

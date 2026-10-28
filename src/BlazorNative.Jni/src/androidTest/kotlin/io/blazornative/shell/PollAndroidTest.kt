@@ -59,4 +59,29 @@ class PollAndroidTest {
             fail("pollUntil swallowed the predicate's exception")
         }
     }
+
+    /**
+     * Phase 18.1 (#407): [pollUntilOnSameActivity] names a recreated activity. The predicate is
+     * `true`, so a poll that did not check the instance would return true on the new page. The
+     * anchor is a new instance under the scenario before the poll.
+     */
+    @Test
+    fun a_poll_on_a_recreated_activity_fails_naming_it() {
+        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            scenario.awaitBooted()
+            val first = scenario.currentActivity()
+            scenario.recreate()
+            org.junit.Assert.assertNotSame("anchor: recreate() must put a new MainActivity under the scenario before the poll",
+                first, scenario.currentActivity())
+
+            try {
+                pollUntilOnSameActivity(scenario, first, 2_000) { true }
+            } catch (e: AssertionError) {
+                assertEquals("the activity was recreated while the test still expected the one it started on", e.message)
+                return
+            }
+            fail("pollUntilOnSameActivity returned on a recreated activity instead of failing naming it")
+        }
+    }
 }

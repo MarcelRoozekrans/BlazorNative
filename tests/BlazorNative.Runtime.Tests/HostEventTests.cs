@@ -33,8 +33,14 @@ public sealed class HostEventTests
         TextWriter original = Console.Error;
         using var capture = new StringWriter();
         Console.SetError(capture);
+        bool drained = false;
         try { action(); }
-        finally { Console.SetError(original); }
+        finally
+        {
+            drained = BnLog.Flush(TimeSpan.FromSeconds(10)); // 18.1: the default sink queues; drain before reading
+            Console.SetError(original);
+        }
+        Assert.True(drained, "the BnLog queue did not drain within 10 s, so the captured stderr is incomplete");
         return capture.ToString();
     }
 

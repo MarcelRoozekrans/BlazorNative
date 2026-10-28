@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       BlazorNative.LogExitProbe — Phase 18.1, #564's final review, I1.
+
+       A child process for BnLogExitDrainTests. BnLog's default queue drains
+       at ProcessExit and on an unhandled exception, and both hooks only run
+       when a process ends, which a fact cannot do to its own test host. This
+       program logs one line behind a slow stderr and then ends, in the way
+       its argument names, so the fact can read whether the line got out.
+       Not a test project, and not shipped.
+       ───────────────────────────────────────────────────────────────────── -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BlazorNative.LogExitProbe</RootNamespace>
+    <AssemblyName>BlazorNative.LogExitProbe</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <PublishAot>false</PublishAot>
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BlazorNative.Core\BlazorNative.Core.csproj" />
+  </ItemGroup>
+
+</Project>

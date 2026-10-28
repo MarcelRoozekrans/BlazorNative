@@ -38,3 +38,38 @@ internal fun pollUntil(
     }
     return false
 }
+
+/** Neutral like [DESTROYED_WHILE_POLLED]: the poll sees a new instance, not what replaced the old
+ * one. A configuration change, the system's own relaunch, or a test's `recreate()` all look alike. */
+internal const val RECREATED_WHILE_POLLED =
+    "the activity was recreated while the test still expected the one it started on"
+
+/** The MainActivity the scenario holds right now. Pass it to [pollUntilOnSameActivity]. */
+internal fun ActivityScenario<MainActivity>.currentActivity(): MainActivity {
+    val out = AtomicReference<MainActivity>()
+    onActivity { act -> out.set(act) }
+    return out.get()
+}
+
+/**
+ * [pollUntil], for a test whose state lives on one activity's page: it fails with
+ * [RECREATED_WHILE_POLLED] as soon as the scenario holds an activity other than [activity].
+ *
+ * A recreated MainActivity mounts its page fresh, so page state the test built, such as a photo's
+ * `src`, is gone, and the predicate can only time out. #407 was that timeout, reported as the
+ * thing the test waited for. The instance is checked before [predicate] runs, so a predicate the
+ * new page happens to satisfy still fails.
+ *
+ * A poll that lands between the old activity's destruction and the new one's creation fails with
+ * [pollUntil]'s [DESTROYED_WHILE_POLLED] instead. Either message names what happened.
+ */
+internal fun pollUntilOnSameActivity(
+    scenario: ActivityScenario<MainActivity>,
+    activity: MainActivity,
+    deadlineMs: Long,
+    sleepMs: Long = 250,
+    predicate: (MainActivity) -> Boolean,
+): Boolean = pollUntil(scenario, deadlineMs, sleepMs) { act ->
+    if (act !== activity) throw AssertionError(RECREATED_WHILE_POLLED)
+    predicate(act)
+}

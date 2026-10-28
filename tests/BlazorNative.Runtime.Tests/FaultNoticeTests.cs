@@ -31,7 +31,9 @@ namespace BlazorNative.Runtime.Tests;
 //   - 16.7 (#455): a fault after the handler BEGAN a host call or a fetch is a FaultNotice with
 //     rc 0, whether the shell answered inside hostCallBegin or later;
 //   - 17.1 (#464): a fault belongs to the dispatch whose own code raised it, even when that code
-//     is another dispatch's continuation running inline inside this dispatch's window.
+//     is another dispatch's continuation running inline inside this dispatch's window;
+//   - 18.1 (#564): a dispatch whose render thread logs into a blocked stderr still returns
+//     within its budget, and a dispatch that overruns it is torn down by its own fact.
 //
 // DOES NOT COVER, for the 16.1 facts:
 //   - what a shell DOES with the notice: FaultNoticeTest.kt pins that Kotlin's
@@ -70,6 +72,10 @@ public sealed class FaultNoticeTests
 
     private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
+        // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it.
+        // Installed before the reset and never removed, so a send from an earlier fact that
+        // is still in flight is recorded too, wherever it lands.
+        Exports.LateFaultNoticeObserver = (_, _, send) => { lock (s_noticeSends) s_noticeSends.Add(send); };
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();
@@ -79,8 +85,22 @@ public sealed class FaultNoticeTests
         return renderer;
     }
 
-    private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver)
+    /// <summary>Tears a fact down. <paramref name="release"/> frees whatever the fact holds
+    /// open, such as a gate a handler waits on, so a dispatch that overran its budget can
+    /// finish. When the last <see cref="DispatchBounded"/> overran, this first waits for that
+    /// dispatch to return. Then it waits for every late FaultNotice send to complete, so each
+    /// notice lands in this fact and not in the next one (18.1, #564).</summary>
+    private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
+        Action? release = null)
     {
+        release?.Invoke();
+        if (s_overrunDispatch is { } overrun)
+        {
+            s_overrunDispatch = null;
+            // Once it has returned, the dispatch has handed its notice send to the tap.
+            overrun.Join(Budget);
+        }
+        WaitForNoticeSends();
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
         // that already completed answers rc 1, which is benign here.
@@ -92,6 +112,22 @@ public sealed class FaultNoticeTests
         Exports.PendingDispatchObserver = previousObserver;
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
+    }
+
+    /// <summary>Every late FaultNotice send <see cref="Exports.LateFaultNoticeObserver"/>
+    /// has handed on and <see cref="WaitForNoticeSends"/> has not yet seen complete.</summary>
+    private static readonly List<Task> s_noticeSends = [];
+
+    /// <summary>Waits, bounded by <see cref="Budget"/>, until every recorded FaultNotice send
+    /// has completed, so its notice is in the fake's log. A send whose task is complete has
+    /// begun its host call, because SendNotice begins it synchronously.</summary>
+    private static void WaitForNoticeSends()
+    {
+        Task[] sends;
+        lock (s_noticeSends) sends = s_noticeSends.Where(t => !t.IsCompleted).ToArray();
+        s_waitingForNoticeSends?.Invoke(sends.Length);
+        Task.WaitAll(sends.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        lock (s_noticeSends) s_noticeSends.RemoveAll(t => t.IsCompleted);
     }
 
     private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
@@ -129,11 +165,21 @@ public sealed class FaultNoticeTests
     /// DispatchEventCore on, the shell's dispatch lane in these facts.</summary>
     private static volatile int s_lastDispatchThread;
 
+    /// <summary>18.1 (#564): called by <see cref="WaitForNoticeSends"/>, from TearDown or a
+    /// fact, just before it waits, with the number of sends still in flight that it is about
+    /// to wait for. A fact sets it to learn that a send it holds is being waited on.</summary>
+    private static Action<int>? s_waitingForNoticeSends;
+
+    /// <summary>The worker of the last <see cref="DispatchBounded"/> that overran its budget
+    /// and may still be running, until <see cref="TearDown"/> waits for it.</summary>
+    private static Thread? s_overrunDispatch;
+
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
     private static int DispatchBounded(int handlerId, string argsJson)
     {
         int rc = -1;
-        using var returned = new ManualResetEventSlim(false);
+        // Not disposed on an overrun: the worker still sets it when the dispatch returns.
+        var returned = new ManualResetEventSlim(false);
         var worker = new Thread(() =>
         {
             s_lastDispatchThread = Environment.CurrentManagedThreadId;
@@ -142,7 +188,11 @@ public sealed class FaultNoticeTests
         })
         { IsBackground = true, Name = "fault-notice-probe" };
         worker.Start();
-        Assert.True(returned.Wait(ExportBudget),
+        if (!returned.Wait(ExportBudget))
+            s_overrunDispatch = worker;
+        else
+            returned.Dispose();
+        Assert.True(s_overrunDispatch != worker,
             $"dispatch_event for handler {handlerId} did not return within {ExportBudget.TotalSeconds:0}s");
         return rc;
     }
@@ -1077,6 +1127,166 @@ public sealed class FaultNoticeTests
         finally { BnLog.Sink = sink; }
     }
 
+    // ── 18.1 (#564): a dispatch that overruns its budget ──
+    //
+    // On the Windows runner a FaultNotice dispatch took about 1.05 s instead of 2 ms, and its
+    // late notice landed in the next fact. Two causes, one pin each. The render thread logged
+    // its render fault through BnLog into a full stderr pipe and blocked there, inside the
+    // dispatch. And DispatchProbe threw before it returned the state its caller's teardown
+    // needs, so nothing tore the stuck fact down.
+    //
+    // DOES NOT COVER: a real pipe. GatedWriter stands in for one; squeeze.sh, in the 18.1
+    // investigation's appendix A, drives a real 4 KiB pipe, and its runs are in the 18.1
+    // record. The queue's drop counting is pinned in BnLogTests.
+
+    [Fact]
+    public void AFaultLoggedWhileStderrIsBlocked_DoesNotHoldTheDispatchPastItsBudget()
+    {
+        // The #564 dispatch: a child begins a host call, then its sibling faults in the same
+        // synchronous part. NativeRenderer.HandleException logs that fault on the render thread
+        // while the dispatch waits for it, and Exports logs it again on the dispatch lane.
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        TextWriter original = Console.Error;
+        var stderr = new GatedWriter();
+        (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)? probe = null;
+        Exception? overran;
+        try
+        {
+            BnLog.Sink = null;
+            Console.SetError(stderr);
+            overran = Record.Exception(() => probe = DispatchProbe("child-begin-then-sibling-throw", release: stderr.Open));
+        }
+        finally
+        {
+            stderr.Open();
+            Console.SetError(original);
+            BnLog.Sink = sink;
+        }
+        try
+        {
+            Assert.True(overran is null,
+                $"the dispatch did not return within its budget while stderr was blocked: {overran?.Message} "
+                + "The render fault is logged on the render thread inside the dispatch, so a BnLog sink that "
+                + "writes synchronously holds the dispatch for as long as stderr stays full (#564).");
+            // anchor: the dispatch really logged its render fault into the blocked stderr. Without
+            // it the dispatch returning in time would prove nothing about the sink.
+            Assert.True(WaitUntil(() => stderr.Text.Contains("child-after-begin", StringComparison.Ordinal), Budget),
+                $"anchor: the render fault never reached stderr once it drained; lines seen: [{string.Join(" | ", stderr.Lines)}].");
+        }
+        finally
+        {
+            if (probe is { } p)
+                TearDown(p.Pending, p.Previous);
+        }
+    }
+
+    [Fact]
+    public void ADispatchPastItsBudget_LeavesTheNextFactOnlyItsOwnNotice_AndRestoresItsObserver()
+    {
+        // One dispatch is forced past ExportBudget: its handler begins a host call, then waits on
+        // a gate in its synchronous part, then throws. That fault is a FaultNotice, sent from the
+        // pool once the dispatch finally returns, so a fact that did not wait for it hands it to
+        // whichever fact runs next.
+        Action<ulong, string, Task>? outer = Exports.PendingDispatchObserver;
+        ShellCallProbe.Gate.Reset();
+        Thread? lateReader = null;
+        try
+        {
+            Exception? overran = Record.Exception(() => DispatchProbe("gated-begin-then-throw", release: ShellCallProbe.Gate.Set));
+            // anchor: the gated dispatch really overran its budget. Without it there is nothing to leak.
+            Assert.True(overran is not null && overran.Message.Contains("did not return within", StringComparison.Ordinal),
+                $"anchor: the gated dispatch did not overrun its budget; got: {overran?.Message ?? "no exception"}.");
+
+            // The late reader. Like a stderr reader that drains only once the next fact has begun,
+            // it opens the gate after the next fact's StartSession has cleared the host-call log.
+            // When the overrun fact tore itself down, the gate is open already and this stands down
+            // at once: the next fact's empty log can be too brief to see.
+            lateReader = new Thread(() =>
+            {
+                WaitUntil(() => ShellCallProbe.Gate.IsSet || FakeShellHost.HostCalls().Count == 0, Budget);
+                ShellCallProbe.Gate.Set();
+            })
+            { IsBackground = true, Name = "fault-notice-late-reader" };
+            lateReader.Start();
+
+            // The next fact: a handler that begins a call and throws sends one notice of its own.
+            var (_, _, pending, previous) = DispatchProbe("begin-then-throw");
+            try
+            {
+                Assert.True(WaitUntil(() => Notices().Any(n => MessageOf(n.Args) == "after-begin"), Budget),
+                    "anchor: the next fact's own FaultNotice never arrived, so it cannot show what else did.");
+                // Every notice send recorded so far has landed before the log is read.
+                WaitForNoticeSends();
+                List<string> messages = Notices().Select(n => MessageOf(n.Args)).ToList();
+                Assert.True(messages.All(m => m == "after-begin"),
+                    $"the next fact saw a FaultNotice that is not its own: [{string.Join(", ", messages)}]. "
+                    + "'after-gate' is the overrun dispatch's fault: its fact did not tear down when "
+                    + "DispatchBounded threw, so its late notice landed here (#564).");
+            }
+            finally { TearDown(pending, previous); }
+
+            Assert.True(ReferenceEquals(outer, Exports.PendingDispatchObserver),
+                "PendingDispatchObserver still points at the overrun fact's tap: DispatchProbe threw before "
+                + "it returned its teardown state, so nothing restored the observer (#564).");
+        }
+        finally
+        {
+            ShellCallProbe.Gate.Set();
+            lateReader?.Join(Budget);
+            Exports.PendingDispatchObserver = outer;
+        }
+    }
+
+    [Fact]
+    public void ADispatchPastItsBudget_WhoseNoticeIsSlowToBegin_StillLeavesTheNextFactOnlyItsOwnNotice()
+    {
+        // The leak's narrow half. The overrun dispatch's FaultNotice is sent from the pool once
+        // the dispatch returns, and here the fake shell holds that notice's begin at a gate, as a
+        // pool item scheduled late or a shell slow to take the call would. TearDown must wait
+        // for the send itself: the gate opens only when a wait on at least one live send
+        // begins, or else when the next fact's StartSession resets the fake, which logs the
+        // held notice into the next fact.
+        Action<ulong, string, Task>? outer = Exports.PendingDispatchObserver;
+        using var noticeGate = new ManualResetEventSlim(false);
+        ShellCallProbe.Gate.Reset();
+        s_waitingForNoticeSends = live => { if (live > 0) noticeGate.Set(); };
+        try
+        {
+            Exception? overran = Record.Exception(() => DispatchProbe("gated-begin-then-throw", release: () =>
+            {
+                FakeShellHost.FaultNoticeBeginGate = noticeGate;
+                ShellCallProbe.Gate.Set();
+            }));
+            // anchor: the gated dispatch really overran its budget. Without it there is nothing to leak.
+            Assert.True(overran is not null && overran.Message.Contains("did not return within", StringComparison.Ordinal),
+                $"anchor: the gated dispatch did not overrun its budget; got: {overran?.Message ?? "no exception"}.");
+
+            var (_, _, pending, previous) = DispatchProbe("begin-then-throw");
+            try
+            {
+                Assert.True(WaitUntil(() => Notices().Any(n => MessageOf(n.Args) == "after-begin"), Budget),
+                    "anchor: the next fact's own FaultNotice never arrived, so it cannot show what else did.");
+                WaitForNoticeSends();
+                List<string> messages = Notices().Select(n => MessageOf(n.Args)).ToList();
+                Assert.True(messages.All(m => m == "after-begin"),
+                    $"the next fact saw a FaultNotice that is not its own: [{string.Join(", ", messages)}]. "
+                    + "'after-gate' is the overrun dispatch's fault, whose send was still in flight when its "
+                    + "fact's TearDown finished: TearDown did not wait for the send (#564).");
+            }
+            finally { TearDown(pending, previous); }
+        }
+        finally
+        {
+            s_waitingForNoticeSends = null;
+            noticeGate.Set();
+            ShellCallProbe.Gate.Set();
+            Exports.PendingDispatchObserver = outer;
+        }
+    }
+
+    private static string MessageOf(string? noticeArgs)
+        => NativeShellBridge.ParseFlatJsonObject(noticeArgs).GetValueOrDefault("message", "");
+
     /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
     private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchTwo(string labelA, string labelB, bool strict = false)
@@ -1085,16 +1295,25 @@ public sealed class FaultNoticeTests
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
         Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
-        NativeRenderer renderer = StartSession(strict, frames);
-        InlineContinuationProbe.Reset();
-        InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
-        renderer.Mount<InlineContinuationProbe>();
-        int a = HandlerFor(frames, "click", labelA);
-        int b = HandlerFor(frames, "click", labelB);
-        FakeShellHost.AutoCompleteHostCall = true;
-        int rcA = DispatchBounded(a, """{"name":"click"}""");
-        int rcB = DispatchBounded(b, """{"name":"click"}""");
-        return (rcA, rcB, a, b, pending, previous);
+        try
+        {
+            NativeRenderer renderer = StartSession(strict, frames);
+            InlineContinuationProbe.Reset();
+            InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
+            renderer.Mount<InlineContinuationProbe>();
+            int a = HandlerFor(frames, "click", labelA);
+            int b = HandlerFor(frames, "click", labelB);
+            FakeShellHost.AutoCompleteHostCall = true;
+            int rcA = DispatchBounded(a, """{"name":"click"}""");
+            int rcB = DispatchBounded(b, """{"name":"click"}""");
+            return (rcA, rcB, a, b, pending, previous);
+        }
+        catch
+        {
+            // The caller's finally never sees this state: tear down here (18.1, #564).
+            TearDown(pending, previous);
+            throw;
+        }
     }
 
     /// <summary>17.1 (#464): A's handlers wait on an app-made gate; B's handlers complete it inline.</summary>
@@ -1202,6 +1421,10 @@ public sealed class FaultNoticeTests
         /// DispatchProbe resets both.</summary>
         public static volatile int HandlerThread, PoolBeginThread;
 
+        /// <summary>18.1 (#564): gated-begin-then-throw waits on this in its synchronous part.
+        /// Open unless a fact closes it; that fact opens it again in its finally.</summary>
+        public static readonly ManualResetEventSlim Gate = new(true);
+
         [Inject] public IMobileBridge Bridge { get; set; } = default!;
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
@@ -1277,6 +1500,14 @@ public sealed class FaultNoticeTests
             Button(b, 120, "child-throw-then-sibling-begin", () => { _showChildren = true; });
             Button(b, 130, "next-ok", () => { _okCount++; });
             Button(b, 160, "child-begin-then-sibling-throw", () => { _showBeginFirst = true; });
+            Button(b, 180, "gated-begin-then-throw", () =>
+            {
+                // 18.1 (#564): holds the render thread inside the synchronous part, as a full
+                // stderr pipe did, after a begun call, so the fault it then throws is a notice.
+                _ = Bridge.CheckGeolocationPermissionAsync();
+                Gate.Wait(Budget);
+                throw new InvalidOperationException("after-gate");
+            });
             if (_okCount > 0)
             {
                 b.OpenElement(140, "text");
@@ -1361,24 +1592,36 @@ public sealed class FaultNoticeTests
 
     private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
-            int fetchBeginReturnCode = 0)
+            int fetchBeginReturnCode = 0, Action? release = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
         Exports.PendingDispatchObserver = (_, _, t) => { lock (pending) pending.Add(t); };
-        NativeRenderer renderer = StartSession(strict: false, frames);
-        renderer.Mount<ShellCallProbe>();
-        int handlerId = HandlerFor(frames, "click", label);
-        ShellCallProbe.ReachedThrow = false;
-        ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
-        ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
-        FakeShellHost.AutoCompleteHostCall = true;
-        FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
-        FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
-        FakeShellHost.FetchBeginReturnCode = fetchBeginReturnCode;
-        int rc = DispatchBounded(handlerId, """{"name":"click"}""");
-        return (rc, frames, pending, previous);
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            renderer.Mount<ShellCallProbe>();
+            int handlerId = HandlerFor(frames, "click", label);
+            ShellCallProbe.ReachedThrow = false;
+            ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
+            ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
+            FakeShellHost.AutoCompleteHostCall = true;
+            FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
+            FakeShellHost.HostCallBeginReturnCode = hostCallBeginReturnCode;
+            FakeShellHost.FetchBeginReturnCode = fetchBeginReturnCode;
+            int rc = DispatchBounded(handlerId, """{"name":"click"}""");
+            return (rc, frames, pending, previous);
+        }
+        catch
+        {
+            // 18.1 (#564): the caller's try/finally starts only once this returns, so a throw
+            // here, a dispatch past its budget above all, must tear its own fact down.
+            // Otherwise the observer, the session and the dispatch's late notice carry over
+            // into the next fact. `release` frees what the fact holds, so the dispatch can end.
+            TearDown(pending, previous, release);
+            throw;
+        }
     }
 
     /// <summary>"click" awaits a held geolocation check, then throws; "change" does the

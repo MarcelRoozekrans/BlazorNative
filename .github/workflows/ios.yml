@@ -483,11 +483,43 @@ jobs:
           echo "Selected simulator: $name ($udid)"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
+      # ── 18.1: boot the simulator, and wait for it, as its own step ────────────
+      # `xcodebuild test` used to boot the selected simulator itself. This step boots
+      # the SAME udid the destination below names and blocks on `bootstatus -b` until
+      # the device reports booted. It is kept for three reasons of its own:
+      #   · a boot failure is its own named step with an ::error::, not an xcodebuild
+      #     failure somewhere inside the test step;
+      #   · the boot time is logged (98 to 160 s in 18.1's runs);
+      #   · the boot is out of the test step's time, so a suite-time regression shows.
+      # It does NOT fix #453. In 18.1's eleven fresh-boot runs, two still started
+      # LocalAuthentication cold (51 s and 30 s) after a fully settled boot, the same
+      # rate as before (docs/plans/2026-10-24-phase-18.1-record.md, section 4). #453 is
+      # carried by the shell's boot warm-up, BnBiometrics.warmUpContext, and the boot
+      # tests' named warm-up step. `simctl boot` on a device that is already booted
+      # exits non-zero with "Unable to boot device in current state: Booted"; that state
+      # is accepted, and `bootstatus` still has to confirm it.
+      - name: Boot the selected simulator and wait until it has booted
+        if: ${{ matrix.runs_tests }}
+        run: |
+          set -euo pipefail
+          udid="${{ steps.sim.outputs.udid }}"
+          start=$(date +%s)
+          if ! out=$(xcrun simctl boot "$udid" 2>&1); then
+            case "$out" in
+              *"current state: Booted"*) echo "Simulator $udid was already booted" ;;
+              *) echo "$out" >&2; echo "::error::xcrun simctl boot $udid failed" >&2; exit 1 ;;
+            esac
+          fi
+          xcrun simctl bootstatus "$udid" -b
+          echo "Simulator $udid booted and settled in $(( $(date +%s) - start )) s"
+
       - name: xcodebuild test (hosted XCTest — the DoD #2 render proof)
         if: ${{ matrix.runs_tests }}
         working-directory: src/BlazorNative.Apple
         run: |
           set -o pipefail
+          # #444: the simulator log collected on failure starts here.
+          date '+%Y-%m-%d %H:%M:%S' > ../../ios-out/test-start.txt
           xcodebuild test \
             -project BnHost.xcodeproj \
             -scheme BnHost \
@@ -574,7 +606,24 @@ jobs:
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
 
-      - name: Assert XCTest baseline (288 passed / 0 failed)
+      # ── #444: the simulator's UserNotifications log, on failure ──────────────
+      # BnNotificationsTests' show sometimes never completes Granted. The test's failure
+      # message carries the add trace and a 5 s probe of usernotificationsd; this adds
+      # the daemon's own side, from the test step's start: the UserNotifications
+      # subsystem, usernotificationsd, and the test host's `[#444]` lines. Best-effort:
+      # a failure here never masks the test step's.
+      - name: Collect the simulator's UserNotifications log (on failure, #444)
+        if: ${{ failure() && matrix.runs_tests }}
+        run: |
+          udid="${{ steps.sim.outputs.udid }}"
+          start=$(cat ios-out/test-start.txt 2>/dev/null || true)
+          if [ -n "$start" ]; then window=(--start "$start"); else window=(--last 30m); fi
+          xcrun simctl spawn "$udid" log show "${window[@]}" --info --debug --style compact \
+            --predicate 'subsystem BEGINSWITH "com.apple.UserNotifications" OR process == "usernotificationsd" OR (process == "BnHost" AND eventMessage CONTAINS "[#444]")' \
+            > ios-out/usernotifications.log 2>&1 || true
+          echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
+
+      - name: Assert XCTest baseline (289 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1431,9 +1480,11 @@ jobs:
           # 287 -> 288 (16.4 final review, +1): BnSecureStorageTests, a plain get that
           # completes while a getWithAuth waits on its gate must not release that
           # request's retained LAContext.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 288 ]; then
+          # 288 -> 289 (18.1, +1): #453, BnBiometricsTests' ordering pin. Boot warms one
+          # LAContext on the biometrics queue, off the boot path, before the first request.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 289 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 288 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 289 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

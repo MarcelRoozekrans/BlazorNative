@@ -29,10 +29,13 @@ namespace BlazorNative.Runtime.Tests;
 /// an undocumented member at compile time. What CS1591 CANNOT prove is that the
 /// generator emitted a PAGE for every shipped type — that is this file's job.
 /// </summary>
-public abstract class ReferenceFixtureBase : IDisposable
+public abstract class ReferenceFixtureBase : IAsyncLifetime
 {
+    private readonly string _package;
+    private readonly IMessageSink _sink;
+
     public string OutputDirectory { get; }
-    public string GeneratorLog { get; }
+    public string GeneratorLog { get; private set; } = "";
 
     /// <summary>The bound on one reference generation (#454). Standalone, a
     /// generation takes seconds; the 17.5 record holds the slowest measured.</summary>
@@ -43,30 +46,39 @@ public abstract class ReferenceFixtureBase : IDisposable
     /// diagnostic messages are on.</param>
     protected ReferenceFixtureBase(string package, IMessageSink sink)
     {
+        _package = package;
+        _sink = sink;
         OutputDirectory = Path.Combine(
             Path.GetTempPath(), $"bn-docs-reference-{package}-" + Guid.NewGuid().ToString("N"));
+    }
 
+    /// <summary>Generates the reference. Asynchronous (#551): the generation runs on
+    /// a dedicated thread, and xUnit's pool thread is free while it runs. A constructor
+    /// held a pool thread in the process wait for the whole generation, five fixtures
+    /// one after another early in the run, and starved the pool.</summary>
+    public async Task InitializeAsync()
+    {
         string script = Path.Combine(
             BnRepo.Root(), "scripts", "generate-reference.ps1");
         Assert.True(File.Exists(script), $"generator script not found: {script}");
 
         // BOUNDED (#454): a held output pipe fails, named, in 5 minutes; it never hangs.
         var clock = Stopwatch.StartNew();
-        GeneratorRun run = BoundedScript.RunBounded(
-            script, ["-Package", package, "-OutputPath", OutputDirectory], GenerationBound);
+        GeneratorRun run = await BoundedScript.RunBoundedAsync(
+            script, ["-Package", _package, "-OutputPath", OutputDirectory], GenerationBound);
         GeneratorLog = run.Log;
-        sink.OnMessage(new DiagnosticMessage(
-            $"generate-reference.ps1 -Package {package}: {clock.Elapsed.TotalSeconds:F1} s, exit {run.ExitCode}"));
+        _sink.OnMessage(new DiagnosticMessage(
+            $"generate-reference.ps1 -Package {_package}: {clock.Elapsed.TotalSeconds:F1} s, exit {run.ExitCode}"));
 
         Assert.True(run.ExitCode == 0,
-            $"generate-reference.ps1 -Package {package} failed (exit {run.ExitCode}):\n{GeneratorLog}");
+            $"generate-reference.ps1 -Package {_package} failed (exit {run.ExitCode}):\n{GeneratorLog}");
     }
 
-    public void Dispose()
+    public Task DisposeAsync()
     {
-        GC.SuppressFinalize(this);
         try { if (Directory.Exists(OutputDirectory)) Directory.Delete(OutputDirectory, true); }
         catch (IOException) { /* a temp dir that outlives the run is not a failure */ }
+        return Task.CompletedTask;
     }
 }
 

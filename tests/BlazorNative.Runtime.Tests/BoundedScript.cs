@@ -29,11 +29,30 @@ internal sealed record GeneratorRun(int ExitCode, string Log);
 /// exited, such as an MSBuild node whose publish is done, is out of its reach. The
 /// failure message says so and how to clear one. EOF is not awaited after the kill,
 /// because such a descendant may still hold the pipe.</para>
+///
+/// <para>NEVER ON A POOL THREAD (#551). <see cref="RunBounded"/> blocks its calling
+/// thread for up to the bound, and refuses a thread-pool thread. A pool thread held in
+/// a process wait starved the test process's pool on the Windows runner, and
+/// ShutdownQuiescenceTests' positive control, whose frame crosses the pool once, saw
+/// no frame for 10 s. Callers await <see cref="RunBoundedAsync"/>, which runs the same
+/// waits on a dedicated thread.</para>
 /// </summary>
 internal static class BoundedScript
 {
+    /// <summary>Runs <see cref="RunBounded"/> on a dedicated thread, through
+    /// <see cref="OffPool"/>, so that no pool thread waits on the script.</summary>
+    internal static Task<GeneratorRun> RunBoundedAsync(string script, IReadOnlyList<string> args, TimeSpan bound)
+        => OffPool.Run(() => RunBounded(script, args, bound));
+
     internal static GeneratorRun RunBounded(string script, IReadOnlyList<string> args, TimeSpan bound)
     {
+        if (Thread.CurrentThread.IsThreadPoolThread)
+            throw new InvalidOperationException(
+                $"BoundedScript.RunBounded must not be called on a thread-pool thread: it would hold "
+                + $"that thread for up to {bound} while {script} runs, and a test process that holds its "
+                + "own pool threads delays every continuation queued behind them (#551). "
+                + "Await BoundedScript.RunBoundedAsync, which runs the waits on a dedicated thread.");
+
         var psi = new ProcessStartInfo("pwsh")
         {
             RedirectStandardOutput = true,
