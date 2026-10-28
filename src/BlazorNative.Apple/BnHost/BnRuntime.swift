@@ -241,7 +241,7 @@ final class BnRuntime {
         BnRuntime.shared = self
 
         // 18.1 (#453): start LocalAuthentication now, off this thread, so the first
-        // biometric request does not pay a cold start of up to 41 s. Enqueued on the
+        // biometric request does not pay a cold start of up to 51 s. Enqueued on the
         // biometrics queue and never waited for; see BnBiometrics.warmUpContext.
         bridge.biometrics.warmUpContext()
 

@@ -486,8 +486,8 @@ final class BnBiometricsTests: BnHostTestCase {
     // ── 18.1 (#453): boot warms one LAContext, off the boot path, before any request ──
     //
     // WHAT IT PINS. The first `LAContext()` in a process is a cold LocalAuthentication
-    // start, and on a freshly booted simulator it took 26 to 41 s (the 18.1
-    // investigation, #453). Since 18.1 `BnRuntime.start` enqueues one context creation
+    // start, and on a freshly booted simulator it took 26 to 51 s (the 18.1 investigation
+    // and record, #453). Since 18.1 `BnRuntime.start` enqueues one context creation
     // on the biometrics queue at boot, so an app pays that cost early and once, not on
     // its first Authenticate. Through `contextFactoryForTest`, held shut at boot, this
     // shows the three parts of that contract, each at its own assertion:

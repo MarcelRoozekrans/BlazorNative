@@ -46,7 +46,7 @@
 // require `hostCallBegin` to return while the factory is still blocked.
 //
 // THE BOOT WARM-UP (18.1, #453). Keeping the cold start off the calling thread did not
-// make it shorter: on a freshly booted simulator it reached 41 s, and the first
+// make it shorter: on a freshly booted simulator it reached 51 s, and the first
 // Authenticate still waited for it on `workQueue`. So `BnRuntime.start` calls
 // `warmUpContext()`, which enqueues one creation on `workQueue` at boot and returns. The
 // pin is `testBootWarmsOneLAContextOffTheBootPathBeforeTheFirstBiometricRequest`.
@@ -266,7 +266,7 @@ final class BnBiometrics {
     /// creation on `workQueue` and returns at once; nothing waits for it.
     ///
     /// WHY. The first `LAContext()` in a process starts LocalAuthentication cold. On a
-    /// freshly booted simulator that took 26 to 41 s (#453), and before 18.1 the first
+    /// freshly booted simulator that took 26 to 51 s (#453), and before 18.1 the first
     /// Authenticate paid it, on this queue, between recording the request and arming the
     /// evaluation. Paying it at boot moves the cost to a time no user is waiting on, once.
     ///
