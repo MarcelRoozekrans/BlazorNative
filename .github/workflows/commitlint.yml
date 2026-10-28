@@ -142,7 +142,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Install commitlint
         run: npm install --no-save @commitlint/cli@21 @commitlint/config-conventional@21
@@ -201,7 +201,7 @@ jobs:
       # fallback key is how a required gate went falsely green once already.
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Install the release-notes parser (locked)
         working-directory: scripts/commit-parse-check
