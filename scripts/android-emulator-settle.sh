@@ -21,12 +21,13 @@
 #      every install.
 # 2. Wait until the package manager holds still: its change sequence number,
 #    from `dumpsys package changes`, and the overlay list stay the same for
-#    SETTLE_QUIET_S seconds, 60 by default. Then wait for the broadcast queues to
-#    drain. Why 60: with nothing stopped, probe run 40608094054 saw changes at
-#    +73 s, +93 s and +113 s after boot, the last a burst of 58, so the lulls
-#    between them were up to about 20-30 s at its 10 s sampling. 60 s is twice the
-#    longest lull. With the stops, two head runs saw their last change at +38 s and
-#    +44 s, and the probe saw none in 3 min after the stop.
+#    SETTLE_QUIET_S seconds, 90 by default. Then wait for the broadcast queues to
+#    drain. Why 90: with nothing stopped, probe run 40608094054 saw changes at
+#    +73 s, +93 s and +113 s after boot, the last a burst of 58, so lulls of
+#    about 20-30 s come before a burst. With the stops, run 40618707393 saw one
+#    more change 61 s after the one before it, so 60 s had no margin. 90 s is
+#    half again the longest lull seen. The probe saw no change in 3 min after
+#    the stop.
 #    A ceiling of SETTLE_CEILING_S seconds of watching fails the step, naming the last change, so an
 #    emulator that never settles fails here and not as a flake in some test.
 #
@@ -39,7 +40,7 @@
 # Each check that matters is tested explicitly instead.
 set -uo pipefail
 
-QUIET_S=${SETTLE_QUIET_S:-60}
+QUIET_S=${SETTLE_QUIET_S:-90}
 CEILING_S=${SETTLE_CEILING_S:-300}
 POLL_S=5
 start=$(date +%s)
