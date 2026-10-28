@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.2...v0.20.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **18.1:** fix the CI flakes at their causes ([#584](https://github.com/MarcelRoozekrans/BlazorNative/issues/584)) ([5a7ab54](https://github.com/MarcelRoozekrans/BlazorNative/commit/5a7ab54a606cd73086772648548a72ba240740cf))
+
 ## [0.20.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.1...v0.20.2) (2026-10-22)
 
 
