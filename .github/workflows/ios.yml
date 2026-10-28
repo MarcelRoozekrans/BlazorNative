@@ -518,6 +518,8 @@ jobs:
         working-directory: src/BlazorNative.Apple
         run: |
           set -o pipefail
+          # #444: the simulator log collected on failure starts here.
+          date '+%Y-%m-%d %H:%M:%S' > ../../ios-out/test-start.txt
           xcodebuild test \
             -project BnHost.xcodeproj \
             -scheme BnHost \
@@ -603,6 +605,23 @@ jobs:
             xcrun xcresulttool get --path ios-out/BnHost.xcresult --format json \
             > ios-out/xcresult.json 2>/dev/null || true
           ls -la ios-out/crash || true
+
+      # ── #444: the simulator's UserNotifications log, on failure ──────────────
+      # BnNotificationsTests' show sometimes never completes Granted. The test's failure
+      # message carries the add trace and a 5 s probe of usernotificationsd; this adds
+      # the daemon's own side, from the test step's start: the UserNotifications
+      # subsystem, usernotificationsd, and the test host's `[#444]` lines. Best-effort:
+      # a failure here never masks the test step's.
+      - name: Collect the simulator's UserNotifications log (on failure, #444)
+        if: ${{ failure() && matrix.runs_tests }}
+        run: |
+          udid="${{ steps.sim.outputs.udid }}"
+          start=$(cat ios-out/test-start.txt 2>/dev/null || true)
+          if [ -n "$start" ]; then window=(--start "$start"); else window=(--last 30m); fi
+          xcrun simctl spawn "$udid" log show "${window[@]}" --info --debug --style compact \
+            --predicate 'subsystem BEGINSWITH "com.apple.UserNotifications" OR process == "usernotificationsd" OR (process == "BnHost" AND eventMessage CONTAINS "[#444]")' \
+            > ios-out/usernotifications.log 2>&1 || true
+          echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
 
       - name: Assert XCTest baseline (289 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
