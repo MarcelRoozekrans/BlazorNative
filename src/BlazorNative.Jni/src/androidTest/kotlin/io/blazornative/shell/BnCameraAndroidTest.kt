@@ -18,8 +18,10 @@ import io.blazornative.jni.CameraStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -251,9 +253,7 @@ class BnCameraAndroidTest {
             // THE COMPOSITION, on screen: the BnImage measures at the demo's DEFINITE 240×320 box
             // (a multi-megapixel photo cannot reflow the layout — the M6/M7 ledger discharge) and
             // PAINTS the loaded local file (Coil loaded the file:// path).
-            assertTrue("the captured file never loaded into the BnImage within 15s (Coil did not " +
-                "load the local file:// path)",
-                CameraHarness.pollTrue(15_000) { CameraHarness.imageDrawableOn(scenario) != null })
+            CameraHarness.assertPhotoLoads(scenario)
 
             scenario.onActivity { act ->
                 val image = CameraHarness.imageIn(act)!!
@@ -264,6 +264,48 @@ class BnCameraAndroidTest {
                     320f, image.height / density, 1f)
                 assertNotNull("…and it PAINTED the captured file (the composition)", image.drawable)
             }
+        }
+    }
+
+    // ── #407: a recreation during the image poll is NAMED, not a bare timeout ──
+
+    /**
+     * Phase 18.1 (#407). On the lane, the emulator's post-boot package churn once relaunched
+     * MainActivity between the echo check and the image poll. The photo's `src` is page state, so
+     * the new page never loads it, and the poll timed out naming Coil, which was never asked.
+     *
+     * The race is forced: `scenario.recreate()` runs between the echo and the image poll, the
+     * window the lane hit. The poll the composition test uses must then fail naming the
+     * recreation.
+     *
+     * DOES NOT COVER: what recreated the activity. The poll sees a new instance, not its cause.
+     */
+    @Test
+    fun a_recreation_before_the_image_poll_fails_the_poll_naming_it() {
+        AndroidShellBridge.cameraCaptureHook = { capture -> capture.captureScene(makeJpeg(640, 480)) }
+
+        CameraHarness.launchDemo().use { scenario ->
+            assertNotNull("BnCameraDemo never rendered within 60s", CameraHarness.pollForProbe(scenario))
+
+            CameraHarness.tapButton(scenario, "Take Photo")
+            assertTrue("Take Photo never echoed a 'captured:' result within 15s",
+                CameraHarness.pollTrue(15_000) {
+                    CameraHarness.echoTextOn(scenario)?.startsWith("captured:") == true
+                })
+
+            val before = CameraHarness.activityOf(scenario)
+            scenario.recreate()
+            assertNotSame("anchor: recreate() must put a new MainActivity under the scenario before the poll",
+                before, CameraHarness.activityOf(scenario))
+
+            try {
+                CameraHarness.assertPhotoLoads(scenario)
+            } catch (e: AssertionError) {
+                assertEquals("the activity was recreated while the test still expected the one it started on",
+                    e.message)
+                return
+            }
+            fail("the image poll passed on a recreated activity instead of failing naming it")
         }
     }
 
@@ -362,6 +404,19 @@ private object CameraHarness {
             if (child is ImageView) return child
         }
         return null
+    }
+
+    fun activityOf(scenario: ActivityScenario<MainActivity>): MainActivity {
+        val out = AtomicReference<MainActivity>()
+        scenario.onActivity { act -> out.set(act) }
+        return out.get()
+    }
+
+    /** The composition's on-screen half: the captured file loads into the demo's BnImage. */
+    fun assertPhotoLoads(scenario: ActivityScenario<MainActivity>) {
+        assertTrue("the captured file never loaded into the BnImage within 15s (Coil did not " +
+            "load the local file:// path)",
+            pollTrue(15_000) { imageDrawableOn(scenario) != null })
     }
 
     fun imageDrawableOn(scenario: ActivityScenario<MainActivity>): Any? {
