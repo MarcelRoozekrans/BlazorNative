@@ -179,7 +179,11 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     private static var addTraceSeq = 0
 
     /// The adds since the last `resetForTest`, oldest first. Kept to the last 16, so
-    /// the record stays bounded in a long-lived process.
+    /// the record stays bounded in a long-lived process. A late completion is appended
+    /// under the same cap.
+    ///
+    /// THIS RUNS IN PRODUCTION TOO, on every `add`, like `lastAddedRequestForTest`: a lock
+    /// and an entry in a 16-entry array per call. Nothing is logged; only tests read it.
     static func addTracesForTest() -> [AddTrace] {
         addTraceLock.lock(); defer { addTraceLock.unlock() }; return addTraces
     }
@@ -219,6 +223,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
             late.onMainThread = Thread.isMainThread
             late.handlerAlive = handlerAlive
             addTraces.append(late)
+            if addTraces.count > 16 { addTraces.removeFirst(addTraces.count - 16) }
         }
     }
 
