@@ -149,6 +149,79 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// unauthorized sim never had a pending request to observe removed.
     static var lastCancelledIdForTest: String?
 
+    /// One `add` handed to the real center, as #444's diagnostics see it: when it was
+    /// called, when its completion ran, with what error, on which thread, and whether
+    /// this handler was still alive to route it. `calledAt` is nil for a completion
+    /// whose call was made before the last `resetForTest`, which is a late completion
+    /// from an earlier test.
+    struct AddTrace {
+        let seq: Int
+        let identifier: String
+        let calledAt: Date?
+        var completedAt: Date?
+        var error: String?
+        var onMainThread: Bool?
+        var handlerAlive: Bool?
+
+        /// One line for a failure message or a log: the id, the latency, the outcome.
+        var summary: String {
+            let called = calledAt.map { BnNotifications.traceClock($0) } ?? "before reset"
+            guard let done = completedAt else { return "add#\(seq) '\(identifier)' called \(called), NO completion" }
+            let latency = calledAt.map { String(format: "%.0f ms", done.timeIntervalSince($0) * 1000) } ?? "late"
+            return "add#\(seq) '\(identifier)' called \(called), completed \(BnNotifications.traceClock(done)) "
+                + "after \(latency), error \(error ?? "none"), main thread \(onMainThread == true), "
+                + "handler alive \(handlerAlive == true)"
+        }
+    }
+
+    private static let addTraceLock = NSLock()
+    private static var addTraces: [AddTrace] = []
+    private static var addTraceSeq = 0
+
+    /// The adds since the last `resetForTest`, oldest first. Kept to the last 16, so
+    /// the record stays bounded in a long-lived process.
+    static func addTracesForTest() -> [AddTrace] {
+        addTraceLock.lock(); defer { addTraceLock.unlock() }; return addTraces
+    }
+
+    static func traceClock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: date)
+    }
+
+    private static func traceAddCalled(_ identifier: String) -> Int {
+        addTraceLock.lock(); defer { addTraceLock.unlock() }
+        addTraceSeq += 1
+        addTraces.append(AddTrace(seq: addTraceSeq, identifier: identifier, calledAt: Date()))
+        if addTraces.count > 16 { addTraces.removeFirst(addTraces.count - 16) }
+        return addTraceSeq
+    }
+
+    private static func traceAddCompleted(_ seq: Int, _ identifier: String, _ error: Error?, handlerAlive: Bool) {
+        let now = Date()
+        let described = error.map { e -> String in
+            let ns = e as NSError
+            return "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
+        }
+        addTraceLock.lock(); defer { addTraceLock.unlock() }
+        if let i = addTraces.firstIndex(where: { $0.seq == seq }) {
+            addTraces[i].completedAt = now
+            addTraces[i].error = described
+            addTraces[i].onMainThread = Thread.isMainThread
+            addTraces[i].handlerAlive = handlerAlive
+        } else {
+            var late = AddTrace(seq: seq, identifier: identifier, calledAt: nil)
+            late.completedAt = now
+            late.error = described
+            late.onMainThread = Thread.isMainThread
+            late.handlerAlive = handlerAlive
+            addTraces.append(late)
+        }
+    }
+
     static func resetForTest() {
         authorizationStatusOverrideForTest = nil
         suppressAuthorizationPromptForTest = false
@@ -157,6 +230,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         lastHostCallCompleteRcForTest = Int32.min
         lastAddedRequestForTest = nil
         lastCancelledIdForTest = nil
+        addTraceLock.lock(); addTraces = []; addTraceLock.unlock()
     }
 
     func clearInFlightForTest() { lock.lock(); inFlightRequestId = nil; pendingPermissionContext = nil; lock.unlock() }
@@ -354,7 +428,11 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         let request = UNNotificationRequest(
             identifier: identifier, content: content, trigger: triggerFor(action: action, when: args["when"]))
         BnNotifications.lastAddedRequestForTest = request
+        // #444: the call and its completion are traced, including a completion that
+        // finds this handler gone, so a lost completion is told apart from a dropped one.
+        let seq = BnNotifications.traceAddCalled(identifier)
         UNUserNotificationCenter.current().add(request) { [weak self] error in
+            BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: self != nil)
             self?.complete(requestId, error == nil ? BnNotificationStatus.granted : BnNotificationStatus.error, nil)
         }
     }

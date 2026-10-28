@@ -144,14 +144,20 @@ final class BnNotificationsTests: BnHostTestCase {
         installCapture()
         let bridge = AppleShellBridge()
         BnNotifications.authorizationStatusOverrideForTest = { .authorized }
+        // #444: an id no earlier test used, so the show never replaces a request the
+        // previous test added and setUp is still removing.
+        let id = Self.uniqueNotificationId()
         _ = bridge.hostCallBegin(
             10, BnHostCallOp.notifications,
-            "{\"action\":\"show\",\"id\":\"7\",\"title\":\"Hello\",\"body\":\"A local notification\",\"route\":\"/notifications\"}")
+            "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Hello\",\"body\":\"A local notification\",\"route\":\"/notifications\"}")
 
-        XCTAssertTrue(pollUntil { self.capturedStatuses() == [BnNotificationStatus.granted] },
-                      "show never completed Granted (a hang, or the real center's add never returned)")
+        let probe = DaemonProbe()
+        let completed = pollUntilProbing(probe) { self.capturedStatuses() == [BnNotificationStatus.granted] }
+        let diagnosis = diagnose("unit show", probe: probe, observed: "captured statuses \(capturedStatuses())")
+        XCTAssertTrue(completed,
+                      "show never completed Granted (a hang, or the real center's add never returned). \(diagnosis)")
         let req = try XCTUnwrap(BnNotifications.lastAddedRequestForTest, "show must hand a request to the center")
-        XCTAssertEqual(req.identifier, "7", "the id is the app-chosen int, stringified")
+        XCTAssertEqual(req.identifier, id, "the id is the app-chosen int, stringified")
         XCTAssertEqual(req.content.title, "Hello")
         XCTAssertEqual(req.content.body, "A local notification")
         XCTAssertNil(req.trigger, "an immediate show carries a NIL trigger")
@@ -294,8 +300,12 @@ final class BnNotificationsTests: BnHostTestCase {
 
         XCTAssertEqual(echoLabel()?.text, "arrived:/notifications", "the demo mounts on its own route")
         try tapButton("Show", in: form)
-        XCTAssertTrue(pollUntil { self.echoLabel()?.text == "status:Granted" },
-                      "Show never round-tripped a Granted status to the echo (a hang or mis-route)")
+        let probe = DaemonProbe()
+        let completed = pollUntilProbing(probe) { self.echoLabel()?.text == "status:Granted" }
+        let diagnosis = diagnose("boot show", probe: probe,
+                                 observed: "echo \(echoLabel()?.text ?? "nil"), complete rc \(BnNotifications.lastHostCallCompleteRcForTest)")
+        XCTAssertTrue(completed,
+                      "Show never round-tripped a Granted status to the echo (a hang or mis-route). \(diagnosis)")
         XCTAssertEqual(BnNotifications.lastHostCallCompleteRcForTest, 0,
                        "host_call_complete did not route to the in-flight .NET requestId")
     }
@@ -401,6 +411,74 @@ final class BnNotificationsTests: BnHostTestCase {
         let center = UNUserNotificationCenter.current()
         center.removeAllPendingNotificationRequests()
         center.removeAllDeliveredNotifications()
+    }
+
+    // ── #444 diagnostics: a show's add, timed, and a probe of the daemon ─────────
+    //
+    // In the lane runs sampled so far, a show passed within 2.4 s or failed at the full
+    // 10 s, with nothing in between. These say why when it fails: the add trace says
+    // whether the center ever called back, with what error, and whether the handler was
+    // alive to route it; the probe says whether usernotificationsd still answered
+    // other requests at 5 s. A passing show logs the same line, so the latency is on
+    // record. None of it changes the bound: the poll is still 10 s in all.
+
+    private static var notificationIdSeq = 0
+
+    /// A notification id no other test in this process has used: the app-chosen int,
+    /// stringified, as the shell expects.
+    static func uniqueNotificationId() -> String {
+        notificationIdSeq += 1
+        return String(444_000 + notificationIdSeq)
+    }
+
+    /// Whether the notification daemon answered two read-only requests, asked once a
+    /// show has waited 5 s.
+    final class DaemonProbe {
+        private let lock = NSLock()
+        private var askedAt: Date?
+        private var settingsAt: Date?
+        private var settingsStatus: Int?
+        private var pendingAt: Date?
+        private var pendingCount: Int?
+
+        func ask() {
+            let center = UNUserNotificationCenter.current()
+            lock.lock(); askedAt = Date(); lock.unlock()
+            center.getNotificationSettings { settings in
+                self.lock.lock(); self.settingsAt = Date(); self.settingsStatus = settings.authorizationStatus.rawValue
+                self.lock.unlock()
+            }
+            center.getPendingNotificationRequests { requests in
+                self.lock.lock(); self.pendingAt = Date(); self.pendingCount = requests.count; self.lock.unlock()
+            }
+        }
+
+        var summary: String {
+            lock.lock(); defer { lock.unlock() }
+            guard let asked = askedAt else { return "daemon probe not needed (done before 5 s)" }
+            func after(_ d: Date?) -> String {
+                d.map { String(format: "answered after %.0f ms", $0.timeIntervalSince(asked) * 1000) } ?? "NO answer"
+            }
+            return "daemon probe at \(BnNotifications.traceClock(asked)): getNotificationSettings \(after(settingsAt))"
+                + " (authorization \(settingsStatus.map(String.init) ?? "-")), getPendingNotificationRequests "
+                + "\(after(pendingAt)) (\(pendingCount.map(String.init) ?? "-") pending)"
+        }
+    }
+
+    /// `pollUntil` with the same 10 s bound, asking the probe once at 5 s.
+    private func pollUntilProbing(_ probe: DaemonProbe, _ cond: () -> Bool) -> Bool {
+        if pollUntil(deadline: 5, cond) { return true }
+        probe.ask()
+        return pollUntil(deadline: 5, cond)
+    }
+
+    /// The add traces and the probe, as one line, also logged so a passing run's
+    /// latency is on record.
+    private func diagnose(_ what: String, probe: DaemonProbe, observed: String) -> String {
+        let traces = BnNotifications.addTracesForTest().map(\.summary)
+        let line = "[#444] \(what): \(observed); adds [\(traces.joined(separator: "; "))]; \(probe.summary)"
+        NSLog("%@", line)
+        return line
     }
 
     private func pollUntil(deadline seconds: TimeInterval = 10, _ cond: () -> Bool) -> Bool {
