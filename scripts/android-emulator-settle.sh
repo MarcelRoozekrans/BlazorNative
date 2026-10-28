@@ -2,10 +2,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 18.1 (#407): settle the CI emulator's packages before connectedAndroidTest.
 #
-# About two minutes after boot, the google_apis image's Play services keep changing
-# their own package state: module and flag updates fetched over the network, each
-# a PACKAGE_CHANGED. Once, in run 36124026574, that churn relaunched MainActivity
-# in the middle of BnCameraAndroidTest, and the test lost its page state.
+# For minutes after boot, the google_apis image's Play services keep changing their
+# own package state: module and flag updates fetched over the network, each a
+# PACKAGE_CHANGED. Once, in run 36124026574, a relaunch of MainActivity in the
+# middle of BnCameraAndroidTest coincided with that churn, and the test lost its
+# page state. The trigger is unproven: the relaunch also coincided with the
+# install's own delayed package broadcasts, which this step, run before the
+# install, does not cover. What the suite guarantees is a named failure: the
+# camera test fails naming a recreation, whatever caused it.
 #
 # 1. Stop the updates at their source:
 #    - disable the Play Store, if the image has one;
@@ -17,21 +21,38 @@
 #      every install.
 # 2. Wait until the package manager holds still: its change sequence number,
 #    from `dumpsys package changes`, and the overlay list stay the same for
-#    SETTLE_QUIET_S seconds. Then wait for the broadcast queues to drain.
+#    SETTLE_QUIET_S seconds, 60 by default. Then wait for the broadcast queues to
+#    drain. Why 60: with nothing stopped, probe run 40608094054 saw changes at
+#    +73 s, +93 s and +113 s after boot, the last a burst of 58, so the lulls
+#    between them were up to about 20-30 s at its 10 s sampling. 60 s is twice the
+#    longest lull. With the stops, two head runs saw their last change at +38 s and
+#    +44 s, and the probe saw none in 3 min after the stop.
 #    A ceiling of SETTLE_CEILING_S seconds of watching fails the step, naming the last change, so an
 #    emulator that never settles fails here and not as a flake in some test.
 #
 # Every action and every change seen is logged with its time since the start.
+# A failed read never counts as holding still: no device fails the step up front,
+# and a read with no sequence number fails it where it happens.
 # ─────────────────────────────────────────────────────────────────────────────
+# No -e, on purpose: under pipefail, `grep -m 1` and `head` close their pipes
+# early, and the writer's SIGPIPE exit would abort the script as a false failure.
+# Each check that matters is tested explicitly instead.
 set -uo pipefail
 
-QUIET_S=${SETTLE_QUIET_S:-30}
+QUIET_S=${SETTLE_QUIET_S:-60}
 CEILING_S=${SETTLE_CEILING_S:-300}
 POLL_S=5
 start=$(date +%s)
 
 log() { echo "settle +$(( $(date +%s) - start ))s: $*"; }
 sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
+
+state=$(adb get-state 2>&1 | tr -d '\r')
+if [ "$state" != "device" ]; then
+  log "FAILED: adb does not see a device: 'adb get-state' printed '${state}'"
+  exit 1
+fi
+log "adb sees the emulator: ${state}"
 
 # ── 1. Stop the updates at their source ──────────────────────────────────────
 if sh_ pm path com.android.vending | grep -q '^package:'; then
@@ -57,7 +78,8 @@ case "$net" in
 esac
 sh_ settings put global package_verifier_enable 0 >/dev/null
 sh_ settings put global verifier_verify_adb_installs 0 >/dev/null
-log "package verification off: package_verifier_enable=$(sh_ settings get global package_verifier_enable)"
+log "package verification off: package_verifier_enable=$(sh_ settings get global package_verifier_enable)" \
+    "verifier_verify_adb_installs=$(sh_ settings get global verifier_verify_adb_installs)"
 
 # ── 2. Wait for the package manager to hold still ────────────────────────────
 fingerprint() {
@@ -90,6 +112,12 @@ while :; do
   fi
   sleep "$POLL_S"
   cur=$(fingerprint)
+  case "$cur" in
+    seq=none*)
+      log "FAILED: a read of 'dumpsys package changes' returned no sequence number" \
+          "after ${changes} changes; adb state now '$(adb get-state 2>&1 | tr -d '\r')'"
+      exit 1 ;;
+  esac
   if [ "$cur" != "$last" ]; then
     changes=$((changes + 1))
     log "changed: ${cur}"

@@ -248,10 +248,13 @@ jobs:
             # deny the Android 10+ clipboard READ (ClipboardAndroidTest); this plus
             # the in-test hasWindowFocus() wait keep that lane stable on a cold AVD.
             adb shell settings put global hide_error_dialogs 1 || true
-            # #407: Play services' post-boot package churn once relaunched MainActivity
-            # mid-test. Stop its updates at the source, then wait until the package
-            # manager holds still; the script logs what it did and what it saw. An
-            # emulator that never settles fails here, and the tests do not run.
+            # #407: a mid-test relaunch of MainActivity once coincided with Play services'
+            # post-boot package churn; the trigger is unproven. Stop the churn at its
+            # source, then wait until the package manager holds still; the script logs
+            # what it did and what it saw. An emulator that never settles fails here, and
+            # the tests do not run. The camera test names a recreation either way.
+            # The guest network is OFF for the whole suite: a test that needs it must
+            # turn it back on, or run elsewhere.
             bash ../../scripts/android-emulator-settle.sh || touch "${{ runner.temp }}/settle-failed"
             test -f "${{ runner.temp }}/settle-failed" || ./gradlew --no-daemon connectedAndroidTest "-PciSoDir=${{ runner.temp }}/ci-so" || touch "${{ runner.temp }}/gradle-failed"
             adb logcat -d > "${{ runner.temp }}/logcat.txt" || true
