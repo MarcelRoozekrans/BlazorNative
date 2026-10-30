@@ -528,10 +528,6 @@ public sealed class NativeRenderer : BlazorRenderer
         // rethrows it at the caller boundary.
         AssertOnTheRenderThread();
 
-        // 18.2 (#500): after the thread check, since it touches render-thread-only state.
-        if (_disposedComponentsMayLinger)
-            PruneDisposedComponents(new BnRenderBatch(in renderBatch));
-
         // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
         // on the renderer thread — the only thread where HandleException's single-threaded
         // state is safe to touch, and the only place a strict-mode rethrow surfaces at a
@@ -546,6 +542,12 @@ public sealed class NativeRenderer : BlazorRenderer
 
         try
         {
+            // 18.2 (#500): after the thread check, since it touches render-thread-only state,
+            // before pass 1, and inside the try, so a fault in the cleanup it runs is routed
+            // like any other frame fault.
+            if (_disposedComponentsMayLinger)
+                PruneDisposedComponents(batch);
+
             // Disposed components, pass 1 of 2 (Phase 7.2 — the ORDER is the
             // fix): emit their root-view RemoveNodePatches FIRST, before any
             // diff's patches. The diffs below trim the disposed children's
@@ -2206,7 +2208,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// lifetime, whatever the component's type. The faulted path then ends in the same
     /// bookkeeping state as the normal one. It does not recover what the faulted batch never
     /// delivered: the remove patches for the component's views, and the call sites of its
-    /// disposed handler ids.
+    /// disposed handler ids, tracked in #593.
     ///
     /// A component THIS batch disposed is skipped. Its state is gone too, but the batch still
     /// carries its removes and possibly its final diff, which read its buckets, and the batch
