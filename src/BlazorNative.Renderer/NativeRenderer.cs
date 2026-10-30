@@ -2417,9 +2417,6 @@ public sealed class NativeRenderer : BlazorRenderer
             s_flowingScope.Value = outerFlowing;
             if (outer is null)
             {
-                // 18.2 (#500): a segment still open here is closed first, before the drain and
-                // before the tags die, so its tags are recorded like any other.
-                FlushSegment();
                 // 18.2 (#500): the holds are released after the drain, so a queuer is still
                 // not Done while its action runs, and in a finally, so no queuer waits forever.
                 try { DrainPostDispatchActions(scope); }
@@ -2428,6 +2425,13 @@ public sealed class NativeRenderer : BlazorRenderer
                     // Blazor rendered the window's batch before its Task returned, so every tag
                     // is used up or belongs to a component that never rendered. Either way it
                     // dies with the window, before the holds it took are released.
+                    //
+                    // A segment can still be open here, when app code restored another
+                    // dispatch's execution context and the away-switch came only after the
+                    // window was gone. It is cleared, not flushed, because nothing is left to
+                    // tag: the batch has rendered every component the segment dirtied, so their
+                    // flags are clear, and a flag a strict-mode rethrow left set would only
+                    // become a tag this same finally clears (R13).
                     _renderTags.Clear();
                     _renderingFor = null;
                     _renderingNow = null;
@@ -2535,10 +2539,11 @@ public sealed class NativeRenderer : BlazorRenderer
     /// segment's dispatch. It only tags: the dispatch was held at segment entry, in
     /// <see cref="EnterSegment"/>. A dispatch that had already finished is not held, but its
     /// tags are kept, so a fault in its render is logged as a finished dispatch's and is never
-    /// the window's. Called by the flow switch away from the dispatch, and by the outermost
-    /// window close, so a segment whose away-switch was never observed still tags. Render
-    /// thread only; a no-op with no segment open.</summary>
-    internal void FlushSegment()
+    /// the window's. Called by the flow switch away from the dispatch, inside the window. A
+    /// segment whose away-switch comes after the window closed is not flushed: the outermost
+    /// close clears it, since its batch has rendered everything it dirtied. Render thread
+    /// only; a no-op with no segment open.</summary>
+    private void FlushSegment()
     {
         if (_segmentFor is not { } queuer || _inSegment)
             return;
