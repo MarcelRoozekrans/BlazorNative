@@ -1185,6 +1185,42 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void ForcingTheRenderLog_WritesNothingNewThroughBnLog()
+    {
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLogLevel level = BnLog.Level;
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            BnLog.Level = BnLogLevel.Warn;
+            BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            PendingFlagProbe.Reset();
+            renderer.Mount<PendingFlagHost>();
+            renderer.ForceRenderLogForTests = true;
+            int before = renderer.RenderingComponentEventsForTests;
+            lock (log) log.Clear();
+
+            renderer.Dispatcher.InvokeAsync(() => BlazorInterop.StateHasChangedViaAccessor(PendingFlagProbe.Trigger!))
+                .GetAwaiter().GetResult();
+
+            Assert.True(renderer.RenderingComponentEventsForTests > before,
+                "anchor: the RenderingComponent event was not counted, so this fact proves nothing.");
+            lock (log) Assert.False(log.Any(l => l.Contains("RenderTree.Renderer", StringComparison.Ordinal)),
+                "forcing the render log wrote Blazor's Debug lines through BnLog at Warn: the capture changed log output.");
+        }
+        finally
+        {
+            BnLog.Sink = sink;
+            BnLog.Level = level;
+            TearDown(pending, previous);
+        }
+    }
+
+    [Fact]
     public void PendingQueuedRenderFieldProblem_NamesTheFieldWhenItIsMissingOrNotBool()
     {
         Assert.Null(BlazorInterop.PendingQueuedRenderFieldProblem(typeof(ComponentBase)));

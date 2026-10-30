@@ -29,6 +29,8 @@ public static class ServiceCollectionExtensions
 
 internal sealed class NativeRendererLoggerFactory : ILoggerFactory
 {
+    private const string BlazorRendererCategory = "Microsoft.AspNetCore.Components.RenderTree.Renderer";
+
     public void AddProvider(ILoggerProvider provider) { }
     public ILogger CreateLogger(string categoryName) => new ConsoleLogger(categoryName, this);
 
@@ -36,7 +38,6 @@ internal sealed class NativeRendererLoggerFactory : ILoggerFactory
     /// Loggers read it at log time.</summary>
     internal NativeRenderer? Renderer { get; set; }
 
-    private const string BlazorRendererCategory = "Microsoft.AspNetCore.Components.RenderTree.Renderer";
     public void Dispose() { }
 
     /// <summary>Phase 11.4 Gate A (#155): this used to BE the framework's entire
@@ -67,7 +68,9 @@ internal sealed class NativeRendererLoggerFactory : ILoggerFactory
             Func<TState, Exception?, string> formatter)
         {
             // 18.2 (#500): capture the id first, then fall through to the unchanged BnLog path.
-            // Never throws: a malformed state is simply not a signal.
+            // Never throws: a malformed state is simply not a signal. The pattern test below boxes
+            // a struct TState, one allocation per RenderingComponent event while the log is wanted;
+            // only NoteRenderingComponent itself is allocation-free.
             if (eventId.Name == "RenderingComponent" && category == BlazorRendererCategory
                 && factory.Renderer is { } renderer
                 && state is IReadOnlyList<KeyValuePair<string, object?>> entries)
