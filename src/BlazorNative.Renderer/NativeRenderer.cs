@@ -108,8 +108,17 @@ public sealed class NativeRenderer : BlazorRenderer
     public bool StrictErrors { get; set; }
 
     public NativeRenderer(IServiceProvider services)
-        : base(services, new NativeRendererLoggerFactory())
+        : this(services, new NativeRendererLoggerFactory())
     {
+    }
+
+    private NativeRenderer(IServiceProvider services, NativeRendererLoggerFactory loggerFactory)
+        : base(services, loggerFactory)
+    {
+        // 18.2 (#500): the logger reads this back-reference at log time, so Blazor's own
+        // RenderingComponent call reaches NoteRenderingComponent.
+        loggerFactory.Renderer = this;
+
         // Force the BlazorInterop static ctor (version + accessor probe) to run
         // before the first frame is rendered so layout drift surfaces immediately.
         BlazorInterop.EnsureInitialized();
@@ -461,10 +470,43 @@ public sealed class NativeRenderer : BlazorRenderer
         BnLog.Warn("BlazorNative.Renderer", message);
     }
 
+    // ── 18.2 (#500): which component is Blazor rendering ─────────────────────
+    //
+    // Blazor logs "Rendering component {ComponentId}" at Debug before every queued render, through
+    // the logger the renderer handed it. NativeRendererLoggerFactory's logger forwards that one
+    // event here. The id is the signal a re-render needs to be charged to the dispatch that queued it.
+
+    /// <summary>18.2 (#500): the component Blazor last announced it was rendering, or null once
+    /// the batch has been delivered. Render thread only.</summary>
+    private int? _renderingNow;
+    private int _renderingComponentEvents;
+
+    /// <summary>18.2 (#500): test seam that makes <see cref="WantsRenderLog"/> true.</summary>
+    internal bool ForceRenderLogForTests { get; set; }
+
+    /// <summary>18.2 (#500): whether the logger must report Debug events for Blazor's renderer
+    /// category even when BnLog would drop them. Task 4's render tags extend this with
+    /// <c>|| _renderTags.Count > 0</c>.</summary>
+    internal bool WantsRenderLog => ForceRenderLogForTests;
+
+    /// <summary>18.2 (#500): how many RenderingComponent events reached the renderer.</summary>
+    internal int RenderingComponentEventsForTests => Volatile.Read(ref _renderingComponentEvents);
+
+    /// <summary>18.2 (#500): called by the logger on the render thread. Lock-free and
+    /// allocation-free: it only counts and stores the id.</summary>
+    internal void NoteRenderingComponent(int componentId)
+    {
+        _renderingNow = componentId;
+        Interlocked.Increment(ref _renderingComponentEvents);
+    }
+
     // ── UpdateDisplayAsync ────────────────────────────────────────────────────
 
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
+        // 18.2 (#500): the batch is delivered, so no component is being rendered any more.
+        _renderingNow = null;
+
         // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
         // the drain without disturbing the drain-first rule below. Under StrictErrors the
         // throw routes through ProcessRenderQueue's catch into HandleException, which

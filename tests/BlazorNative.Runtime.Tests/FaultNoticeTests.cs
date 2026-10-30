@@ -1162,6 +1162,29 @@ public sealed class FaultNoticeTests
     }
 
     [Fact]
+    public void BlazorsRenderingComponentEvent_ReachesTheRenderer()
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            PendingFlagProbe.Reset();
+            renderer.Mount<PendingFlagHost>();
+            renderer.ForceRenderLogForTests = true;
+            int before = renderer.RenderingComponentEventsForTests;
+
+            renderer.Dispatcher.InvokeAsync(() => BlazorInterop.StateHasChangedViaAccessor(PendingFlagProbe.Trigger!))
+                .GetAwaiter().GetResult();
+
+            Assert.True(renderer.RenderingComponentEventsForTests > before,
+                "Blazor's Debug RenderingComponent log call never reached the renderer: 18.2's re-render attribution has no signal, so #500 is back. Check Renderer.Log on this Blazor version.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
     public void PendingQueuedRenderFieldProblem_NamesTheFieldWhenItIsMissingOrNotBool()
     {
         Assert.Null(BlazorInterop.PendingQueuedRenderFieldProblem(typeof(ComponentBase)));

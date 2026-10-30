@@ -30,7 +30,13 @@ public static class ServiceCollectionExtensions
 internal sealed class NativeRendererLoggerFactory : ILoggerFactory
 {
     public void AddProvider(ILoggerProvider provider) { }
-    public ILogger CreateLogger(string categoryName) => new ConsoleLogger(categoryName);
+    public ILogger CreateLogger(string categoryName) => new ConsoleLogger(categoryName, this);
+
+    /// <summary>18.2 (#500): the renderer this factory belongs to, assigned in its constructor.
+    /// Loggers read it at log time.</summary>
+    internal NativeRenderer? Renderer { get; set; }
+
+    private const string BlazorRendererCategory = "Microsoft.AspNetCore.Components.RenderTree.Renderer";
     public void Dispose() { }
 
     /// <summary>Phase 11.4 Gate A (#155): this used to BE the framework's entire
@@ -38,11 +44,20 @@ internal sealed class NativeRendererLoggerFactory : ILoggerFactory
     /// not configurable and not build-gated. It now DELEGATES to <see cref="BnLog"/>,
     /// which is what makes Blazor's own <c>ILogger</c> calls and the framework's own
     /// diagnostics share ONE throttle — the "one seam" DoD #6 asks for.</summary>
-    private sealed class ConsoleLogger(string category) : ILogger
+    private sealed class ConsoleLogger(string category, NativeRendererLoggerFactory factory) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => BnLog.IsEnabled(ToBnLevel(logLevel));
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            // 18.2 (#500): Blazor only calls Log for an enabled level, so the renderer category
+            // reports Debug as enabled while the renderer wants the RenderingComponent event.
+            // Log still filters every event through BnLog before writing.
+            if (logLevel == LogLevel.Debug && category == BlazorRendererCategory
+                && factory.Renderer?.WantsRenderLog == true)
+                return true;
+            return BnLog.IsEnabled(ToBnLevel(logLevel));
+        }
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -51,6 +66,22 @@ internal sealed class NativeRendererLoggerFactory : ILoggerFactory
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
+            // 18.2 (#500): capture the id first, then fall through to the unchanged BnLog path.
+            // Never throws: a malformed state is simply not a signal.
+            if (eventId.Name == "RenderingComponent" && category == BlazorRendererCategory
+                && factory.Renderer is { } renderer
+                && state is IReadOnlyList<KeyValuePair<string, object?>> entries)
+            {
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    if (entries[i].Key == "ComponentId" && entries[i].Value is int id)
+                    {
+                        renderer.NoteRenderingComponent(id);
+                        break;
+                    }
+                }
+            }
+
             BnLogLevel level = ToBnLevel(logLevel);
             if (!BnLog.IsEnabled(level)) return;
 
