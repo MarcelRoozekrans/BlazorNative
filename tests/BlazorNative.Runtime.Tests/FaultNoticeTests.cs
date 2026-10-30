@@ -1293,17 +1293,19 @@ public sealed class FaultNoticeTests
         //
         // A's pending Task resumes on the thread pool and can run while A's segment is still
         // open on the render thread. The seam makes that happen every run: before the segment
-        // closes, it waits, bounded, for A to be marked Done. Only the hold the window takes at
-        // segment entry keeps A from being Done there, so without it this fact reds every run,
-        // not only when the pool thread happens to win.
+        // closes, it waits until A's pending Task has reached its settle, either waiting on a
+        // hold or Done. Only the hold the window takes at segment entry keeps A from being Done
+        // there, so without it this fact reds every run, whatever the pool's timing. The budget
+        // is generous because the wait ends as soon as the pending Task gets there.
         int seamCalls = 0;
         bool doneAtFlush = false;
+        bool settleReached = false;
         var run = DispatchTwo("a-await-then-arm-self", "b-complete", arm: renderer =>
-            renderer.BeforeSegmentFlushForTests = isDone =>
+            renderer.BeforeSegmentFlushForTests = (reachedSettle, isDone) =>
             {
                 if (Interlocked.Increment(ref seamCalls) != 1)
                     return;
-                SpinWait.SpinUntil(isDone, TimeSpan.FromMilliseconds(300));
+                settleReached = SpinWait.SpinUntil(reachedSettle, TimeSpan.FromSeconds(5));
                 doneAtFlush = isDone();
             });
         try
@@ -1312,6 +1314,8 @@ public sealed class FaultNoticeTests
                 "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
             Assert.True(Volatile.Read(ref seamCalls) == 1,
                 $"anchor: the seam ran {seamCalls} times, not once as A's inline segment closed, so the race was not forced.");
+            Assert.True(settleReached,
+                "anchor: A's pending Task never reached its settle within 5s while the segment was open, so the race was not forced.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
             Assert.False(doneAtFlush,
                 "A was Done before its inline segment closed: its pending Task resumed on the thread pool and finished while "

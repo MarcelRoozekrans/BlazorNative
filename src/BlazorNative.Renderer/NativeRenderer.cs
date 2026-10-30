@@ -521,14 +521,16 @@ public sealed class NativeRenderer : BlazorRenderer
         // 18.2 (#500): the batch is delivered, so no component is being rendered any more.
         _renderingNow = null;
         _renderingFor = null;
-        if (_liveComponentsMayBeStale)
-            PruneLiveComponents();
 
         // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
         // the drain without disturbing the drain-first rule below. Under StrictErrors the
         // throw routes through ProcessRenderQueue's catch into HandleException, which
         // rethrows it at the caller boundary.
         AssertOnTheRenderThread();
+
+        // 18.2 (#500): after the thread check, since it touches render-thread-only state.
+        if (_liveComponentsMayBeStale)
+            PruneLiveComponents();
 
         // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
         // on the renderer thread — the only thread where HandleException's single-threaded
@@ -1842,9 +1844,20 @@ public sealed class NativeRenderer : BlazorRenderer
                         return;
                     }
                 }
-                await Settled().ConfigureAwait(false);
+                Task settled = Settled();
+                _waitingToSettle = true;
+                await settled.ConfigureAwait(false);
             }
         }
+
+        /// <summary>18.2 (#500): set once <see cref="FinishWhenSettled"/> has found a hold
+        /// outstanding and is waiting on <see cref="Settled"/>. Read only by the test seam.</summary>
+        private volatile bool _waitingToSettle;
+
+        /// <summary>18.2 (#500): whether the pending Task has reached its settle: either it is
+        /// waiting on a hold, or the scope is <see cref="Done"/>. Lets a fact wait for that
+        /// point without a timing guess.</summary>
+        public bool IsWaitingToSettleOrDoneForTests => _waitingToSettle || Done;
     }
 
     /// <summary>The scope of the dispatch whose synchronous part is running now, or
@@ -1973,18 +1986,19 @@ public sealed class NativeRenderer : BlazorRenderer
     {
         if (InWindowOnRenderThread && ReferenceEquals(dispatch, _segmentFor))
         {
-            BeforeSegmentFlushForTests?.Invoke(() => dispatch.Done);
+            BeforeSegmentFlushForTests?.Invoke(() => dispatch.IsWaitingToSettleOrDoneForTests, () => dispatch.Done);
             FlushSegment();
         }
     }
 
     /// <summary>18.2 (#500): test seam, null in production. Called on the render thread, from
-    /// inside the flow-change callback, just before an inline segment closes, with a probe
-    /// that reads whether the segment's dispatch is Done. A fact sets it to wait, bounded,
-    /// for the dispatch's pending Task to mark it Done first: the race the entry hold in
-    /// <see cref="EnterSegment"/> closes, made to happen every run. It must never throw,
-    /// since the callback cannot.</summary>
-    internal Action<Func<bool>>? BeforeSegmentFlushForTests { get; set; }
+    /// inside the flow-change callback, just before an inline segment closes, with two
+    /// probes on the segment's dispatch: whether its pending Task has reached its settle,
+    /// waiting on a hold or Done, and whether it is Done. A fact sets it to wait, bounded,
+    /// for the pending Task to reach its settle first, the race the entry hold in
+    /// <see cref="EnterSegment"/> closes, made to happen every run whatever the pool's
+    /// timing. It must never throw, since the callback cannot.</summary>
+    internal Action<Func<bool>, Func<bool>>? BeforeSegmentFlushForTests { get; set; }
 
     /// <summary>The log line for a fault attributed to a handler after its first await
     /// (Phase 16.1). A constant so the tests that assert a fault was NOT attributed
