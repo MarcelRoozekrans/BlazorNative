@@ -301,7 +301,13 @@ public sealed class NativeRenderer : BlazorRenderer
     /// the action "succeeds" and the export returns 0. Only exceptions the action
     /// itself throws (or strict-mode rethrows) reach the scope. In-window faults
     /// are unaffected: rc 2 before a begun shell call, a FaultNotice with rc 0 after
-    /// one (16.7).</summary>
+    /// one (16.7).
+    /// 18.2 (#500): an action that ANOTHER dispatch's continuation queues, while it runs
+    /// inline inside this window, is that dispatch's, not the window's. The entry carries
+    /// its queuer, the drain charges its fault to the queuer through <see cref="ChargeLate"/>,
+    /// and the window holds the queuer open until it closes, so the queuer's pending Task
+    /// cannot finish before the action has run. Pinned by FaultNoticeTests'
+    /// AnActionQueuedByAnInlineContinuation_IsItsOwnDispatchs_NotTheWindows.</summary>
     public void RunAfterDispatch(Action action)
     {
         // 16.1: reads the current scope, which only the render thread may touch.
@@ -315,7 +321,62 @@ public sealed class NativeRenderer : BlazorRenderer
             action();
             return;
         }
-        (scope.PostDispatchActions ??= new List<Action>()).Add(action);
+        // 18.2 (#500): the queuer is the dispatch whose code is running, read from the flow.
+        // It counts only when it is another dispatch of this renderer: the window's own flow,
+        // no flow, and another renderer's flow all leave the action the window's, as before.
+        DispatchScope? queuer = s_flowingScope.Value;
+        if (queuer is not null && (ReferenceEquals(queuer, scope) || !ReferenceEquals(queuer.Owner, this)))
+            queuer = null;
+        if (queuer is not null)
+            HoldFor(scope, queuer);
+        (scope.PostDispatchActions ??= []).Add((action, queuer));
+    }
+
+    /// <summary>18.2 (#500): makes <paramref name="window"/> hold <paramref name="queuer"/>
+    /// open for work the queuer left in the window: the queuer's pending Task waits until
+    /// the window releases the hold at its close. A queuer that has already finished is not
+    /// held; its work is still tagged with it, and a fault there is logged as a finished
+    /// dispatch's. Render thread only, since the window's <see cref="DispatchScope.Held"/>
+    /// is.</summary>
+    private void HoldFor(DispatchScope window, DispatchScope queuer)
+    {
+        if (!queuer.TryHold())
+            return;
+        Dictionary<DispatchScope, int> held = window.Held ??= [];
+        held[queuer] = held.GetValueOrDefault(queuer) + 1;
+    }
+
+    /// <summary>18.2 (#500): releases every hold <paramref name="window"/> took, rendered,
+    /// run or not, so no queuer waits past the window. Called at the OUTERMOST close only,
+    /// after the drain: a nested close moves its holds to the outer scope.</summary>
+    private static void ReleaseHolds(DispatchScope window)
+    {
+        if (window.Held is not { } held)
+            return;
+        window.Held = null;
+        foreach ((DispatchScope queuer, int count) in held)
+        {
+            for (int i = 0; i < count; i++)
+                queuer.Release();
+        }
+    }
+
+    /// <summary>18.2 (#500): charges a fault in work <paramref name="queuer"/> left inside
+    /// another dispatch's window to the queuer, never to the window. While the queuer has not
+    /// finished, the fault is its late fault, first one wins, and its pending Task faults with
+    /// it. Once it has finished nothing can report the fault, so it is logged, as 17.1 does
+    /// for a finished dispatch's own code.</summary>
+    private void ChargeLate(DispatchScope queuer, Exception ex)
+    {
+        if (!queuer.Done)
+        {
+            Interlocked.CompareExchange(ref queuer.LateFault, ex, null);
+            BnLog.Error("BlazorNative.Renderer", LateFaultLogLabel, ex);
+        }
+        else
+        {
+            BnLog.Error("BlazorNative.Renderer", FinishedDispatchFaultLogLabel, ex);
+        }
     }
 
     /// <summary>Drains a closed scope's queued post-dispatch work (see
@@ -327,13 +388,16 @@ public sealed class NativeRenderer : BlazorRenderer
     /// matching the window contract) instead of escaping the calling finally;
     /// EVERY fault is logged to stderr — mirroring <see cref="HandleException"/>'s
     /// window path — so a second fault is never silently discarded when the slot
-    /// is already taken.</summary>
-    private static void DrainPostDispatchActions(DispatchScope scope)
+    /// is already taken.
+    /// 18.2 (#500): an action another dispatch queued is charged to that dispatch through
+    /// <see cref="ChargeLate"/>, never to this scope. One whose queuer is this scope itself,
+    /// which a nested close can produce, is this scope's own.</summary>
+    private void DrainPostDispatchActions(DispatchScope scope)
     {
         while (scope.PostDispatchActions is { Count: > 0 } actions)
         {
             scope.PostDispatchActions = null;
-            foreach (Action action in actions)
+            foreach ((Action action, DispatchScope? queuer) in actions)
             {
                 try
                 {
@@ -341,8 +405,16 @@ public sealed class NativeRenderer : BlazorRenderer
                 }
                 catch (Exception ex)
                 {
-                    BnLog.Error("BlazorNative.Renderer", "post-dispatch action threw", ex);
-                    scope.Fault ??= ex;
+                    // ChargeLate logs a queuer's fault itself, under the label that says whose it is.
+                    if (queuer is not null && !ReferenceEquals(queuer, scope))
+                    {
+                        ChargeLate(queuer, ex);
+                    }
+                    else
+                    {
+                        BnLog.Error("BlazorNative.Renderer", "post-dispatch action threw", ex);
+                        scope.Fault ??= ex;
+                    }
                 }
             }
         }
@@ -1574,7 +1646,17 @@ public sealed class NativeRenderer : BlazorRenderer
     /// synchronously, on the render thread — opens an inner scope and restores the
     /// outer one on close. The inner fault is the inner dispatch's; the inner
     /// scope's queued actions move to the outer scope, so they still run when the
-    /// OUTERMOST synchronous part unwinds, as they always did.</para>
+    /// OUTERMOST synchronous part unwinds, as they always did. They keep their
+    /// queuers, and the inner scope's holds move with them (18.2, #500).</para>
+    ///
+    /// <para>18.2 (#500): work another dispatch A left in this window, an action A's
+    /// inline continuation queued, is A's. The window holds A open for it: A's
+    /// outstanding count goes up through <see cref="TryHold"/>, and the window
+    /// releases it at its close, after the drain. A's pending Task awaits
+    /// <see cref="Settled"/> before it marks A <see cref="Done"/>. Without that, A's
+    /// handler Task, which completes inside this window's synchronous part, would
+    /// mark A Done before the window ran A's work, and A's fault there could only be
+    /// logged: the Done trap.</para>
     ///
     /// <para>A fault raised after the first await, in a continuation, is attributed
     /// to its own dispatch too, in production mode as well as strict. Blazor catches
@@ -1601,14 +1683,90 @@ public sealed class NativeRenderer : BlazorRenderer
         /// <summary>17.3 (#425): the root generation this dispatch began under.</summary>
         public readonly int RootGeneration = owner.RootGeneration;
         public Exception? Fault;
-        public List<Action>? PostDispatchActions;
+        /// <summary>The actions <see cref="RunAfterDispatch"/> queued into this window, each with
+        /// the other dispatch that queued it, or null when it is the window's own (18.2, #500).</summary>
+        public List<(Action Action, DispatchScope? Queuer)>? PostDispatchActions;
         /// <summary>The first fault raised after the handler's first await.</summary>
         public Exception? LateFault;
         /// <summary>Set once the handler has finished: at DispatchSyncPart's return when
-        /// it never yielded, otherwise when its pending Task completes.</summary>
+        /// it never yielded, otherwise when its pending Task completes and every hold on
+        /// it has been released (18.2, #500).</summary>
         public volatile bool Done;
         /// <summary>Set when the handler began a host call or a fetch during the synchronous part (16.7).</summary>
         public bool ShellCallBegun;
+        /// <summary>18.2 (#500): on a WINDOW scope, the other dispatches it holds open and how
+        /// many times each, released at its outermost close. Render thread only.</summary>
+        public Dictionary<DispatchScope, int>? Held;
+
+        /// <summary>Guards <see cref="_outstanding"/>, <see cref="_settled"/> and the move to
+        /// <see cref="Done"/> in <see cref="FinishWhenSettled"/>: a hold taken on the render
+        /// thread can race the pending Task's finish on a pool thread.</summary>
+        private readonly object _holdLock = new();
+        private int _outstanding;
+        private TaskCompletionSource? _settled;
+
+        /// <summary>18.2 (#500): takes a hold for work this dispatch left in another window.
+        /// Returns false once the dispatch is <see cref="Done"/>: a finished dispatch is never
+        /// held, so nothing can wait for a scope that has already reported.</summary>
+        public bool TryHold()
+        {
+            lock (_holdLock)
+            {
+                if (Done)
+                    return false;
+                _outstanding++;
+                return true;
+            }
+        }
+
+        /// <summary>18.2 (#500): releases one hold, and settles the scope when it was the last.</summary>
+        public void Release()
+        {
+            TaskCompletionSource? settled = null;
+            lock (_holdLock)
+            {
+                if (--_outstanding == 0)
+                {
+                    settled = _settled;
+                    _settled = null;
+                }
+            }
+            // Outside the lock. The source runs its continuations asynchronously, so the
+            // pending Task never finishes inline inside the releasing window's finally.
+            settled?.TrySetResult();
+        }
+
+        /// <summary>18.2 (#500): completes when no hold is outstanding. AWAIT it, never block
+        /// on it: the window that releases the hold closes on the render thread, which may
+        /// be the thread awaiting.</summary>
+        public Task Settled()
+        {
+            lock (_holdLock)
+            {
+                if (_outstanding == 0)
+                    return Task.CompletedTask;
+                return (_settled ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+        }
+
+        /// <summary>18.2 (#500): waits until no hold is outstanding, then marks the scope
+        /// <see cref="Done"/> under the same lock <see cref="TryHold"/> takes, so no hold can
+        /// slip in between the settle and Done.</summary>
+        public async Task FinishWhenSettled()
+        {
+            while (true)
+            {
+                lock (_holdLock)
+                {
+                    if (_outstanding == 0)
+                    {
+                        Done = true;
+                        return;
+                    }
+                }
+                await Settled().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>The scope of the dispatch whose synchronous part is running now, or
@@ -1999,9 +2157,25 @@ public sealed class NativeRenderer : BlazorRenderer
             t_syncScope = outerSync;
             s_flowingScope.Value = outerFlowing;
             if (outer is null)
-                DrainPostDispatchActions(scope);
-            else if (scope.PostDispatchActions is { } queued)
-                (outer.PostDispatchActions ??= new List<Action>()).AddRange(queued);
+            {
+                // 18.2 (#500): the holds are released after the drain, so a queuer is still
+                // not Done while its action runs, and in a finally, so no queuer waits forever.
+                try { DrainPostDispatchActions(scope); }
+                finally { ReleaseHolds(scope); }
+            }
+            else
+            {
+                // A nested close moves the queued actions, queuers included, and the holds
+                // to the outer scope, which runs and releases them at its own close.
+                if (scope.PostDispatchActions is { } queued)
+                    (outer.PostDispatchActions ??= []).AddRange(queued);
+                if (scope.Held is { } held)
+                {
+                    Dictionary<DispatchScope, int> outerHeld = outer.Held ??= [];
+                    foreach ((DispatchScope queuer, int count) in held)
+                        outerHeld[queuer] = outerHeld.GetValueOrDefault(queuer) + count;
+                }
+            }
         }
         // ...and stops once it has CLOSED, its queued swap included: the whole
         // interval the shell's dispatch lane waits for. Keyed by the handler's call
@@ -2049,19 +2223,49 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <summary>The pending Task <see cref="DispatchSyncPart"/> hands out: completes when
     /// the handler does, then marks the scope <see cref="DispatchScope.Done"/> and faults
     /// with the late fault <see cref="HandleException"/> attributed to it, if any. Blazor's
-    /// own Task would complete successfully for that fault.</summary>
+    /// own Task would complete successfully for that fault.
+    /// 18.2 (#500): between the handler and Done it waits for the work the dispatch left in
+    /// another window to settle, so a fault there is still this dispatch's late fault. The
+    /// handler can complete inline inside that window's synchronous part, on the render
+    /// thread, and the window releases the hold later on the same thread, in its finally:
+    /// so the wait is awaited, never blocked on.</summary>
     private static async Task AwaitWholeHandler(Task handler, DispatchScope scope)
     {
         try
         {
-            await handler.ConfigureAwait(false);
+            try
+            {
+                await handler.ConfigureAwait(false);
+            }
+            finally
+            {
+                // 18.2 (#500): flush first, so the hold count read below is complete. Task 4
+                // fills FlushSegment in; it is called only on the owner's render thread,
+                // where an inline segment can be open.
+                if (scope.Owner._dispatcher.CheckAccess())
+                    scope.Owner.FlushSegment();
+                // Settled whether the handler completed or faulted: a hold must never outlive
+                // its scope's report.
+                await scope.FinishWhenSettled().ConfigureAwait(false);
+            }
         }
         finally
         {
+            // FinishWhenSettled marks Done itself; this keeps Done true on every path.
             scope.Done = true;
         }
         if (Volatile.Read(ref scope.LateFault) is { } late)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(late).Throw();
+    }
+
+    /// <summary>18.2 (#500): flushes the open inline segment's re-render tags into their
+    /// dispatch's hold count, so <see cref="AwaitWholeHandler"/> never reads a count the
+    /// segment has not reached yet. Render thread only.
+    /// NO-OP UNTIL 18.2 TASK 4: action holds are taken eagerly in
+    /// <see cref="RunAfterDispatch"/>, so nothing needs flushing yet. The call site exists so
+    /// the re-render tags cannot be added without it.</summary>
+    internal void FlushSegment()
+    {
     }
 
     /// <summary>Dispatches a host UI event into Blazor's handler table, for direct

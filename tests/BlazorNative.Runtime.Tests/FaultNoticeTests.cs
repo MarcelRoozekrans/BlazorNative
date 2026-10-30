@@ -1173,6 +1173,29 @@ public sealed class FaultNoticeTests
             $"a non-bool field of that name was not reported by name: {wrongType ?? "null"}");
     }
 
+    [Fact]
+    public void AnActionQueuedByAnInlineContinuation_IsItsOwnDispatchs_NotTheWindows()
+    {
+        // A's continuation runs inline inside B's window and queues an action through
+        // RunAfterDispatch. The action runs when B's window closes, after A's handler Task has
+        // already completed inside B's synchronous part. It is A's: A's completion waits for it,
+        // and its fault reaches A as a late FaultNotice, never B's rc.
+        var run = DispatchTwo("a-await-then-queue-throwing", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB,
+                "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: the action A's continuation queued was charged to B's window, "
+                + "which is #500.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
+                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
+                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
+                    && single["message"] == "a-queued",
+                "no FaultNotice: the queued action's fault never reached A.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
     private sealed class NoFlagType { }
 
     private sealed class IntFlagType
@@ -1403,6 +1426,7 @@ public sealed class FaultNoticeTests
             NativeRenderer renderer = StartSession(strict, frames);
             InlineContinuationProbe.Reset();
             InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
+            InlineContinuationProbe.Renderer = renderer;
             renderer.Mount<InlineContinuationProbe>();
             int a = HandlerFor(frames, "click", labelA);
             int b = HandlerFor(frames, "click", labelB);
@@ -1432,6 +1456,9 @@ public sealed class FaultNoticeTests
 
         /// <summary>Reads the renderer's flowing scope for the no-flow anchor. DispatchTwo sets it.</summary>
         public static Func<bool> FlowingScopeIsSet = () => true;
+        /// <summary>18.2 (#500): the renderer the probe is mounted in, for the RunAfterDispatch
+        /// buttons. DispatchTwo sets it, and Reset clears it.</summary>
+        public static NativeRenderer? Renderer;
         private static ExecutionContext? s_mountContext;
 
         protected override void OnInitialized() => s_mountContext = ExecutionContext.Capture();
@@ -1442,6 +1469,7 @@ public sealed class FaultNoticeTests
             s_inB = false;
             RanInsideB = false;
             SawNoFlow = false;
+            Renderer = null;
         }
 
         [Inject] public IMobileBridge Bridge { get; set; } = default!;
@@ -1480,6 +1508,12 @@ public sealed class FaultNoticeTests
                     RanInsideB = s_inB;
                     _ = DispatchExceptionAsync(new InvalidOperationException("a-orphan"));
                 }, TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 60, "a-await-then-queue-throwing", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                Renderer!.RunAfterDispatch(() => throw new InvalidOperationException("a-queued"));
             });
             Button(b, 40, "b-complete", () => CompleteGate());
             Button(b, 50, "b-complete-then-throw", () =>
