@@ -529,8 +529,8 @@ public sealed class NativeRenderer : BlazorRenderer
         AssertOnTheRenderThread();
 
         // 18.2 (#500): after the thread check, since it touches render-thread-only state.
-        if (_liveComponentsMayBeStale)
-            PruneLiveComponents();
+        if (_disposedComponentsMayLinger)
+            PruneDisposedComponents(new BnRenderBatch(in renderBatch));
 
         // #213 item 2: route any Frames fault parked by a ThreadPool continuation. FIRST,
         // on the renderer thread — the only thread where HandleException's single-threaded
@@ -739,8 +739,8 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override void HandleException(Exception exception)
     {
         // 18.2 (#500): a fault can end a batch before UpdateDisplayAsync cleans up the
-        // components it disposed; see PruneLiveComponents.
-        _liveComponentsMayBeStale = true;
+        // components it disposed; see PruneDisposedComponents.
+        _disposedComponentsMayLinger = true;
 
         // Inside a dispatch's synchronous part, remember the first exception in
         // THAT dispatch's scope so DispatchSyncPart reports it (Blazor swallows
@@ -1532,6 +1532,7 @@ public sealed class NativeRenderer : BlazorRenderer
         // with its buckets (Task 5 registry cleanup).
         _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
         _componentTypes.Remove(componentId);
+        _components.Remove(componentId);
         _liveComponents.Remove(componentId);
     }
 
@@ -2169,57 +2170,75 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="CleanupDisposedComponent"/>, after the batch's diffs. Render thread only.</summary>
     private readonly Dictionary<int, Type> _componentTypes = new();
 
-    /// <summary>18.2 (#500): each live <see cref="ComponentBase"/> instance, the components whose
-    /// pending-render flag an inline segment snapshots and diffs. Filled and removed beside
-    /// <see cref="_componentTypes"/>. Another <see cref="IComponent"/> has no flag to read, so
-    /// its re-render stays the window's. Render thread only.</summary>
+    /// <summary>18.2 (#500): every live component instance, by id, whatever its type. The
+    /// prune after a faulted batch walks it, so a disposed component of any type is found.
+    /// Filled and removed beside <see cref="_componentTypes"/>. Render thread only.</summary>
+    private readonly Dictionary<int, IComponent> _components = new();
+
+    /// <summary>18.2 (#500): the <see cref="ComponentBase"/> view of <see cref="_components"/>,
+    /// the components whose pending-render flag an inline segment snapshots and diffs. Another
+    /// <see cref="IComponent"/> has no flag to read, so its re-render stays the window's.
+    /// Render thread only.</summary>
     private readonly Dictionary<int, ComponentBase> _liveComponents = new();
 
-    /// <summary>18.2 (#500): set by <see cref="HandleException"/>, so the next batch prunes
-    /// <see cref="_liveComponents"/>. Render thread only.</summary>
-    private bool _liveComponentsMayBeStale;
+    /// <summary>18.2 (#500): set by <see cref="HandleException"/>, so the next
+    /// <see cref="UpdateDisplayAsync"/> runs <see cref="PruneDisposedComponents"/>. Render
+    /// thread only.</summary>
+    private bool _disposedComponentsMayLinger;
 
-    /// <summary>18.2 (#500): drops every entry of <see cref="_liveComponents"/> whose component
-    /// Blazor no longer knows, and its entry in <see cref="_componentTypes"/>.
-    /// <see cref="CleanupDisposedComponent"/> removes a disposed component when its batch
-    /// reaches <see cref="UpdateDisplayAsync"/>, but a fault can end a batch first: a strict-mode rethrow out of a render leaves through ProcessRenderQueue's
-    /// catch, and a diff fault leaves UpdateDisplayAsync's try before the cleanup. Blazor has
-    /// already removed the component's state by then, so it is gone, and an entry left here
-    /// would be kept alive and walked by every later segment snapshot. Blazor has no
-    /// overridable disposal hook, so this runs at the start of the next batch after any
-    /// fault, outside the flow-change callback, since a lookup by component can call app
-    /// code. Render thread only.</summary>
-    private void PruneLiveComponents()
+    /// <summary>18.2 (#500): runs <see cref="CleanupDisposedComponent"/> for every component
+    /// Blazor has disposed but this renderer has not cleaned up. The cleanup normally runs
+    /// when the disposing batch reaches <see cref="UpdateDisplayAsync"/>, but a fault can end
+    /// a batch first: a strict-mode rethrow out of a render leaves through
+    /// ProcessRenderQueue's catch, and a diff fault leaves UpdateDisplayAsync's try before the
+    /// cleanup. Blazor never reports those ids again, so without this their type, tree
+    /// buckets, event registrations and live-set entry would stay for the renderer's
+    /// lifetime, whatever the component's type. The faulted path then ends in the same
+    /// bookkeeping state as the normal one. It does not recover what the faulted batch never
+    /// delivered: the remove patches for the component's views, and the call sites of its
+    /// disposed handler ids.
+    ///
+    /// A component THIS batch disposed is skipped. Its state is gone too, but the batch still
+    /// carries its removes and possibly its final diff, which read its buckets, and the batch
+    /// cleans it up after them. A render fault and a disposal in the same batch is the common
+    /// case, so pruning it here would leave its views on the host.
+    ///
+    /// Blazor has no overridable disposal hook, so this runs at the start of the next batch
+    /// after any fault, outside the flow-change callback, since a lookup by component can call
+    /// app code. Render thread only.</summary>
+    private void PruneDisposedComponents(BnRenderBatch batch)
     {
-        _liveComponentsMayBeStale = false;
+        _disposedComponentsMayLinger = false;
         List<int>? dead = null;
-        foreach ((int id, ComponentBase component) in _liveComponents)
+        foreach ((int id, IComponent component) in _components)
         {
             if (GetComponentState(component) is null)
                 (dead ??= []).Add(id);
         }
         if (dead is null)
             return;
+        foreach (ref var disposedNow in batch.DisposedComponentIDs)
+            dead.Remove(disposedNow);
         foreach (int id in dead)
-        {
-            _liveComponents.Remove(id);
-            // The type map leaks on the same path. A component that is not a ComponentBase is
-            // not in the live set, so its type entry stays until CleanupDisposedComponent.
-            _componentTypes.Remove(id);
-        }
+            CleanupDisposedComponent(id);
     }
 
     /// <summary>18.2 (#500): how many live ComponentBase instances the renderer tracks.</summary>
     internal int LiveComponentCountForTests => _liveComponents.Count;
 
-    /// <summary>18.2 (#500): how many component types the renderer keeps for call sites.</summary>
-    internal int ComponentTypeCountForTests => _componentTypes.Count;
+    /// <summary>18.2 (#500): whether the renderer still keeps a type for this component id.</summary>
+    internal bool HasComponentTypeForTests(int componentId) => _componentTypes.ContainsKey(componentId);
+
+    /// <summary>18.2 (#500): the ids of the live components of type <paramref name="type"/>.</summary>
+    internal int[] ComponentIdsOfTypeForTests(Type type)
+        => _componentTypes.Where(e => e.Value == type).Select(e => e.Key).ToArray();
 
     /// <inheritdoc/>
     protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(
         int componentId, IComponent component, Microsoft.AspNetCore.Components.Rendering.ComponentState? parentComponentState)
     {
         _componentTypes[componentId] = component.GetType();
+        _components[componentId] = component;
         if (component is ComponentBase live)
             _liveComponents[componentId] = live;
         return base.CreateComponentState(componentId, component, parentComponentState);

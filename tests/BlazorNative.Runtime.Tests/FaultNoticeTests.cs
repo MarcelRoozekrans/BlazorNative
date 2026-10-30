@@ -1525,8 +1525,10 @@ public sealed class FaultNoticeTests
     {
         // In strict mode with no window open, a render fault rethrows out of Blazor's render
         // queue, so the batch never reaches UpdateDisplayAsync, where disposed components are
-        // cleaned up. The component the same batch disposed must still leave the live set, or
-        // every later inline segment keeps walking it.
+        // cleaned up. The components the same batch disposed must still be cleaned up as the
+        // normal path would: the ComponentBase child leaves the live set, or every later inline
+        // segment keeps walking it, and the bare IComponent child, which no live set holds,
+        // loses its type and its tree bucket, or both stay for the renderer's lifetime.
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
@@ -1536,7 +1538,9 @@ public sealed class FaultNoticeTests
             PruneHost.Reset();
             renderer.Mount<PruneHost>();
             int before = renderer.LiveComponentCountForTests;
-            int typesBefore = renderer.ComponentTypeCountForTests;
+            int dying = Assert.Single(renderer.ComponentIdsOfTypeForTests(typeof(PruneDying)));
+            int bare = Assert.Single(renderer.ComponentIdsOfTypeForTests(typeof(PruneBare)));
+            Assert.True(renderer.WidgetTree.GetSlotCount(bare, null) > 0, "anchor: the bare child never got a tree bucket.");
 
             Exception? thrown = Record.Exception(() => renderer.Dispatcher.InvokeAsync(() =>
             {
@@ -1547,15 +1551,57 @@ public sealed class FaultNoticeTests
             Assert.True(thrown is InvalidOperationException { Message: "prune-render" },
                 $"anchor: the batch was meant to end in the thrower's strict-mode rethrow, got {thrown?.GetType().Name ?? "no exception"}.");
             Assert.True(PruneDying.Disposed, "anchor: Blazor did not dispose the removed child in the faulted batch.");
+            Assert.True(PruneBare.Detached, "anchor: Blazor did not dispose the bare child in the faulted batch.");
 
             renderer.Dispatcher.InvokeAsync(() => PruneHost.Instance!.Refresh()).GetAwaiter().GetResult();
 
             Assert.True(renderer.LiveComponentCountForTests == before - 1,
                 $"the live set holds {renderer.LiveComponentCountForTests} components, not {before - 1}: the child disposed in the "
                 + "faulted batch is still in it, kept alive and walked by every inline segment snapshot.");
-            Assert.True(renderer.ComponentTypeCountForTests == typesBefore - 1,
-                $"the type map holds {renderer.ComponentTypeCountForTests} entries, not {typesBefore - 1}: the child disposed in "
-                + "the faulted batch left the live set but its type stayed, a leak on the same path.");
+            Assert.False(renderer.HasComponentTypeForTests(dying),
+                "the ComponentBase child disposed in the faulted batch left the live set but kept its type, a leak on the same path.");
+            Assert.False(renderer.HasComponentTypeForTests(bare),
+                "the bare IComponent child disposed in the faulted batch kept its type: the prune only walks ComponentBase instances.");
+            Assert.True(renderer.WidgetTree.GetSlotCount(bare, null) == 0,
+                "the bare IComponent child disposed in the faulted batch kept its tree bucket: the faulted path skipped its cleanup.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void AComponentDisposedInTheBatchAFaultHit_StillHasItsViewRemoved()
+    {
+        // Not strict, no window: the thrower's render fault is only logged, and the batch that
+        // removed the child still reaches UpdateDisplayAsync. The fault asks for a prune at its
+        // start, where the child's state is already gone. The batch itself carries the child's
+        // removes, so the prune must leave the child to it, or its view stays on the host.
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            PruneHost.Reset();
+            renderer.Mount<PruneHost>();
+            int view;
+            lock (frames) view = frames.SelectMany(f => f.Patches.OfType<ReplaceTextPatch>()).Single(p => p.Text == "dying").NodeId;
+            int framesBefore;
+            lock (frames) framesBefore = frames.Count;
+
+            renderer.Dispatcher.InvokeAsync(() =>
+            {
+                PruneHost.Show = false;
+                PruneThrower.ThrowOnce = true;
+                PruneHost.Instance!.Refresh();
+            }).GetAwaiter().GetResult();
+            Assert.True(PruneDying.Disposed, "anchor: Blazor did not dispose the removed child.");
+            Assert.False(PruneThrower.ThrowOnce, "anchor: the thrower's render never ran, so no fault asked for a prune.");
+
+            List<RenderFrame> after;
+            lock (frames) after = frames.Skip(framesBefore).ToList();
+            Assert.True(after.SelectMany(f => f.Patches.OfType<RemoveNodePatch>()).Any(p => p.NodeId == view),
+                "the batch that disposed the child sent no remove for its view: the prune cleaned up a component its own batch "
+                + "was still about to remove, and the view stays on the host.");
         }
         finally { TearDown(pending, previous); }
     }
@@ -1566,7 +1612,14 @@ public sealed class FaultNoticeTests
         public static bool Show = true;
         private int _generation;
 
-        public static void Reset() { Instance = null; Show = true; PruneThrower.ThrowOnce = false; PruneDying.Disposed = false; }
+        public static void Reset()
+        {
+            Instance = null;
+            Show = true;
+            PruneThrower.ThrowOnce = false;
+            PruneDying.Disposed = false;
+            PruneBare.Detached = false;
+        }
 
         protected override void OnInitialized() => Instance = this;
 
@@ -1577,6 +1630,8 @@ public sealed class FaultNoticeTests
             if (Show)
             {
                 b.OpenComponent<PruneDying>(0);
+                b.CloseComponent();
+                b.OpenComponent<PruneBare>(3);
                 b.CloseComponent();
             }
             b.OpenComponent<PruneThrower>(1);
@@ -1590,6 +1645,29 @@ public sealed class FaultNoticeTests
         public static volatile bool Disposed;
         public void Dispose() => Disposed = true;
         protected override void BuildRenderTree(RenderTreeBuilder b) => b.AddContent(0, "dying");
+    }
+
+    /// <summary>18.2 (#500): a component that is not a ComponentBase, as CascadingValue or a
+    /// router is, with one view of its own.</summary>
+    private sealed class PruneBare : IComponent, IDisposable
+    {
+        public static volatile bool Detached;
+        private RenderHandle _handle;
+
+        public void Attach(RenderHandle renderHandle) => _handle = renderHandle;
+
+        public Task SetParametersAsync(ParameterView parameters)
+        {
+            _handle.Render(b =>
+            {
+                b.OpenElement(0, "div");
+                b.AddContent(1, "bare");
+                b.CloseElement();
+            });
+            return Task.CompletedTask;
+        }
+
+        public void Dispose() => Detached = true;
     }
 
     private sealed class PruneThrower : ComponentBase
