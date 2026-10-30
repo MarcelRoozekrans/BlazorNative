@@ -2180,9 +2180,9 @@ public sealed class NativeRenderer : BlazorRenderer
     private bool _liveComponentsMayBeStale;
 
     /// <summary>18.2 (#500): drops every entry of <see cref="_liveComponents"/> whose component
-    /// Blazor no longer knows. <see cref="CleanupDisposedComponent"/> removes a disposed
-    /// component when its batch reaches <see cref="UpdateDisplayAsync"/>, but a fault can end a
-    /// batch first: a strict-mode rethrow out of a render leaves through ProcessRenderQueue's
+    /// Blazor no longer knows, and its entry in <see cref="_componentTypes"/>.
+    /// <see cref="CleanupDisposedComponent"/> removes a disposed component when its batch
+    /// reaches <see cref="UpdateDisplayAsync"/>, but a fault can end a batch first: a strict-mode rethrow out of a render leaves through ProcessRenderQueue's
     /// catch, and a diff fault leaves UpdateDisplayAsync's try before the cleanup. Blazor has
     /// already removed the component's state by then, so it is gone, and an entry left here
     /// would be kept alive and walked by every later segment snapshot. Blazor has no
@@ -2201,11 +2201,19 @@ public sealed class NativeRenderer : BlazorRenderer
         if (dead is null)
             return;
         foreach (int id in dead)
+        {
             _liveComponents.Remove(id);
+            // The type map leaks on the same path. A component that is not a ComponentBase is
+            // not in the live set, so its type entry stays until CleanupDisposedComponent.
+            _componentTypes.Remove(id);
+        }
     }
 
     /// <summary>18.2 (#500): how many live ComponentBase instances the renderer tracks.</summary>
     internal int LiveComponentCountForTests => _liveComponents.Count;
+
+    /// <summary>18.2 (#500): how many component types the renderer keeps for call sites.</summary>
+    internal int ComponentTypeCountForTests => _componentTypes.Count;
 
     /// <inheritdoc/>
     protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(

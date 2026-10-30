@@ -1364,6 +1364,7 @@ public sealed class FaultNoticeTests
             PruneHost.Reset();
             renderer.Mount<PruneHost>();
             int before = renderer.LiveComponentCountForTests;
+            int typesBefore = renderer.ComponentTypeCountForTests;
 
             Exception? thrown = Record.Exception(() => renderer.Dispatcher.InvokeAsync(() =>
             {
@@ -1380,6 +1381,9 @@ public sealed class FaultNoticeTests
             Assert.True(renderer.LiveComponentCountForTests == before - 1,
                 $"the live set holds {renderer.LiveComponentCountForTests} components, not {before - 1}: the child disposed in the "
                 + "faulted batch is still in it, kept alive and walked by every inline segment snapshot.");
+            Assert.True(renderer.ComponentTypeCountForTests == typesBefore - 1,
+                $"the type map holds {renderer.ComponentTypeCountForTests} entries, not {typesBefore - 1}: the child disposed in "
+                + "the faulted batch left the live set but its type stayed, a leak on the same path.");
         }
         finally { TearDown(pending, previous); }
     }
