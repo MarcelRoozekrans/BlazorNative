@@ -484,9 +484,10 @@ fact's rc assertion stays a named partial, explained in its own comment.
 for the 16.1 rows. The six #464 facts share one anchor, `InlineContinuationProbe.RanInsideB`,
 which proves A's continuation ran inside B's window. Rule 4 is the same for all six:
 `DispatchTwo` and `DispatchProbe` find each button by label through `HandlerFor`, which throws for
-a missing one, and ops are generated symbols. Rule 5 is the 17.1 DOES NOT COVER block: the
-re-render and `RunAfterDispatch` paths (#500), another renderer's scope, which rests on reading,
-and a nested dispatch inside a window, which rests on reading.
+a missing one, and ops are generated symbols. Rule 5 is the 17.1 DOES NOT COVER block: another
+renderer's scope, which rests on reading, and a nested dispatch inside a window, which rests on
+reading. The re-render and `RunAfterDispatch` paths were listed there until 18.2 covered them
+(#500); the block now says so, and the 18.2 cells below pin them.
 
 | 17.1 fact | Rule 2, anchor | Rule 3 | Rule 7 |
 |---|---|---|---|
@@ -500,6 +501,42 @@ and a nested dispatch inside a window, which rests on reading.
 
 Rule 3 conforms for all seven. Each cell names its contrast fact. Every fact's main assertion and
 anchor has a red that RS1 accepts: the strict-mode fact's anchor since 17.7, and since [the 17.9 record](plans/2026-10-22-phase-17.9-record.md) §2, the child-begin fact's order anchor and three anchors whose only red had been a fixture or seam edit. All four now have subject reds: the two geolocation begins B1, `SawNoFlow` B3, and the order anchor X1. No anchor in these seven rests on a fixture red, and that record's §4 maps the sites of the three facts it redded. Under [Grading a pin](#grading-a-pin-sites-and-reds), [the 17.10 re-audit](plans/2026-10-22-milestone-17-reaudit-2.md) §11 found three assertions that carry a clause of a fact's name with no red, and [the 17.11 record](plans/2026-10-22-phase-17.11-record.md) §2 N1 to N3 red them. That record's §4 found one more, the strict-mode fact's log assertion, `:1071`, which carries `IsLoggedInStrictModeToo`: its only reds were 17.1's red-first run on the unfixed tree, which is stale, and its §7 R1, recorded without its line. §4 X1071, R1 re-run on HEAD, reds it with its own message. No partial is left in these seven.
+
+**18.2 added 19 facts to `FaultNoticeTests`, with these cells.** Their reds are in [the 18.2 record](plans/2026-10-30-phase-18.2-record.md) §2 and §3,
+all on `57d8c543`, and its §4 maps every site under [Grading a pin](#grading-a-pin-sites-and-reds),
+with the staleness check. A cell's ids are that record's §3 rows, and its lines are on `57d8c543`.
+Rule 2 means an anchor here, as for the 17.1 rows. The two-dispatch facts share 17.1's anchor,
+`RanInsideB`. Rule 4 is the same for all 19: `DispatchTwo` finds each button by label through
+`HandlerFor`, which throws for a missing one, ops are generated symbols, and the Blazor internals
+are reached through `BlazorInterop`, whose load-time check throws on drift. Rule 5 is the 18.2 DOES
+NOT COVER block: a custom `IComponent`, a component B dirtied before A's segment and A dirtied
+again, a child re-render a tagged render enqueues, frame delivery of the mixed batch, inline
+segments outside a window, the two nested edges, #593, and the four unpinned lines the record's
+§4 lists. Every labelled anchor and every name-clause assertion has a red at its own line. Seven
+anchors on what Blazor itself does, disposal and render order, rest on fixture or planted reds,
+with the record's written argument that no subject red exists.
+
+| 18.2 fact | Rule 2, anchor | Rule 3 | Rule 7 |
+|---|---|---|---|
+| `HasPendingQueuedRender_ReadsBlazorsFlag` | none; both assertions are name clauses | the flag read inside the batch, true, is the contrast for the read after it, false | §3 F1a reds `:1208`, F1b reds `:1212` |
+| `BlazorsRenderingComponentEvent_ReachesTheRenderer` | none | positive: the event count rises | §3 M10 reds `:1234`. The drift pin for Blazor's `RenderingComponent` log call |
+| `ForcingTheRenderLog_WritesNothingNewThroughBnLog` | the event counted, `:1263` | an absence check, whose anchor proves the forced log ran | §3 M10 reds the anchor. L1, the logger forwarding at Error, reds `:1265`; MG, both level gates removed, corroborates it as one logical mutation, since Mlog1, one gate alone, is equivalent |
+| `PendingQueuedRenderFieldProblem_NamesTheFieldWhenItIsMissingOrNotBool` | none | the `ComponentBase` control, `:1280`, must report nothing | §3 P1 reds `:1282`, P2 reds `:1285`. M11, a wrong name in the check, throws `BlazorVersionMismatchException` from `BlazorInterop`'s static constructor: the load-time proof under ruling R2, not a site red. The `VerifyAccessors` call site has no red, ruling R3 |
+| `AnActionQueuedByAnInlineContinuation_IsItsOwnDispatchs_NotTheWindows` | `RanInsideB` | B's rc 0 beside A's notice | §2 red. `RanInsideB` FN0. `NotTheWindows`, `:1301`: M1, M2 corroborates. `IsItsOwnDispatchs`: arrival C0, count D1, handler id D2, message C1 |
+| `ATaggedReRender_IsItsOwnDispatchs_NotTheWindows` | `RanInsideB` | the strict twin below | §2 red. The shared helper's sites, each red in this fact: `RanInsideB` FN0; rc `:1335` M6, with M3, M8, M10 and F1a/b corroborating; arrival C0, M7 and M13 corroborating; count D1; id D2; message C1 |
+| `ATaggedReRender_IsItsOwnDispatchs_InStrictModeToo` | `RanInsideB` | the non-strict twin above | §2 red. The helper's sites, each red in this fact in the same runs as its twin |
+| `TheReRenderAfterAnInlineHandlerCompletes_IsItsOwnDispatchs` | `RanInsideB`, the seam ran once, the settle reached | `doneAtFlush` false is the Done trap's contrast | §2 red. `RanInsideB` FN0; seam once `:1378` M3; settle `:1380` S3, which needed the seam's wait brought under the export's 1 s bound in `57d8c543`, S4 corroborating as a seam red; rc `:1382` M6; Done trap `:1383` M13, M7 corroborating; arrival C0; count D1; id D2; message C1 |
+| `ATaggedReRendersFault_LeavesTheWindowsOwnFault_Rc2` | `RanInsideB` | positive: B's own rc 2 and A's notice | §2 red. `RanInsideB` FN0. B's rc `:1406`: W1, the window's fault charged to A and cleared. Not swapped, `:1414`: W2, the window's fault charged to A. Arrival C0, count D1, id D2 |
+| `ARenderBQueuesItself_IsStillTheWindows` | `SawNoFlow`, the target rendered | single dispatch; the two-dispatch facts are the contrast | `SawNoFlow` FN0; rendered R0; rc `:1437` Mself, a two-site red, since Mguard alone leaves it green. The no-notice line is a summary sub-clause, §3 |
+| `ARenderBQueuedBeforeASegment_IsStillTheWindows` | `RanInsideB`, the target rendered | the contrast to the tagged facts: same harness, B's render untagged | Added in 18.2's Task 6, because M4 survived. `RanInsideB` FN0; rendered R0; rc `:1458` M4, Mself corroborating |
+| `TheSecondRenderOfATaggedComponent_IsTheWindows` | `RanInsideB`, the target rendered twice | the tag rule's used-up contrast | `RanInsideB` FN0; twice `:1479` R0; rc `:1480` M5, Mr11 corroborating |
+| `AFinishedDispatchsTaggedReRender_IsLoggedNotTheWindows` | `RanInsideB`, A's rc 0, no pending Task, the target rendered | positive, with the log line asserted to carry `FinishedDispatchFaultLogLabel` | `RanInsideB` FN0; A's rc E1; no pending E2; rendered R0; rc `:1505` M12; logged once `:1511` L0; label `:1512` Mlabel |
+| `ATaggedComponentDisposedBeforeItRenders_StillLetsAComplete` | `RanInsideB`, the tag held at the hide, the target disposed, not rendered after the poke, one pending Task | none of its own: no mutation reds it alone, its comment says why | `RanInsideB` FN0; tag `:1536` M8; disposed `:1538` X4 and not rendered `:1539` X5, fixture reds with the record's §3 argument; one pending E2; completes `:1545` M9 |
+| `ADisposalFaultCausedByATaggedRender_IsItsOwnDispatchs` | `RanInsideB`, the grandchild disposed | positive: B's rc 0 and A's notice | `RanInsideB` FN0; disposed R0; rc `:1560` M6; arrival C0; count D1; id D2; message C1 |
+| `AHandlerFaultWhileAHoldIsOutstanding_IsStillItsOwnLateFault` | `RanInsideB`, one pending Task | positive: A's own fault through 17.1's path while held | `RanInsideB` FN0; rc `:1584` M1x; one pending E2; completes `:1588` M9; arrival `:1590` Mcas; count D1; id D2; message `:1597` C2 |
+| `AnUntaggedRenderAfterTheLastTag_IsTheWindows` | `RanInsideB`, the target and the probe rendered once, no tag outstanding | the R11 contrast: a stale `_renderingFor` would charge A | `RanInsideB` FN0; target `:1618` R0; probe `:1621` X6, a planted red with the record's §3 argument; no tag `:1624` M5; rc `:1627` Mr11 |
+| `AComponentDisposedInABatchAFaultEnded_IsDroppedFromTheLiveSet` | the bare bucket, the strict rethrow, both children disposed | four positive checks, one per thing left behind | bucket T1; rethrow T2; disposed X1 and X2, fixture reds; live set p4; types p5 and p1; bucket p2 |
+| `AComponentDisposedInTheBatchAFaultHit_StillHasItsViewRemoved` | the child disposed, the thrower rendered | the faulted-batch fact above, where the batch never reaches the frame | disposed X1, thrower X3, fixture reds; remove patch `:1718` p3 |
 
 | Pin | What it compares | Verdict (Rules 2–5, 7) |
 |---|---|---|
