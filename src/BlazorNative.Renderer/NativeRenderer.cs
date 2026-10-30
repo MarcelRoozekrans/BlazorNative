@@ -481,22 +481,35 @@ public sealed class NativeRenderer : BlazorRenderer
     private int? _renderingNow;
     private int _renderingComponentEvents;
 
+    /// <summary>18.2 (#500): the dispatch the render now running is charged to: the queuer of
+    /// the tag <see cref="NoteRenderingComponent"/> used up, or null for an untagged render.
+    /// Cleared with <see cref="_renderingNow"/>, and at the outermost window close. Read by
+    /// <see cref="HandleException"/>. Render thread only.</summary>
+    private DispatchScope? _renderingFor;
+
     /// <summary>18.2 (#500): test seam that makes <see cref="WantsRenderLog"/> true.</summary>
     internal bool ForceRenderLogForTests { get; set; }
 
     /// <summary>18.2 (#500): whether the logger must report Debug events for Blazor's renderer
-    /// category even when BnLog would drop them. Task 4's render tags extend this with
-    /// <c>|| _renderTags.Count > 0</c>.</summary>
-    internal bool WantsRenderLog => ForceRenderLogForTests;
+    /// category even when BnLog would drop them: while a render tag is outstanding, and while
+    /// a tagged render is the one running. The second clause matters once the last tag is used
+    /// up: without it the logger would stop reporting, the next untagged render would never
+    /// clear <see cref="_renderingFor"/>, and its fault would be charged to the tag's dispatch. With no tag
+    /// and no tagged render, Blazor's Debug calls stay as cheap as before.</summary>
+    internal bool WantsRenderLog => ForceRenderLogForTests || _renderTags.Count > 0 || _renderingFor is not null;
 
     /// <summary>18.2 (#500): how many RenderingComponent events reached the renderer.</summary>
     internal int RenderingComponentEventsForTests => Volatile.Read(ref _renderingComponentEvents);
 
     /// <summary>18.2 (#500): called by the logger on the render thread. Lock-free and
-    /// allocation-free: it only counts and stores the id.</summary>
+    /// allocation-free: it counts, stores the id, and uses up the component's render tag, if
+    /// any. A tag is used up by its component's FIRST render: that render is the one the
+    /// tagging dispatch queued, so it is that dispatch's. A later render of the same component
+    /// in the batch finds no tag and is the window's.</summary>
     internal void NoteRenderingComponent(int componentId)
     {
         _renderingNow = componentId;
+        _renderingFor = _renderTags.Remove(componentId, out DispatchScope? queuer) ? queuer : null;
         Interlocked.Increment(ref _renderingComponentEvents);
     }
 
@@ -506,6 +519,7 @@ public sealed class NativeRenderer : BlazorRenderer
     {
         // 18.2 (#500): the batch is delivered, so no component is being rendered any more.
         _renderingNow = null;
+        _renderingFor = null;
 
         // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
         // the drain without disturbing the drain-first rule below. Under StrictErrors the
@@ -735,12 +749,25 @@ public sealed class NativeRenderer : BlazorRenderer
         // is that dispatch's late fault, below, and never this window's. Code that flows no
         // dispatch scope, or another renderer's, stays the window's.
         //
+        // 18.2 (#500): a render runs under this window's flow even when another dispatch queued
+        // it. When that dispatch's inline continuation dirtied the component inside this window,
+        // the render is tagged with it, and a fault while it runs is that dispatch's: its late
+        // fault while it has not finished, otherwise a log line, through ChargeLate. That
+        // covers the render itself, a synchronous fault in a child's SetParametersAsync during
+        // it, and a Dispose fault in a component it removed. It runs before the window capture,
+        // so strict mode charges it to its dispatch too. Every other render is the window's.
+        //
         // A parameter-binding fault needs no exclusion here: it comes from a render, and a
         // render inside this window runs in this window's batch under this window's flow, so
-        // it is captured above. That rests on reading the render path; no test builds the
-        // other case, because nothing found can reach it.
+        // it is captured above, or charged to its tag. That rests on reading the render path;
+        // no test builds the other case, because nothing found can reach it.
         if (_currentScope is { } scope)
         {
+            if (_renderingFor is { } queuer && !ReferenceEquals(queuer, scope))
+            {
+                ChargeLate(queuer, exception);
+                return;
+            }
             DispatchScope? owner = s_flowingScope.Value;
             bool anotherDispatchs = owner is not null
                 && !ReferenceEquals(owner, scope)
@@ -1496,6 +1523,7 @@ public sealed class NativeRenderer : BlazorRenderer
         // with its buckets (Task 5 registry cleanup).
         _tree.RemoveComponent(componentId, RemoveNodeEventRegistrations);
         _componentTypes.Remove(componentId);
+        _liveComponents.Remove(componentId);
     }
 
     /// <summary>Narrows Blazor's <c>ulong</c> event-handler id to the <c>int</c>
@@ -1692,8 +1720,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// queuers, and the inner scope's holds move with them (18.2, #500).</para>
     ///
     /// <para>18.2 (#500): work another dispatch A left in this window, an action A's
-    /// inline continuation queued, is A's. The window holds A open for it: A's
-    /// outstanding count goes up through <see cref="TryHold"/>, and the window
+    /// inline continuation queued or a re-render it dirtied, is A's. The window holds A
+    /// open for it: A's outstanding count goes up through <see cref="TryHold"/>, once per
+    /// action as it is queued and once as A's inline segment opens, and the window
     /// releases it at its close, after the drain. A's pending Task awaits
     /// <see cref="Settled"/> before it marks A <see cref="Done"/>. Without that, A's
     /// handler Task, which completes inside this window's synchronous part, would
@@ -1843,12 +1872,98 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     /// <summary>The same scope, flowed with the execution context into the handler's
-    /// continuations. Used ONLY to attribute a late fault in
-    /// <see cref="HandleException"/>. Set and restored alongside
-    /// <see cref="_currentScope"/>: the restore is required, because the render
-    /// thread does not flow a poster's execution context, so a value left set would
+    /// continuations. Used to attribute a late fault in <see cref="HandleException"/>, to find
+    /// the queuer of an action in <see cref="RunAfterDispatch"/>, and, through its change
+    /// callback, to find the re-renders an inline continuation queued (18.2, #500). Set and
+    /// restored alongside <see cref="_currentScope"/>: the restore is required, because the
+    /// render thread does not flow a poster's execution context, so a value left set would
     /// leak into whatever work item ran next.</summary>
-    private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new();
+    private static readonly AsyncLocal<DispatchScope?> s_flowingScope = new(OnFlowingScopeChanged);
+
+    // ── 18.2 (#500): which re-renders an inline continuation queued ──────────
+    //
+    // Another dispatch A's continuation can run inline inside this window. A StateHasChanged
+    // it makes there only enqueues, because the window's batch is open, and the render runs
+    // later in the window's batch, under the window's flow. The flow switch is the one moment
+    // that tells them apart: when the flow switches TO A on the render thread, inside a window,
+    // a segment opens and the components whose pending-render flag is already set are
+    // snapshotted. When the flow switches away from A, every component whose flag went from
+    // clear to set in between was dirtied by A, and is tagged with A. The window holds A open
+    // for each tag, so A's pending Task cannot finish before the render has run.
+    //
+    // The callback runs on EVERY execution-context switch where the value differs, process
+    // wide, and an exception thrown from it is Environment.FailFast. So it reads and writes
+    // fields only, runs no app code and never awaits, and returns at once off its renderer's
+    // render thread or outside a window. Only an open segment allocates, never the check.
+
+    /// <summary>18.2 (#500): the dispatch whose inline segment is open, or null. Render thread only.</summary>
+    private DispatchScope? _segmentFor;
+
+    /// <summary>18.2 (#500): the components whose pending-render flag was already set when the
+    /// open segment began. Reused across segments. Render thread only.</summary>
+    private HashSet<int>? _segmentPending;
+
+    /// <summary>18.2 (#500): each component a dispatch's inline segment dirtied, and that
+    /// dispatch, until its first render uses the tag up in <see cref="NoteRenderingComponent"/>.
+    /// Cleared at the outermost window close. Render thread only.</summary>
+    private readonly Dictionary<int, DispatchScope> _renderTags = new();
+
+    /// <summary>18.2 (#500): set while a segment body runs, so a nested callback leaves the
+    /// snapshot alone. Render thread only.</summary>
+    private bool _inSegment;
+
+    /// <summary>18.2 (#500): the <see cref="s_flowingScope"/> change callback. The scope that
+    /// was left closes its segment, and the scope that was entered opens one. Each is
+    /// resolved to its own renderer through <see cref="DispatchScope.Owner"/>, and acts only
+    /// there. It must never throw: see the section comment above.</summary>
+    private static void OnFlowingScopeChanged(AsyncLocalValueChangedArgs<DispatchScope?> change)
+    {
+        if (change.PreviousValue is { } left)
+            left.Owner.LeaveSegment(left);
+        if (change.CurrentValue is { } entered)
+            entered.Owner.EnterSegment(entered);
+    }
+
+    /// <summary>18.2 (#500): true on this renderer's render thread while a window is open. The
+    /// thread is compared by id, not through CheckAccess, which a test seam can make answer
+    /// true on every thread; the window is read only once the thread is known to own it.</summary>
+    private bool InWindowOnRenderThread
+        => Environment.CurrentManagedThreadId == RenderThreadId && _currentScope is not null;
+
+    /// <summary>18.2 (#500): opens a segment for <paramref name="dispatch"/> when it is another
+    /// dispatch than the window, and snapshots the flags already set.</summary>
+    private void EnterSegment(DispatchScope dispatch)
+    {
+        if (!InWindowOnRenderThread || _inSegment
+            || ReferenceEquals(dispatch, _currentScope) || ReferenceEquals(dispatch, _segmentFor))
+            return;
+        _inSegment = true;
+        try
+        {
+            HashSet<int> pending = _segmentPending ??= [];
+            pending.Clear();
+            foreach ((int id, ComponentBase component) in _liveComponents)
+            {
+                if (BlazorInterop.HasPendingQueuedRender(component))
+                    pending.Add(id);
+            }
+            _segmentFor = dispatch;
+            // The entry hold. A's handler can complete inside this segment, and the Task that
+            // reports it resumes on the thread pool, possibly before the segment closes here.
+            // Holding A from entry means it cannot be marked Done until the window closes,
+            // whatever the segment turns out to have dirtied. A Done A is not held; its tags
+            // are still recorded, so its render's fault is logged as a finished dispatch's.
+            HoldFor(_currentScope!, dispatch);
+        }
+        finally { _inSegment = false; }
+    }
+
+    /// <summary>18.2 (#500): closes the open segment when <paramref name="dispatch"/> is its dispatch.</summary>
+    private void LeaveSegment(DispatchScope dispatch)
+    {
+        if (InWindowOnRenderThread && ReferenceEquals(dispatch, _segmentFor))
+            FlushSegment();
+    }
 
     /// <summary>The log line for a fault attributed to a handler after its first await
     /// (Phase 16.1). A constant so the tests that assert a fault was NOT attributed
@@ -2019,11 +2134,19 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="CleanupDisposedComponent"/>, after the batch's diffs. Render thread only.</summary>
     private readonly Dictionary<int, Type> _componentTypes = new();
 
+    /// <summary>18.2 (#500): each live <see cref="ComponentBase"/> instance, the components whose
+    /// pending-render flag an inline segment snapshots and diffs. Filled and removed beside
+    /// <see cref="_componentTypes"/>. Another <see cref="IComponent"/> has no flag to read, so
+    /// its re-render stays the window's. Render thread only.</summary>
+    private readonly Dictionary<int, ComponentBase> _liveComponents = new();
+
     /// <inheritdoc/>
     protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(
         int componentId, IComponent component, Microsoft.AspNetCore.Components.Rendering.ComponentState? parentComponentState)
     {
         _componentTypes[componentId] = component.GetType();
+        if (component is ComponentBase live)
+            _liveComponents[componentId] = live;
         return base.CreateComponentState(componentId, component, parentComponentState);
     }
 
@@ -2200,10 +2323,23 @@ public sealed class NativeRenderer : BlazorRenderer
             s_flowingScope.Value = outerFlowing;
             if (outer is null)
             {
+                // 18.2 (#500): a segment still open here is closed first, before the drain and
+                // before the tags die, so its tags are recorded like any other.
+                FlushSegment();
                 // 18.2 (#500): the holds are released after the drain, so a queuer is still
                 // not Done while its action runs, and in a finally, so no queuer waits forever.
                 try { DrainPostDispatchActions(scope); }
-                finally { ReleaseHolds(scope); }
+                finally
+                {
+                    // Blazor rendered the window's batch before its Task returned, so every tag
+                    // is used up or belongs to a component that never rendered. Either way it
+                    // dies with the window, before the holds it took are released.
+                    _renderTags.Clear();
+                    _renderingFor = null;
+                    _renderingNow = null;
+                    _segmentFor = null;
+                    ReleaseHolds(scope);
+                }
             }
             else
             {
@@ -2268,9 +2404,14 @@ public sealed class NativeRenderer : BlazorRenderer
     /// own Task would complete successfully for that fault.
     /// 18.2 (#500): between the handler and Done it waits for the work the dispatch left in
     /// another window to settle, so a fault there is still this dispatch's late fault. The
-    /// handler can complete inline inside that window's synchronous part, on the render
-    /// thread, and the window releases the hold later on the same thread, in its finally:
-    /// so the wait is awaited, never blocked on.</summary>
+    /// wait rests on holds the window took, never on reading what is left open: an action's
+    /// hold is taken as it is queued, and a re-render's when this dispatch's inline segment
+    /// opens, so the hold exists before the handler can complete inside the segment. The
+    /// window releases every hold at its outermost close. This continuation resumes on the
+    /// thread pool, since the render thread's SynchronizationContext keeps a context-free
+    /// continuation from running inline, so it may run while the segment is still open on
+    /// the render thread; the entry hold is what keeps Done from slipping in there. The
+    /// wait is awaited, never blocked on: the releasing window runs on the render thread.</summary>
     private static async Task AwaitWholeHandler(Task handler, DispatchScope scope)
     {
         try
@@ -2281,11 +2422,6 @@ public sealed class NativeRenderer : BlazorRenderer
             }
             finally
             {
-                // 18.2 (#500): flush first, so the hold count read below is complete. Task 4
-                // fills FlushSegment in; it is called only on the owner's render thread,
-                // where an inline segment can be open.
-                if (scope.Owner._dispatcher.CheckAccess())
-                    scope.Owner.FlushSegment();
                 // Settled whether the handler completed or faulted: a hold must never outlive
                 // its scope's report.
                 await scope.FinishWhenSettled().ConfigureAwait(false);
@@ -2300,14 +2436,30 @@ public sealed class NativeRenderer : BlazorRenderer
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(late).Throw();
     }
 
-    /// <summary>18.2 (#500): flushes the open inline segment's re-render tags into their
-    /// dispatch's hold count, so <see cref="AwaitWholeHandler"/> never reads a count the
-    /// segment has not reached yet. Render thread only.
-    /// NO-OP UNTIL 18.2 TASK 4: action holds are taken eagerly in
-    /// <see cref="RunAfterDispatch"/>, so nothing needs flushing yet. The call site exists so
-    /// the re-render tags cannot be added without it.</summary>
+    /// <summary>18.2 (#500): closes the open inline segment. Every live component whose
+    /// pending-render flag is set now and was not when the segment opened is tagged with the
+    /// segment's dispatch. It only tags: the dispatch was held at segment entry, in
+    /// <see cref="EnterSegment"/>. A dispatch that had already finished is not held, but its
+    /// tags are kept, so a fault in its render is logged as a finished dispatch's and is never
+    /// the window's. Called by the flow switch away from the dispatch, and by the outermost
+    /// window close, so a segment whose away-switch was never observed still tags. Render
+    /// thread only; a no-op with no segment open.</summary>
     internal void FlushSegment()
     {
+        if (_segmentFor is not { } queuer || _inSegment)
+            return;
+        _inSegment = true;
+        try
+        {
+            HashSet<int> pending = _segmentPending!;
+            foreach ((int id, ComponentBase component) in _liveComponents)
+            {
+                if (!pending.Contains(id) && BlazorInterop.HasPendingQueuedRender(component))
+                    _renderTags[id] = queuer;
+            }
+            _segmentFor = null;
+        }
+        finally { _inSegment = false; }
     }
 
     /// <summary>Dispatches a host UI event into Blazor's handler table, for direct

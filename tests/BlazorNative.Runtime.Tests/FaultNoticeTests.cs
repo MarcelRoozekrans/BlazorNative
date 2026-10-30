@@ -1255,6 +1255,75 @@ public sealed class FaultNoticeTests
         finally { TearDown(run.Pending, run.Previous); }
     }
 
+    [Fact]
+    public void ATaggedReRender_IsItsOwnDispatchs_NotTheWindows()
+        => ATaggedReRenderIsItsOwnDispatchs(strict: false);
+
+    [Fact]
+    public void ATaggedReRender_IsItsOwnDispatchs_InStrictModeToo()
+        => ATaggedReRenderIsItsOwnDispatchs(strict: true);
+
+    /// <summary>A's continuation runs inline inside B's window and pokes a child, whose render
+    /// throws. B's batch renders it, under B's flow, but the render is A's: A gets a late
+    /// FaultNotice, and B keeps rc 0. In strict mode too, since attribution runs before the
+    /// strict rethrow.</summary>
+    private static void ATaggedReRenderIsItsOwnDispatchs(bool strict)
+    {
+        var run = DispatchTwo("a-await-then-poke-throwing", "b-complete", strict);
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB,
+                "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
+                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
+                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
+                    && single["message"] == "a-render",
+                "no FaultNotice: A's re-render fault never reached A.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void TheReRenderAfterAnInlineHandlerCompletes_IsItsOwnDispatchs()
+    {
+        // A's handler completes inside B's window, and ComponentBase queues its after-handler
+        // re-render there. B's batch renders it after A's handler Task has completed, so A's
+        // completion must wait for it, or the fault could only be logged: the Done trap.
+        var run = DispatchTwo("a-await-then-arm-self", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB,
+                "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
+                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
+                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
+                    && single["message"] == "a-after-render",
+                "no FaultNotice: Blazor's re-render after A's handler finished became a log line, because A was Done before B's batch rendered it. That is the Done trap.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void ATaggedReRendersFault_LeavesTheWindowsOwnFault_Rc2()
+    {
+        var run = DispatchTwo("a-await-then-poke-throwing", "b-complete-then-throw");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: B faulted in its own synchronous part after completing the gate, "
+                + "and that fault must be its rc 2, not lost behind A's tagged re-render.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's re-render fault.");
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            var single = Assert.Single(notices);
+            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), single["handlerId"]);
+            Assert.Equal("a-render", single["message"]);
+            Assert.DoesNotContain(notices, n => n["message"] == "b-own");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
     private sealed class NoFlagType { }
 
     private sealed class IntFlagType
@@ -1529,12 +1598,22 @@ public sealed class FaultNoticeTests
             RanInsideB = false;
             SawNoFlow = false;
             Renderer = null;
+            ThrowOnRender = null;
+            RenderTarget.Reset();
         }
+
+        /// <summary>18.2 (#500): when set, this probe's next render throws it, once.</summary>
+        public static string? ThrowOnRender;
 
         [Inject] public IMobileBridge Bridge { get; set; } = default!;
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
+            if (ThrowOnRender is { } armed)
+            {
+                ThrowOnRender = null;
+                throw new InvalidOperationException(armed);
+            }
             Button(b, 0, "a-await-then-throw", async () =>
             {
                 await Gate.Task;
@@ -1574,6 +1653,22 @@ public sealed class FaultNoticeTests
                 RanInsideB = s_inB;
                 Renderer!.RunAfterDispatch(() => throw new InvalidOperationException("a-queued"));
             });
+            Button(b, 70, "a-await-then-poke-throwing", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                RenderTarget.ThrowOn = "a-render";
+                RenderTarget.Instance!.Poke();
+            });
+            Button(b, 80, "a-await-then-arm-self", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                // ComponentBase's re-render after this handler completes does the render.
+                ThrowOnRender = "a-after-render";
+            });
+            b.OpenComponent<RenderTarget>(90);
+            b.CloseComponent();
             Button(b, 40, "b-complete", () => CompleteGate());
             Button(b, 50, "b-complete-then-throw", () =>
             {
@@ -1603,6 +1698,31 @@ public sealed class FaultNoticeTests
             b.AddAttribute(seq + 1, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, onClick));
             b.AddContent(seq + 2, label);
             b.CloseElement();
+        }
+    }
+
+    /// <summary>18.2 (#500): a child of <see cref="InlineContinuationProbe"/> that a dispatch's
+    /// continuation re-renders through <see cref="Poke"/>. Its render throws
+    /// <see cref="ThrowOn"/> once when that is set.</summary>
+    private sealed class RenderTarget : ComponentBase
+    {
+        public static RenderTarget? Instance;
+        public static string? ThrowOn;
+
+        public static void Reset() { Instance = null; ThrowOn = null; }
+
+        protected override void OnInitialized() => Instance = this;
+
+        public void Poke() => StateHasChanged();
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (ThrowOn is { } armed)
+            {
+                ThrowOn = null;
+                throw new InvalidOperationException(armed);
+            }
+            b.AddContent(0, "target");
         }
     }
 
