@@ -989,15 +989,14 @@ public sealed class FaultNoticeTests
     // InlineContinuationProbe.RanInsideB, proves the continuation really ran inside B's window.
     //
     // DOES NOT COVER:
-    //   - a RE-RENDER that A's continuation queues inside B's window, by StateHasChanged. Blazor
-    //     renders it in B's batch, under B's scope, so a render fault from it is B's. Render
-    //     faults belong to the batch that renders them; per-render attribution is #500;
-    //   - work A's continuation queues through RunAfterDispatch, a navigation for example. It
-    //     runs when B's window closes, and a fault in it is B's. Also #500;
     //   - a flowing scope that another renderer owns: treated as no flow, so the window's. That
     //     rests on reading HandleException; a second renderer in one process has no test here;
     //   - a nested dispatch: B's own fire-and-forget continuation running inline inside a window C
     //     opened while B's synchronous part was still open. Not built here; it rests on reading.
+    //
+    // COVERED SINCE 18.2 (#500), and listed above as gaps until then: a re-render that A's
+    // continuation queues inside B's window, and work it queues there through RunAfterDispatch.
+    // A fault in either is A's now. The 18.2 section below pins both and states its own limits.
 
     [Fact]
     public void AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows()
@@ -1130,9 +1129,62 @@ public sealed class FaultNoticeTests
 
     // ── 18.2 (#500): charge a fault in queued work to the dispatch that queued it ──
     //
-    // Blazor's ComponentBase keeps a private flag, _hasPendingQueuedRender. StateHasChanged sets it
-    // when it enqueues a render, and the component's render fragment clears it as that render
-    // starts. 18.2 reads it through BlazorInterop to see which components a dispatch dirtied.
+    // 17.1 charges a fault that A's own code raises inside B's window to A. Two kinds of work
+    // A's inline continuation leaves in B's window still ran later under B's flow, so B was
+    // charged: a re-render A queued, by StateHasChanged or by ComponentBase's own render after
+    // A's handler completes, and an action A queued through RunAfterDispatch. 18.2 tags both
+    // with A. A queued action carries A as its queuer. A re-render is found at the flow switch
+    // to and away from A inside the window: every ComponentBase whose pending-render flag went
+    // from clear to set in between is tagged with A. The tag is used up by that component's
+    // first render, which Blazor announces through its Debug RenderingComponent log call. A
+    // fault in tagged work is A's late fault, or a log line once A has finished, and never the
+    // window's. B's window holds A open from the queuing, or from the segment's entry, until
+    // its outermost close, so A's pending Task cannot finish first and lose the fault: the
+    // Done trap. Each two-dispatch fact's anchor, RanInsideB, proves A's continuation really
+    // ran inside B's window.
+    //
+    // The first four facts pin the Blazor internals this reads. ComponentBase keeps a private
+    // flag, _hasPendingQueuedRender. StateHasChanged sets it when it enqueues a render, and the
+    // component's render fragment clears it as that render starts. BlazorInterop reads it, and
+    // VerifyAccessors checks at load that it exists.
+    //
+    // DOES NOT COVER:
+    //   - a custom IComponent that A re-renders inside B's window. It has no pending-render flag
+    //     to read, so its render is not tagged, and a fault in it stays B's;
+    //   - a component B had already dirtied before A's segment opened, which A dirtied again. It
+    //     renders once, in B's batch, and is B's: its flag was already set at the snapshot, and
+    //     nothing observable separates the two;
+    //   - a child re-render that A's tagged render enqueues. It is not tagged, so it is B's. Only
+    //     a synchronous fault during the tagged render itself is A's, a child's
+    //     SetParametersAsync or a Dispose included;
+    //   - frame delivery of the mixed batch. A fault in UpdateDisplayAsync is batch-level and
+    //     stays B's, as before 18.2;
+    //   - inline segments outside a dispatch window, during a mount or a host-event arm. There
+    //     A's StateHasChanged renders at once under A's flow, so it is A's through 17.1, unless a
+    //     batch that is not a dispatch is in progress. Not built here; it rests on reading;
+    //   - a nested edge: a nested dispatch B that returned synchronously, whose inline
+    //     continuation queued work inside a window C nested in B. B is Done at its synchronous
+    //     return, so B's tagged fault is logged as a finished dispatch's, while B's untagged
+    //     actions still land in the outer window O's fault. Not built; it rests on reading
+    //     DispatchSyncPart's nested close;
+    //   - inside a nested window D, a switch to the outer window B's own flow makes B hold
+    //     itself. The hold is released at B's outermost close, so nothing hangs. Not pinned;
+    //   - a batch that a render fault ends early. Its disposed components are cleaned up at the
+    //     next batch, which AComponentDisposedInABatchAFaultEnded_IsDroppedFromTheLiveSet pins,
+    //     but the batch never delivers their remove patches or their disposed handler ids, so
+    //     those views stay on the host and their call sites stay recorded. That is #593;
+    //   - a throw from that cleanup. It runs inside UpdateDisplayAsync's try, so it is routed
+    //     like any other frame fault, but no public path makes the cleanup throw. Not pinned;
+    //   - the self-tag check in HandleException. It is defence in depth: EnterSegment never
+    //     opens a segment for the window itself, so no tag names it, and removing the check
+    //     alone leaves every fact green. ARenderBQueuesItself_IsStillTheWindows reds only with
+    //     EnterSegment's check removed too;
+    //   - the call in VerifyAccessors that runs PendingQueuedRenderFieldProblem at load. The
+    //     check is pinned by its own fact; a deleted call would go unnoticed until a Blazor
+    //     patch drops the field;
+    //   - a flowing scope that another renderer owns: RunAfterDispatch treats it as no flow, so
+    //     the action stays the window's. That rests on reading; a second renderer in one
+    //     process has no test here.
 
     [Fact]
     public void HasPendingQueuedRender_ReadsBlazorsFlag()
@@ -1224,7 +1276,8 @@ public sealed class FaultNoticeTests
     [Fact]
     public void PendingQueuedRenderFieldProblem_NamesTheFieldWhenItIsMissingOrNotBool()
     {
-        Assert.Null(BlazorInterop.PendingQueuedRenderFieldProblem(typeof(ComponentBase)));
+        string? present = BlazorInterop.PendingQueuedRenderFieldProblem(typeof(ComponentBase));
+        Assert.True(present is null, $"the control: ComponentBase on this Blazor has the bool field, yet it was reported: {present}");
         string? missing = BlazorInterop.PendingQueuedRenderFieldProblem(typeof(NoFlagType));
         Assert.True(missing is not null && missing.Contains("_hasPendingQueuedRender"),
             $"a type without the field was not reported by name: {missing ?? "null"}");
@@ -1247,11 +1300,15 @@ public sealed class FaultNoticeTests
                 "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the action A's continuation queued was charged to B's window, "
                 + "which is #500.");
-            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
-                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
-                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
-                    && single["message"] == "a-queued",
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice: the queued action's fault never reached A.");
+            WaitForNoticeSends();
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: the queued action's fault must reach A once, and nothing else may.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: the queued action's fault was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-queued",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-queued: A's notice does not carry the queued action's fault.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1276,11 +1333,15 @@ public sealed class FaultNoticeTests
             Assert.True(InlineContinuationProbe.RanInsideB,
                 "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
-            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
-                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
-                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
-                    && single["message"] == "a-render",
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice: A's re-render fault never reached A.");
+            WaitForNoticeSends();
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: A's re-render fault must reach A once, and nothing else may.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: A's re-render fault was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-render",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-render: A's notice does not carry A's re-render fault.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1321,11 +1382,15 @@ public sealed class FaultNoticeTests
             Assert.False(doneAtFlush,
                 "A was Done before its inline segment closed: its pending Task resumed on the thread pool and finished while "
                 + "the segment was still open, so nothing held A for its re-render. That is the Done trap.");
-            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
-                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
-                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
-                    && single["message"] == "a-after-render",
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice: Blazor's re-render after A's handler finished became a log line, because A was Done before B's batch rendered it. That is the Done trap.");
+            WaitForNoticeSends();
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: the fault in Blazor's re-render after A's handler must reach A once, and nothing else may.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: the fault in Blazor's re-render after A's handler was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-after-render",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-after-render: A's notice does not carry the fault in Blazor's re-render after A's handler.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1340,11 +1405,13 @@ public sealed class FaultNoticeTests
             Assert.True(run.RcB == 2, $"rc was {run.RcB}: B faulted in its own synchronous part after completing the gate, "
                 + "and that fault must be its rc 2, not lost behind A's tagged re-render.");
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget), "no FaultNotice for A's re-render fault.");
+            WaitForNoticeSends();
             var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
-            var single = Assert.Single(notices);
-            Assert.Equal(run.HandlerA.ToString(CultureInfo.InvariantCulture), single["handlerId"]);
-            Assert.Equal("a-render", single["message"]);
-            Assert.DoesNotContain(notices, n => n["message"] == "b-own");
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: only A's re-render fault is late.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: A's re-render fault was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-render",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-render: B's fault and A's were swapped.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1370,7 +1437,7 @@ public sealed class FaultNoticeTests
             Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
                 "B left a pending Task that never completed.");
             WaitForNoticeSends();
-            Assert.True(Notices().Count == 0, "a render B queued itself must stay B's rc 2; the tag rule over-reached.");
+            Assert.True(Notices().Count == 0, "a FaultNotice was sent for a render B queued itself: the tag rule charged B's own render to a dispatch.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1392,7 +1459,7 @@ public sealed class FaultNoticeTests
             Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
                 "A's pending Task never completed.");
             WaitForNoticeSends();
-            Assert.True(!Notices().Any(), "the tag outlived the render A queued, so B's own re-render of the same component was charged to A.");
+            Assert.True(!Notices().Any(), "a FaultNotice was sent for B's second render of the target: A's used-up tag still charged it to A.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1417,9 +1484,10 @@ public sealed class FaultNoticeTests
                 Assert.True(Notices().Count == 0, "a FaultNotice was sent for a finished dispatch's tagged re-render, which nothing can report.");
                 lock (log)
                 {
-                    string line = Assert.Single(log, l => l.Contains("a-orphan-render", StringComparison.Ordinal));
-                    Assert.True(line.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal),
-                        $"the fault was logged, but not as a finished dispatch's fault inside another window: {line}");
+                    List<string> lines = log.Where(l => l.Contains("a-orphan-render", StringComparison.Ordinal)).ToList();
+                    Assert.True(lines.Count == 1, $"the finished dispatch's render fault was logged {lines.Count} times, not once.");
+                    Assert.True(lines[0].Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal),
+                        $"the fault was logged, but not as a finished dispatch's fault inside another window: {lines[0]}");
                 }
             }
             finally { TearDown(run.Pending, run.Previous); }
@@ -1468,11 +1536,15 @@ public sealed class FaultNoticeTests
             Assert.True(DisposeThrower.DisposeRan, "anchor: A's render of the target never disposed the grandchild.");
             Assert.True(run.RcB == 0,
                 $"rc was {run.RcB}: the Dispose fault of a component A's tagged render removed was charged to B's window.");
-            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
-                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
-                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
-                    && single["message"] == "a-dispose",
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
                 "no FaultNotice: the Dispose fault A's tagged render caused never reached A.");
+            WaitForNoticeSends();
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: the Dispose fault A's tagged render caused must reach A once, and nothing else may.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: the Dispose fault A's tagged render caused was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-dispose",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-dispose: A's notice does not carry the Dispose fault A's tagged render caused.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1492,11 +1564,15 @@ public sealed class FaultNoticeTests
             Assert.True(pending.Length == 1, $"anchor: expected A's one pending Task, got {pending.Length}.");
             Assert.True(Task.WaitAll(pending.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget),
                 "A's pending Task never completed: the hold B's window took for A was never released after A's own fault.");
-            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
-                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
-                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
-                    && single["message"] == "a-own",
-                "no single FaultNotice carrying a-own: A's own fault, raised while a hold was outstanding, did not reach A.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget),
+                "no FaultNotice: A's own fault, raised while a hold was outstanding, did not reach A.");
+            WaitForNoticeSends();
+            var notices = Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList();
+            Assert.True(notices.Count == 1, $"{notices.Count} FaultNotices were sent, not one: A's own fault, raised while a hold was outstanding, must reach A once, and nothing else may.");
+            Assert.True(notices[0]["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture),
+                $"the FaultNotice went to handler {notices[0]["handlerId"]}, not A's {run.HandlerA}: A's own fault, raised while a hold was outstanding, was not charged to A.");
+            Assert.True(notices[0]["message"] == "a-own",
+                $"the FaultNotice carried '{notices[0]["message"]}', not a-own: A's notice does not carry A's own fault.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -1530,7 +1606,7 @@ public sealed class FaultNoticeTests
                 Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
                     "A's pending Task never completed.");
                 WaitForNoticeSends();
-                Assert.True(!Notices().Any(), "a render after A's last tag was charged to A: a stale _renderingFor outlived its render.");
+                Assert.True(!Notices().Any(), "a FaultNotice was sent for LaterTarget's render, which only B dirtied: A's last tag reached past its render.");
             }
             finally { TearDown(run.Pending, run.Previous); }
         }
