@@ -57,7 +57,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 ## Phases
 
-1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [active]
+1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #564, #551, #453 and #407 fixed at cause; #444 open with instrumentation, SpringBoard stall captured (#584)
 2. Phase 18.2 — fault attribution for queued work (#500) [pending]
 3. Phase 18.3 — secure-storage per-key ordering (#506) [pending]
 4. Phase 18.4 — recreation during boot (#511) [pending]
