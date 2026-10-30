@@ -134,6 +134,13 @@ internal static class BlazorInterop
         if (typeof(EventCallback).GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic) is null)
             failures.Add("EventCallback.Delegate field not found");
 
+        // Phase 18.2 (#500): ComponentBase._hasPendingQueuedRender is set by StateHasChanged when
+        // it enqueues a render and cleared as that render starts. The fault attribution reads it
+        // to see which components a dispatch dirtied (RefAccessors.HasPendingQueuedRender).
+        if (typeof(ComponentBase).GetField("_hasPendingQueuedRender", BindingFlags.Instance | BindingFlags.NonPublic)?.FieldType != typeof(bool))
+            failures.Add("ComponentBase._hasPendingQueuedRender (bool) field not found; " +
+                         "Phase 18.2's queued-fault attribution reads it");
+
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
@@ -150,6 +157,12 @@ internal static class BlazorInterop
     /// re-render seam (<c>TriggerRootRenderForTests</c>).</summary>
     public static void StateHasChangedViaAccessor(ComponentBase component)
         => RefAccessors.StateHasChanged(component);
+
+    /// <summary>Phase 18.2 (#500): whether <paramref name="component"/> has a render queued that has
+    /// not started yet, read from Blazor's private flag. Going through here, not
+    /// <see cref="RefAccessors"/> directly, runs the static constructor and so the load-time check.</summary>
+    public static bool HasPendingQueuedRender(ComponentBase component)
+        => RefAccessors.HasPendingQueuedRender(component);
 
     // ── Phase 11.4 Gate D (#164): parameter-binding fault PROVENANCE ─────────
     //
@@ -406,4 +419,10 @@ internal static class RefAccessors
     // VerifyAccessors like DispatchEventAsync above).
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "StateHasChanged")]
     public static extern void StateHasChanged(ComponentBase component);
+
+    // Phase 18.2 (#500): ComponentBase._hasPendingQueuedRender is private. StateHasChanged sets
+    // it when it enqueues a render and the render fragment clears it as the render starts
+    // (verified in VerifyAccessors).
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_hasPendingQueuedRender")]
+    public static extern ref bool HasPendingQueuedRender(ComponentBase component);
 }

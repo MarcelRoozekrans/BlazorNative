@@ -1127,6 +1127,87 @@ public sealed class FaultNoticeTests
         finally { BnLog.Sink = sink; }
     }
 
+    // ── 18.2 (#500): charge a fault in queued work to the dispatch that queued it ──
+    //
+    // Blazor's ComponentBase keeps a private flag, _hasPendingQueuedRender. StateHasChanged sets it
+    // when it enqueues a render, and the component's render fragment clears it as that render
+    // starts. 18.2 reads it through BlazorInterop to see which components a dispatch dirtied.
+
+    [Fact]
+    public void HasPendingQueuedRender_ReadsBlazorsFlag()
+    {
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: false, frames);
+            PendingFlagProbe.Reset();
+            renderer.Mount<PendingFlagHost>();
+            Assert.NotNull(PendingFlagProbe.Target);
+            Assert.NotNull(PendingFlagProbe.Trigger);
+
+            // B's render runs inside an open batch, so A's StateHasChanged only enqueues.
+            renderer.Dispatcher.InvokeAsync(() => BlazorInterop.StateHasChangedViaAccessor(PendingFlagProbe.Trigger!))
+                .GetAwaiter().GetResult();
+
+            Assert.True(PendingFlagProbe.FlagInsideBatch,
+                "the accessor did not see StateHasChanged set Blazor's pending-render flag");
+            bool after = renderer.Dispatcher.InvokeAsync(
+                () => BlazorInterop.HasPendingQueuedRender(PendingFlagProbe.Target!)).GetAwaiter().GetResult();
+            Assert.False(after, "the flag stayed set after the render");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    private sealed class PendingFlagHost : ComponentBase
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenComponent<PendingFlagProbe>(0);
+            b.AddComponentParameter(1, nameof(PendingFlagProbe.IsTrigger), false);
+            b.CloseComponent();
+            b.OpenComponent<PendingFlagProbe>(2);
+            b.AddComponentParameter(3, nameof(PendingFlagProbe.IsTrigger), true);
+            b.CloseComponent();
+        }
+    }
+
+    /// <summary>Target renders text; Trigger, re-rendered alone, dirties Target from inside its own
+    /// render, which is inside an open batch, and reads the flag there.</summary>
+    private sealed class PendingFlagProbe : ComponentBase
+    {
+        public static PendingFlagProbe? Target;
+        public static PendingFlagProbe? Trigger;
+        public static volatile bool FlagInsideBatch;
+        private static bool s_armed;
+
+        [Parameter] public bool IsTrigger { get; set; }
+
+        public static void Reset() { Target = null; Trigger = null; FlagInsideBatch = false; s_armed = false; }
+
+        protected override void OnInitialized()
+        {
+            if (IsTrigger) Trigger = this; else Target = this;
+        }
+
+        protected override void OnAfterRender(bool firstRender)
+        {
+            if (IsTrigger && firstRender) s_armed = true;
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (IsTrigger && s_armed)
+            {
+                s_armed = false;
+                BlazorInterop.StateHasChangedViaAccessor(Target!);
+                FlagInsideBatch = BlazorInterop.HasPendingQueuedRender(Target!);
+            }
+            b.AddContent(0, IsTrigger ? "trigger" : "target");
+        }
+    }
+
     // ── 18.1 (#564): a dispatch that overruns its budget ──
     //
     // On the Windows runner a FaultNotice dispatch took about 1.05 s instead of 2 ms, and its
