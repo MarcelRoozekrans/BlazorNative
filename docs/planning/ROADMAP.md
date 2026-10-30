@@ -3987,8 +3987,9 @@ the app's handler through a forwarding hook.
 - **Filed:** #574 with upstream coverlet#2058, #575, #580 and #582.
 - **Baselines:** .NET 1387, Android 249.
 
-#### Phase 18.2: Fault attribution for queued work (#500) [status: pending]
+#### Phase 18.2: Fault attribution for queued work (#500) [status: active]
 **Goal:** A fault in a re-render or a `RunAfterDispatch` action is charged to the dispatch that queued it, by owner decision of 2026-10-24.
+**Plan:** [`docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`](../superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md)
 **Surface:** Backend
 **HelpWanted:** no
 
