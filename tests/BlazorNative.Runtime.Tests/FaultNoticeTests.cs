@@ -1357,8 +1357,9 @@ public sealed class FaultNoticeTests
         // open on the render thread. The seam makes that happen every run: before the segment
         // closes, it waits until A's pending Task has reached its settle, either waiting on a
         // hold or Done. Only the hold the window takes at segment entry keeps A from being Done
-        // there, so without it this fact reds every run, whatever the pool's timing. The budget
-        // is generous because the wait ends as soon as the pending Task gets there.
+        // there, so without it this fact reds every run, whatever the pool's timing. The wait
+        // runs inside B's dispatch, so its budget stays under the export's 1 s bound: a pending
+        // Task that never gets there must red the settle anchor, not B's dispatch timeout.
         int seamCalls = 0;
         bool doneAtFlush = false;
         bool settleReached = false;
@@ -1367,7 +1368,7 @@ public sealed class FaultNoticeTests
             {
                 if (Interlocked.Increment(ref seamCalls) != 1)
                     return;
-                settleReached = SpinWait.SpinUntil(reachedSettle, TimeSpan.FromSeconds(5));
+                settleReached = SpinWait.SpinUntil(reachedSettle, TimeSpan.FromMilliseconds(700));
                 doneAtFlush = isDone();
             });
         try
@@ -1377,7 +1378,7 @@ public sealed class FaultNoticeTests
             Assert.True(Volatile.Read(ref seamCalls) == 1,
                 $"anchor: the seam ran {seamCalls} times, not once as A's inline segment closed, so the race was not forced.");
             Assert.True(settleReached,
-                "anchor: A's pending Task never reached its settle within 5s while the segment was open, so the race was not forced.");
+                "anchor: A's pending Task never reached its settle within 700 ms while the segment was open, so the race was not forced.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
             Assert.False(doneAtFlush,
                 "A was Done before its inline segment closed: its pending Task resumed on the thread pool and finished while "
@@ -1438,6 +1439,28 @@ public sealed class FaultNoticeTests
                 "B left a pending Task that never completed.");
             WaitForNoticeSends();
             Assert.True(Notices().Count == 0, "a FaultNotice was sent for a render B queued itself: the tag rule charged B's own render to a dispatch.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void ARenderBQueuedBeforeASegment_IsStillTheWindows()
+    {
+        // B pokes the target, armed to throw, and then completes the gate. A's continuation runs
+        // inline in B's window, and its segment's snapshot already holds the target's flag, so A
+        // does not tag it. The target's render is B's: rc 2, and A sends no notice. Without the
+        // snapshot, every flag set when the segment closes would be A's.
+        var run = DispatchTwo("a-await", "b-poke-throwing-then-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(RenderTarget.ThrowOn is null, "anchor: B's batch never rendered the target B poked, so nothing threw.");
+            Assert.True(run.RcB == 2,
+                $"rc was {run.RcB}: a render B queued before A's segment opened was charged to A: the segment's snapshot did not exclude it.");
+            Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
+                "A's pending Task never completed.");
+            WaitForNoticeSends();
+            Assert.True(Notices().Count == 0, "a FaultNotice was sent for a render B queued before A's segment opened.");
         }
         finally { TearDown(run.Pending, run.Previous); }
     }
@@ -2207,6 +2230,18 @@ public sealed class FaultNoticeTests
                 // renders after A's last tag is used up. Only B dirtied it.
                 LaterTarget.ThrowOn = "b-later";
                 LaterTarget.Instance!.Poke();
+            });
+            Button(b, 190, "a-await", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+            });
+            Button(b, 200, "b-poke-throwing-then-complete", () =>
+            {
+                // B dirties the target before A's continuation runs, so A's segment snapshots it.
+                RenderTarget.ThrowOn = "b-before";
+                RenderTarget.Instance!.Poke();
+                CompleteGate();
             });
             b.OpenComponent<LaterTarget>(95);
             b.CloseComponent();
