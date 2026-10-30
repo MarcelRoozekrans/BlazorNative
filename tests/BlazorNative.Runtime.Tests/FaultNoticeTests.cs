@@ -1348,6 +1348,178 @@ public sealed class FaultNoticeTests
         finally { TearDown(run.Pending, run.Previous); }
     }
 
+    // ── 18.2 (#500): the edges of the re-render tag ──
+    //
+    // A tag is A's for its component's FIRST render only, a Done A's tag is logged, the window
+    // releases every hold whatever became of the tagged component, and a render nobody tagged
+    // stays the window's. Each fact anchors the render ordering it builds.
+
+    [Fact]
+    public void ARenderBQueuesItself_IsStillTheWindows()
+    {
+        // B pokes the target in its own synchronous part, then hops its flow away and back.
+        // Nothing but B runs, so the target's render fault is B's rc 2 whatever segment rule is
+        // in force.
+        var run = DispatchTwo(null, "b-poke-throwing");
+        try
+        {
+            Assert.True(InlineContinuationProbe.SawNoFlow, "anchor: B's flow hop never ran, so no segment switch happened.");
+            Assert.True(RenderTarget.ThrowOn is null, "anchor: B's poke never rendered the target, so nothing threw.");
+            Assert.True(run.RcB == 2, $"rc was {run.RcB}: a render B queued itself must stay B's rc 2; the tag rule over-reached.");
+            Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
+                "B left a pending Task that never completed.");
+            WaitForNoticeSends();
+            Assert.True(Notices().Count == 0, "a render B queued itself must stay B's rc 2; the tag rule over-reached.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void TheSecondRenderOfATaggedComponent_IsTheWindows()
+    {
+        // A pokes the target inline inside B's window. B's batch renders it, A's render, then
+        // re-renders the probe after B's handler, and the probe's new Generation re-renders the
+        // target a second time in the same batch. Only the first render is A's.
+        var run = DispatchTwo("a-await-then-poke-second", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            int renders = RenderTarget.Renders - RenderTarget.RendersAtPoke;
+            Assert.True(renders == 2, $"anchor: the target rendered {renders} times after A's poke, not twice in B's batch.");
+            Assert.True(run.RcB == 2,
+                $"rc was {run.RcB}: the tag outlived the render A queued, so B's own re-render of the same component was charged to A.");
+            Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
+                "A's pending Task never completed.");
+            WaitForNoticeSends();
+            Assert.True(!Notices().Any(), "the tag outlived the render A queued, so B's own re-render of the same component was charged to A.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AFinishedDispatchsTaggedReRender_IsLoggedNotTheWindows()
+    {
+        var log = new List<string>();
+        Action<BnLogLevel, string, string>? sink = BnLog.Sink;
+        BnLog.Sink = (_, category, message) => { lock (log) log.Add($"{category}: {message}"); };
+        try
+        {
+            var run = DispatchTwo("a-register-flowing-poke", "b-complete");
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                lock (run.Pending) Assert.True(run.Pending.Count == 0, "anchor: A was meant to finish in its synchronous part.");
+                Assert.True(RenderTarget.ThrowOn is null, "anchor: B's batch never rendered the target A's continuation poked.");
+                Assert.True(run.RcB == 0, $"rc was {run.RcB}: a finished dispatch's tagged re-render was charged to B's window.");
+                Assert.Empty(Notices());
+                lock (log)
+                {
+                    string line = Assert.Single(log, l => l.Contains("a-orphan-render", StringComparison.Ordinal));
+                    Assert.True(line.Contains(NativeRenderer.FinishedDispatchFaultLogLabel, StringComparison.Ordinal),
+                        $"the fault was logged, but not as a finished dispatch's fault inside another window: {line}");
+                }
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Sink = sink; }
+    }
+
+    [Fact]
+    public void ATaggedComponentDisposedBeforeItRenders_StillLetsAComplete()
+    {
+        // B queues the probe's render first, then completes the gate, so A's poke queues the
+        // target behind it. The probe's render removes the target before its queued render runs.
+        var run = DispatchTwo("a-await-then-poke", "b-hide-target-then-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(RenderTarget.Disposed, "anchor: B's batch did not dispose the target A poked.");
+            Assert.True(RenderTarget.Renders == RenderTarget.RendersAtPoke,
+                "anchor: the target rendered after A's poke, so its tag was used up before it was disposed.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: nothing faulted, yet B's dispatch failed.");
+            Task[] pending;
+            lock (run.Pending) pending = run.Pending.ToArray();
+            Assert.True(pending.Length == 1, $"anchor: expected A's one pending Task, got {pending.Length}.");
+            Assert.True(Task.WaitAll(pending.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget),
+                "A's pending Task never completed: the window did not release a tag whose component was disposed before it rendered.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void ADisposalFaultCausedByATaggedRender_IsItsOwnDispatchs()
+    {
+        // A's tagged render of the target stops rendering the grandchild, whose Dispose throws.
+        var run = DispatchTwo("a-await-then-hide-grandchild", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(DisposeThrower.DisposeRan, "anchor: A's render of the target never disposed the grandchild.");
+            Assert.True(run.RcB == 0,
+                $"rc was {run.RcB}: the Dispose fault of a component A's tagged render removed was charged to B's window.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
+                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
+                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
+                    && single["message"] == "a-dispose",
+                "no FaultNotice: the Dispose fault A's tagged render caused never reached A.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AHandlerFaultWhileAHoldIsOutstanding_IsStillItsOwnLateFault()
+    {
+        // A's continuation pokes the target, so the window holds A, and then throws its own
+        // fault. That fault is A's under 17.1, and A finishes once the window releases it.
+        var run = DispatchTwo("a-await-then-poke-and-throw", "b-complete");
+        try
+        {
+            Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(run.RcB == 0, $"rc was {run.RcB}: A's own fault, raised while B's window held A, was charged to B.");
+            Task[] pending;
+            lock (run.Pending) pending = run.Pending.ToArray();
+            Assert.True(pending.Length == 1, $"anchor: expected A's one pending Task, got {pending.Length}.");
+            Assert.True(Task.WaitAll(pending.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget),
+                "A's pending Task never completed: the hold B's window took for A was never released after A's own fault.");
+            Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
+                    && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
+                    && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
+                    && single["message"] == "a-own",
+                "no single FaultNotice carrying a-own: A's own fault, raised while a hold was outstanding, did not reach A.");
+        }
+        finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AnUntaggedRenderAfterTheLastTag_IsTheWindows()
+    {
+        // One batch: the target and the probe, both dirtied by A's continuation, use up A's tags
+        // without a fault. Then LaterTarget, which only B poked, renders and throws. The logger
+        // must keep reporting after the last tag is used up, or that later render inherits A as
+        // its dispatch. BnLog stays at Warn, so only WantsRenderLog keeps the event coming.
+        BnLogLevel level = BnLog.Level;
+        BnLog.Level = BnLogLevel.Warn;
+        try
+        {
+            var run = DispatchTwo("a-await-then-poke", "b-complete-then-poke-later");
+            try
+            {
+                Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(LaterTarget.TargetRendersAtThrow == 1,
+                    $"anchor: the target had rendered {LaterTarget.TargetRendersAtThrow} times since A's poke when "
+                    + "LaterTarget threw, not once, so A's tag was not used up first.");
+                Assert.True(run.RcB == 2,
+                    $"rc was {run.RcB}: a render after A's last tag was charged to A: a stale _renderingFor outlived its render.");
+                Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
+                    "A's pending Task never completed.");
+                WaitForNoticeSends();
+                Assert.True(!Notices().Any(), "a render after A's last tag was charged to A: a stale _renderingFor outlived its render.");
+            }
+            finally { TearDown(run.Pending, run.Previous); }
+        }
+        finally { BnLog.Level = level; }
+    }
+
     [Fact]
     public void AComponentDisposedInABatchAFaultEnded_IsDroppedFromTheLiveSet()
     {
@@ -1653,9 +1825,10 @@ public sealed class FaultNoticeTests
     private static string MessageOf(string? noticeArgs)
         => NativeShellBridge.ParseFlatJsonObject(noticeArgs).GetValueOrDefault("message", "");
 
-    /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
+    /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe. A null
+    /// <paramref name="labelA"/> dispatches B alone, and A's rc and handler id are then 0.</summary>
     private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchTwo(string labelA, string labelB, bool strict = false, Action<NativeRenderer>? arm = null)
+        DispatchTwo(string? labelA, string labelB, bool strict = false, Action<NativeRenderer>? arm = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -1669,10 +1842,10 @@ public sealed class FaultNoticeTests
             InlineContinuationProbe.Renderer = renderer;
             renderer.Mount<InlineContinuationProbe>();
             arm?.Invoke(renderer);
-            int a = HandlerFor(frames, "click", labelA);
+            int a = labelA is null ? 0 : HandlerFor(frames, "click", labelA);
             int b = HandlerFor(frames, "click", labelB);
             FakeShellHost.AutoCompleteHostCall = true;
-            int rcA = DispatchBounded(a, """{"name":"click"}""");
+            int rcA = labelA is null ? 0 : DispatchBounded(a, """{"name":"click"}""");
             int rcB = DispatchBounded(b, """{"name":"click"}""");
             return (rcA, rcB, a, b, pending, previous);
         }
@@ -1712,8 +1885,17 @@ public sealed class FaultNoticeTests
             SawNoFlow = false;
             Renderer = null;
             ThrowOnRender = null;
+            HideTarget = false;
             RenderTarget.Reset();
+            LaterTarget.Reset();
+            DisposeThrower.Reset();
         }
+
+        /// <summary>18.2 (#500): when set, this probe stops rendering its <see cref="RenderTarget"/>.</summary>
+        public static bool HideTarget;
+        /// <summary>18.2 (#500): bumped on every render and passed to the target, so each
+        /// render of this probe re-renders the target too.</summary>
+        private int _generation;
 
         /// <summary>18.2 (#500): when set, this probe's next render throws it, once.</summary>
         public static string? ThrowOnRender;
@@ -1780,8 +1962,76 @@ public sealed class FaultNoticeTests
                 // ComponentBase's re-render after this handler completes does the render.
                 ThrowOnRender = "a-after-render";
             });
-            b.OpenComponent<RenderTarget>(90);
+            Button(b, 100, "a-await-then-poke", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                RenderTarget.Instance!.Poke();
+            });
+            Button(b, 110, "a-await-then-poke-second", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                RenderTarget.ThrowOnSecond = "second";
+                RenderTarget.Instance!.Poke();
+            });
+            Button(b, 120, "a-register-flowing-poke", () =>
+            {
+                // A is Done when this returns, so the poke below is a finished dispatch's.
+                _ = Gate.Task.ContinueWith(_ =>
+                {
+                    RanInsideB = s_inB;
+                    RenderTarget.ThrowOn = "a-orphan-render";
+                    RenderTarget.Instance!.Poke();
+                }, TaskContinuationOptions.ExecuteSynchronously);
+            });
+            Button(b, 130, "a-await-then-hide-grandchild", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                RenderTarget.HideGrandchild = true;
+                DisposeThrower.ThrowOnDispose = "a-dispose";
+                RenderTarget.Instance!.Poke();
+            });
+            Button(b, 140, "a-await-then-poke-and-throw", async () =>
+            {
+                await Gate.Task;
+                RanInsideB = s_inB;
+                RenderTarget.Instance!.Poke();
+                throw new InvalidOperationException("a-own");
+            });
+            Button(b, 150, "b-poke-throwing", () =>
+            {
+                RenderTarget.ThrowOn = "b-render";
+                RenderTarget.Instance!.Poke();
+                // A flow hop away from B and back, as app code completing a callback captured in
+                // another context makes. It gives an over-reaching segment rule a switch to tag on.
+                ExecutionContext.Run(s_mountContext!.CreateCopy(), _ => SawNoFlow = !FlowingScopeIsSet(), null);
+            });
+            Button(b, 160, "b-hide-target-then-complete", () =>
+            {
+                // The probe is queued before A's poke, so B's batch removes the target before it
+                // reaches the target's queued render.
+                HideTarget = true;
+                StateHasChanged();
+                CompleteGate();
+            });
+            Button(b, 170, "b-complete-then-poke-later", () =>
+            {
+                CompleteGate();
+                // Queued after the target and this probe, which A's continuation dirtied, so it
+                // renders after A's last tag is used up. Only B dirtied it.
+                LaterTarget.ThrowOn = "b-later";
+                LaterTarget.Instance!.Poke();
+            });
+            b.OpenComponent<LaterTarget>(95);
             b.CloseComponent();
+            if (!HideTarget)
+            {
+                b.OpenComponent<RenderTarget>(90);
+                b.AddComponentParameter(91, nameof(RenderTarget.Generation), _generation++);
+                b.CloseComponent();
+            }
             Button(b, 40, "b-complete", () => CompleteGate());
             Button(b, 50, "b-complete-then-throw", () =>
             {
@@ -1816,13 +2066,76 @@ public sealed class FaultNoticeTests
 
     /// <summary>18.2 (#500): a child of <see cref="InlineContinuationProbe"/> that a dispatch's
     /// continuation re-renders through <see cref="Poke"/>. Its render throws
-    /// <see cref="ThrowOn"/> once when that is set.</summary>
-    private sealed class RenderTarget : ComponentBase
+    /// <see cref="ThrowOn"/> once when that is set, and <see cref="ThrowOnSecond"/> on its second
+    /// render after a poke. It renders a <see cref="DisposeThrower"/> until
+    /// <see cref="HideGrandchild"/> is set.</summary>
+    private sealed class RenderTarget : ComponentBase, IDisposable
     {
         public static RenderTarget? Instance;
         public static string? ThrowOn;
+        public static string? ThrowOnSecond;
+        public static bool HideGrandchild;
+        /// <summary>How many times the target has rendered, and that count when it was last poked.</summary>
+        public static volatile int Renders;
+        public static volatile int RendersAtPoke;
+        public static volatile bool Disposed;
 
-        public static void Reset() { Instance = null; ThrowOn = null; }
+        [Parameter] public int Generation { get; set; }
+
+        public static void Reset()
+        {
+            Instance = null;
+            ThrowOn = null;
+            ThrowOnSecond = null;
+            HideGrandchild = false;
+            Renders = 0;
+            RendersAtPoke = 0;
+            Disposed = false;
+        }
+
+        protected override void OnInitialized() => Instance = this;
+
+        public void Poke()
+        {
+            RendersAtPoke = Renders;
+            StateHasChanged();
+        }
+
+        public void Dispose() => Disposed = true;
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            Renders++;
+            if (ThrowOn is { } armed)
+            {
+                ThrowOn = null;
+                throw new InvalidOperationException(armed);
+            }
+            if (ThrowOnSecond is { } second && Renders - RendersAtPoke == 2)
+            {
+                ThrowOnSecond = null;
+                throw new InvalidOperationException(second);
+            }
+            b.AddContent(0, "target");
+            if (!HideGrandchild)
+            {
+                b.OpenComponent<DisposeThrower>(1);
+                b.CloseComponent();
+            }
+        }
+    }
+
+    /// <summary>18.2 (#500): a second child of <see cref="InlineContinuationProbe"/>, with no
+    /// parameters, so only a <see cref="Poke"/> re-renders it. Its render throws
+    /// <see cref="ThrowOn"/> once when that is set, and records how often the target had
+    /// rendered since its poke.</summary>
+    private sealed class LaterTarget : ComponentBase
+    {
+        public static LaterTarget? Instance;
+        public static string? ThrowOn;
+        public static volatile int TargetRendersAtThrow = -1;
+
+        public static void Reset() { Instance = null; ThrowOn = null; TargetRendersAtThrow = -1; }
 
         protected override void OnInitialized() => Instance = this;
 
@@ -1833,10 +2146,33 @@ public sealed class FaultNoticeTests
             if (ThrowOn is { } armed)
             {
                 ThrowOn = null;
+                TargetRendersAtThrow = RenderTarget.Renders - RenderTarget.RendersAtPoke;
                 throw new InvalidOperationException(armed);
             }
-            b.AddContent(0, "target");
+            b.AddContent(0, "later");
         }
+    }
+
+    /// <summary>18.2 (#500): a grandchild of the probe whose Dispose throws
+    /// <see cref="ThrowOnDispose"/> when that is set.</summary>
+    private sealed class DisposeThrower : ComponentBase, IDisposable
+    {
+        public static string? ThrowOnDispose;
+        public static volatile bool DisposeRan;
+
+        public static void Reset() { ThrowOnDispose = null; DisposeRan = false; }
+
+        public void Dispose()
+        {
+            DisposeRan = true;
+            if (ThrowOnDispose is { } armed)
+            {
+                ThrowOnDispose = null;
+                throw new InvalidOperationException(armed);
+            }
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b) => b.AddContent(0, "grandchild");
     }
 
     /// <summary>16.7 (#455): handlers that fault after beginning a shell call, and controls.</summary>
