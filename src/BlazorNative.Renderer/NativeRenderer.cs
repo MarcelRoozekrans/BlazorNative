@@ -494,8 +494,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// category even when BnLog would drop them: while a render tag is outstanding, and while
     /// a tagged render is the one running. The second clause matters once the last tag is used
     /// up: without it the logger would stop reporting, the next untagged render would never
-    /// clear <see cref="_renderingFor"/>, and its fault would be charged to the tag's dispatch. With no tag
-    /// and no tagged render, Blazor's Debug calls stay as cheap as before.</summary>
+    /// clear <see cref="_renderingFor"/>, and its fault would be charged to the tag's
+    /// dispatch. With no tag and no tagged render, Blazor's Debug calls stay as cheap as
+    /// before.</summary>
     internal bool WantsRenderLog => ForceRenderLogForTests || _renderTags.Count > 0 || _renderingFor is not null;
 
     /// <summary>18.2 (#500): how many RenderingComponent events reached the renderer.</summary>
@@ -520,6 +521,8 @@ public sealed class NativeRenderer : BlazorRenderer
         // 18.2 (#500): the batch is delivered, so no component is being rendered any more.
         _renderingNow = null;
         _renderingFor = null;
+        if (_liveComponentsMayBeStale)
+            PruneLiveComponents();
 
         // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
         // the drain without disturbing the drain-first rule below. Under StrictErrors the
@@ -733,6 +736,10 @@ public sealed class NativeRenderer : BlazorRenderer
 
     protected override void HandleException(Exception exception)
     {
+        // 18.2 (#500): a fault can end a batch before UpdateDisplayAsync cleans up the
+        // components it disposed; see PruneLiveComponents.
+        _liveComponentsMayBeStale = true;
+
         // Inside a dispatch's synchronous part, remember the first exception in
         // THAT dispatch's scope so DispatchSyncPart reports it (Blazor swallows
         // dispatch exceptions here otherwise — see DispatchScope). The window wins
@@ -1889,7 +1896,10 @@ public sealed class NativeRenderer : BlazorRenderer
     // a segment opens and the components whose pending-render flag is already set are
     // snapshotted. When the flow switches away from A, every component whose flag went from
     // clear to set in between was dirtied by A, and is tagged with A. The window holds A open
-    // for each tag, so A's pending Task cannot finish before the render has run.
+    // from the moment the segment opens, before anything is tagged and whether or not A
+    // dirties anything, and releases it at its outermost close. So A's pending Task cannot
+    // finish before the render has run, even though it resumes on the thread pool and can
+    // run while the segment is still open.
     //
     // The callback runs on EVERY execution-context switch where the value differs, process
     // wide, and an exception thrown from it is Environment.FailFast. So it reads and writes
@@ -1962,8 +1972,19 @@ public sealed class NativeRenderer : BlazorRenderer
     private void LeaveSegment(DispatchScope dispatch)
     {
         if (InWindowOnRenderThread && ReferenceEquals(dispatch, _segmentFor))
+        {
+            BeforeSegmentFlushForTests?.Invoke(() => dispatch.Done);
             FlushSegment();
+        }
     }
+
+    /// <summary>18.2 (#500): test seam, null in production. Called on the render thread, from
+    /// inside the flow-change callback, just before an inline segment closes, with a probe
+    /// that reads whether the segment's dispatch is Done. A fact sets it to wait, bounded,
+    /// for the dispatch's pending Task to mark it Done first: the race the entry hold in
+    /// <see cref="EnterSegment"/> closes, made to happen every run. It must never throw,
+    /// since the callback cannot.</summary>
+    internal Action<Func<bool>>? BeforeSegmentFlushForTests { get; set; }
 
     /// <summary>The log line for a fault attributed to a handler after its first await
     /// (Phase 16.1). A constant so the tests that assert a fault was NOT attributed
@@ -2139,6 +2160,38 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <see cref="_componentTypes"/>. Another <see cref="IComponent"/> has no flag to read, so
     /// its re-render stays the window's. Render thread only.</summary>
     private readonly Dictionary<int, ComponentBase> _liveComponents = new();
+
+    /// <summary>18.2 (#500): set by <see cref="HandleException"/>, so the next batch prunes
+    /// <see cref="_liveComponents"/>. Render thread only.</summary>
+    private bool _liveComponentsMayBeStale;
+
+    /// <summary>18.2 (#500): drops every entry of <see cref="_liveComponents"/> whose component
+    /// Blazor no longer knows. <see cref="CleanupDisposedComponent"/> removes a disposed
+    /// component when its batch reaches <see cref="UpdateDisplayAsync"/>, but a fault can end a
+    /// batch first: a strict-mode rethrow out of a render leaves through ProcessRenderQueue's
+    /// catch, and a diff fault leaves UpdateDisplayAsync's try before the cleanup. Blazor has
+    /// already removed the component's state by then, so it is gone, and an entry left here
+    /// would be kept alive and walked by every later segment snapshot. Blazor has no
+    /// overridable disposal hook, so this runs at the start of the next batch after any
+    /// fault, outside the flow-change callback, since a lookup by component can call app
+    /// code. Render thread only.</summary>
+    private void PruneLiveComponents()
+    {
+        _liveComponentsMayBeStale = false;
+        List<int>? dead = null;
+        foreach ((int id, ComponentBase component) in _liveComponents)
+        {
+            if (GetComponentState(component) is null)
+                (dead ??= []).Add(id);
+        }
+        if (dead is null)
+            return;
+        foreach (int id in dead)
+            _liveComponents.Remove(id);
+    }
+
+    /// <summary>18.2 (#500): how many live ComponentBase instances the renderer tracks.</summary>
+    internal int LiveComponentCountForTests => _liveComponents.Count;
 
     /// <inheritdoc/>
     protected override Microsoft.AspNetCore.Components.Rendering.ComponentState CreateComponentState(

@@ -1290,12 +1290,32 @@ public sealed class FaultNoticeTests
         // A's handler completes inside B's window, and ComponentBase queues its after-handler
         // re-render there. B's batch renders it after A's handler Task has completed, so A's
         // completion must wait for it, or the fault could only be logged: the Done trap.
-        var run = DispatchTwo("a-await-then-arm-self", "b-complete");
+        //
+        // A's pending Task resumes on the thread pool and can run while A's segment is still
+        // open on the render thread. The seam makes that happen every run: before the segment
+        // closes, it waits, bounded, for A to be marked Done. Only the hold the window takes at
+        // segment entry keeps A from being Done there, so without it this fact reds every run,
+        // not only when the pool thread happens to win.
+        int seamCalls = 0;
+        bool doneAtFlush = false;
+        var run = DispatchTwo("a-await-then-arm-self", "b-complete", arm: renderer =>
+            renderer.BeforeSegmentFlushForTests = isDone =>
+            {
+                if (Interlocked.Increment(ref seamCalls) != 1)
+                    return;
+                SpinWait.SpinUntil(isDone, TimeSpan.FromMilliseconds(300));
+                doneAtFlush = isDone();
+            });
         try
         {
             Assert.True(InlineContinuationProbe.RanInsideB,
                 "anchor: A's continuation did not run inline inside B's synchronous part, so this proves nothing.");
+            Assert.True(Volatile.Read(ref seamCalls) == 1,
+                $"anchor: the seam ran {seamCalls} times, not once as A's inline segment closed, so the race was not forced.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
+            Assert.False(doneAtFlush,
+                "A was Done before its inline segment closed: its pending Task resumed on the thread pool and finished while "
+                + "the segment was still open, so nothing held A for its re-render. That is the Done trap.");
             Assert.True(WaitUntil(() => Notices().Count > 0, Budget)
                     && Notices().Select(n => NativeShellBridge.ParseFlatJsonObject(n.Args)).ToList() is [var single]
                     && single["handlerId"] == run.HandlerA.ToString(CultureInfo.InvariantCulture)
@@ -1322,6 +1342,90 @@ public sealed class FaultNoticeTests
             Assert.DoesNotContain(notices, n => n["message"] == "b-own");
         }
         finally { TearDown(run.Pending, run.Previous); }
+    }
+
+    [Fact]
+    public void AComponentDisposedInABatchAFaultEnded_IsDroppedFromTheLiveSet()
+    {
+        // In strict mode with no window open, a render fault rethrows out of Blazor's render
+        // queue, so the batch never reaches UpdateDisplayAsync, where disposed components are
+        // cleaned up. The component the same batch disposed must still leave the live set, or
+        // every later inline segment keeps walking it.
+        var frames = new List<RenderFrame>();
+        var pending = new List<Task>();
+        Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
+        try
+        {
+            NativeRenderer renderer = StartSession(strict: true, frames);
+            PruneHost.Reset();
+            renderer.Mount<PruneHost>();
+            int before = renderer.LiveComponentCountForTests;
+
+            Exception? thrown = Record.Exception(() => renderer.Dispatcher.InvokeAsync(() =>
+            {
+                PruneHost.Show = false;
+                PruneThrower.ThrowOnce = true;
+                PruneHost.Instance!.Refresh();
+            }).GetAwaiter().GetResult());
+            Assert.True(thrown is InvalidOperationException { Message: "prune-render" },
+                $"anchor: the batch was meant to end in the thrower's strict-mode rethrow, got {thrown?.GetType().Name ?? "no exception"}.");
+            Assert.True(PruneDying.Disposed, "anchor: Blazor did not dispose the removed child in the faulted batch.");
+
+            renderer.Dispatcher.InvokeAsync(() => PruneHost.Instance!.Refresh()).GetAwaiter().GetResult();
+
+            Assert.True(renderer.LiveComponentCountForTests == before - 1,
+                $"the live set holds {renderer.LiveComponentCountForTests} components, not {before - 1}: the child disposed in the "
+                + "faulted batch is still in it, kept alive and walked by every inline segment snapshot.");
+        }
+        finally { TearDown(pending, previous); }
+    }
+
+    private sealed class PruneHost : ComponentBase
+    {
+        public static PruneHost? Instance;
+        public static bool Show = true;
+        private int _generation;
+
+        public static void Reset() { Instance = null; Show = true; PruneThrower.ThrowOnce = false; PruneDying.Disposed = false; }
+
+        protected override void OnInitialized() => Instance = this;
+
+        public void Refresh() { _generation++; StateHasChanged(); }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (Show)
+            {
+                b.OpenComponent<PruneDying>(0);
+                b.CloseComponent();
+            }
+            b.OpenComponent<PruneThrower>(1);
+            b.AddComponentParameter(2, nameof(PruneThrower.Generation), _generation);
+            b.CloseComponent();
+        }
+    }
+
+    private sealed class PruneDying : ComponentBase, IDisposable
+    {
+        public static volatile bool Disposed;
+        public void Dispose() => Disposed = true;
+        protected override void BuildRenderTree(RenderTreeBuilder b) => b.AddContent(0, "dying");
+    }
+
+    private sealed class PruneThrower : ComponentBase
+    {
+        public static bool ThrowOnce;
+        [Parameter] public int Generation { get; set; }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            if (ThrowOnce)
+            {
+                ThrowOnce = false;
+                throw new InvalidOperationException("prune-render");
+            }
+            b.AddContent(0, Generation.ToString(CultureInfo.InvariantCulture));
+        }
     }
 
     private sealed class NoFlagType { }
@@ -1543,7 +1647,7 @@ public sealed class FaultNoticeTests
 
     /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe.</summary>
     private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchTwo(string labelA, string labelB, bool strict = false)
+        DispatchTwo(string labelA, string labelB, bool strict = false, Action<NativeRenderer>? arm = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -1556,6 +1660,7 @@ public sealed class FaultNoticeTests
             InlineContinuationProbe.FlowingScopeIsSet = () => renderer.FlowingScopeIsSetForTests;
             InlineContinuationProbe.Renderer = renderer;
             renderer.Mount<InlineContinuationProbe>();
+            arm?.Invoke(renderer);
             int a = HandlerFor(frames, "click", labelA);
             int b = HandlerFor(frames, "click", labelB);
             FakeShellHost.AutoCompleteHostCall = true;
