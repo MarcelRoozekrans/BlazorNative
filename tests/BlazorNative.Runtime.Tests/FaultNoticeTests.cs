@@ -1631,11 +1631,11 @@ public sealed class FaultNoticeTests
             {
                 b.OpenComponent<PruneDying>(0);
                 b.CloseComponent();
-                b.OpenComponent<PruneBare>(3);
+                b.OpenComponent<PruneBare>(1);
                 b.CloseComponent();
             }
-            b.OpenComponent<PruneThrower>(1);
-            b.AddComponentParameter(2, nameof(PruneThrower.Generation), _generation);
+            b.OpenComponent<PruneThrower>(2);
+            b.AddComponentParameter(3, nameof(PruneThrower.Generation), _generation);
             b.CloseComponent();
         }
     }
