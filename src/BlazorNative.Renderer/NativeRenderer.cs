@@ -772,6 +772,9 @@ public sealed class NativeRenderer : BlazorRenderer
         // no test builds the other case, because nothing found can reach it.
         if (_currentScope is { } scope)
         {
+            // The ReferenceEquals check is defence in depth: EnterSegment never opens a segment
+            // for the window itself, so no tag names it. No fact pins the check on its own;
+            // ARenderBQueuesItself_IsStillTheWindows reds only when EnterSegment's check goes too.
             if (_renderingFor is { } queuer && !ReferenceEquals(queuer, scope))
             {
                 ChargeLate(queuer, exception);
