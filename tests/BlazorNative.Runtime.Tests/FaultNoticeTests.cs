@@ -1137,6 +1137,7 @@ public sealed class FaultNoticeTests
     public void HasPendingQueuedRender_ReadsBlazorsFlag()
     {
         var frames = new List<RenderFrame>();
+        // TearDown requires both arguments; this fact dispatches nothing, so they stay empty.
         var pending = new List<Task>();
         Action<ulong, string, Task>? previous = Exports.PendingDispatchObserver;
         try
@@ -1158,6 +1159,27 @@ public sealed class FaultNoticeTests
             Assert.False(after, "the flag stayed set after the render");
         }
         finally { TearDown(pending, previous); }
+    }
+
+    [Fact]
+    public void PendingQueuedRenderFieldProblem_NamesTheFieldWhenItIsMissingOrNotBool()
+    {
+        Assert.Null(BlazorInterop.PendingQueuedRenderFieldProblem(typeof(ComponentBase)));
+        string? missing = BlazorInterop.PendingQueuedRenderFieldProblem(typeof(NoFlagType));
+        Assert.True(missing is not null && missing.Contains("_hasPendingQueuedRender"),
+            $"a type without the field was not reported by name: {missing ?? "null"}");
+        string? wrongType = BlazorInterop.PendingQueuedRenderFieldProblem(typeof(IntFlagType));
+        Assert.True(wrongType is not null && wrongType.Contains("_hasPendingQueuedRender"),
+            $"a non-bool field of that name was not reported by name: {wrongType ?? "null"}");
+    }
+
+    private sealed class NoFlagType { }
+
+    private sealed class IntFlagType
+    {
+#pragma warning disable CS0169
+        private int _hasPendingQueuedRender;
+#pragma warning restore CS0169
     }
 
     private sealed class PendingFlagHost : ComponentBase

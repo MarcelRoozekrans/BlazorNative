@@ -137,14 +137,22 @@ internal static class BlazorInterop
         // Phase 18.2 (#500): ComponentBase._hasPendingQueuedRender is set by StateHasChanged when
         // it enqueues a render and cleared as that render starts. The fault attribution reads it
         // to see which components a dispatch dirtied (RefAccessors.HasPendingQueuedRender).
-        if (typeof(ComponentBase).GetField("_hasPendingQueuedRender", BindingFlags.Instance | BindingFlags.NonPublic)?.FieldType != typeof(bool))
-            failures.Add("ComponentBase._hasPendingQueuedRender (bool) field not found; " +
-                         "Phase 18.2's queued-fault attribution reads it");
+        if (PendingQueuedRenderFieldProblem(typeof(ComponentBase)) is { } pendingFlagProblem)
+            failures.Add(pendingFlagProblem);
 
         if (failures.Count > 0)
             throw new BlazorVersionMismatchException(
                 "Blazor internal-layout drift detected:\n  - " + string.Join("\n  - ", failures));
     }
+
+    /// <summary>Phase 18.2 (#500): the failure text when <paramref name="componentBase"/> has no
+    /// instance bool field <c>_hasPendingQueuedRender</c>, else null. Takes the type so a fact can
+    /// plant one without the field; VerifyAccessors passes <c>typeof(ComponentBase)</c>.</summary>
+    internal static string? PendingQueuedRenderFieldProblem(Type componentBase)
+        => componentBase.GetField("_hasPendingQueuedRender", BindingFlags.Instance | BindingFlags.NonPublic)?.FieldType == typeof(bool)
+            ? null
+            : "ComponentBase._hasPendingQueuedRender (bool) field not found; " +
+              "Phase 18.2's queued-fault attribution reads it";
 
     public static Task DispatchEventViaAccessor(
         BlazorRenderer renderer,
