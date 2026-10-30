@@ -1089,7 +1089,8 @@ public sealed class FaultNoticeTests
                 Assert.True(run.RcB == 0, $"rc was {run.RcB}: A's code raised the fault after A finished. It is A's, and "
                     + "A can no longer report it, so it is logged and never charged to B's window.");
                 lock (run.Pending) Assert.True(run.Pending.Count == 0, "nothing may still be running");
-                Assert.Empty(Notices());
+                WaitForNoticeSends();
+                Assert.True(Notices().Count == 0, "a FaultNotice was sent for a finished dispatch's fault, which nothing can report.");
                 lock (log)
                 {
                     string line = Assert.Single(log, l => l.Contains("a-orphan", StringComparison.Ordinal));
@@ -1408,10 +1409,12 @@ public sealed class FaultNoticeTests
             try
             {
                 Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+                Assert.True(run.RcA == 0, $"anchor: A returned rc {run.RcA}; it finished cleanly, so its scope is Done.");
                 lock (run.Pending) Assert.True(run.Pending.Count == 0, "anchor: A was meant to finish in its synchronous part.");
                 Assert.True(RenderTarget.ThrowOn is null, "anchor: B's batch never rendered the target A's continuation poked.");
                 Assert.True(run.RcB == 0, $"rc was {run.RcB}: a finished dispatch's tagged re-render was charged to B's window.");
-                Assert.Empty(Notices());
+                WaitForNoticeSends();
+                Assert.True(Notices().Count == 0, "a FaultNotice was sent for a finished dispatch's tagged re-render, which nothing can report.");
                 lock (log)
                 {
                     string line = Assert.Single(log, l => l.Contains("a-orphan-render", StringComparison.Ordinal));
@@ -1429,10 +1432,18 @@ public sealed class FaultNoticeTests
     {
         // B queues the probe's render first, then completes the gate, so A's poke queues the
         // target behind it. The probe's render removes the target before its queued render runs.
+        //
+        // The subject is the release at the window's outermost close. No mutation reds this fact
+        // alone under the current design: A is held from its segment's entry, and nothing ties
+        // the hold's release to the tag, so whether the tagged component rendered cannot change
+        // when A finishes. Removing the release reds this fact together with every fact that
+        // holds A.
         var run = DispatchTwo("a-await-then-poke", "b-hide-target-then-complete");
         try
         {
             Assert.True(InlineContinuationProbe.RanInsideB, "anchor: A's continuation did not run inside B's window.");
+            Assert.True(InlineContinuationProbe.TargetTaggedAtHide == true,
+                "anchor: when the probe's render removed the target, A held no tag on it, so no tag was outstanding to release.");
             Assert.True(RenderTarget.Disposed, "anchor: B's batch did not dispose the target A poked.");
             Assert.True(RenderTarget.Renders == RenderTarget.RendersAtPoke,
                 "anchor: the target rendered after A's poke, so its tag was used up before it was disposed.");
@@ -1508,6 +1519,12 @@ public sealed class FaultNoticeTests
                 Assert.True(LaterTarget.TargetRendersAtThrow == 1,
                     $"anchor: the target had rendered {LaterTarget.TargetRendersAtThrow} times since A's poke when "
                     + "LaterTarget threw, not once, so A's tag was not used up first.");
+                Assert.True(LaterTarget.ProbeRendersAtThrow == 1,
+                    $"anchor: the probe had rendered {LaterTarget.ProbeRendersAtThrow} times since A's poke when LaterTarget "
+                    + "threw, not once, so the probe's tag, A's last, was not used up first.");
+                Assert.True(LaterTarget.TagsAtThrow == 0,
+                    $"anchor: {LaterTarget.TagsAtThrow} tags were still outstanding when LaterTarget threw, so its render did "
+                    + "not come after A's last tag.");
                 Assert.True(run.RcB == 2,
                     $"rc was {run.RcB}: a render after A's last tag was charged to A: a stale _renderingFor outlived its render.");
                 Assert.True(WaitUntil(() => { lock (run.Pending) return run.Pending.All(t => t.IsCompleted); }, Budget),
@@ -1964,11 +1981,18 @@ public sealed class FaultNoticeTests
             Renderer = null;
             ThrowOnRender = null;
             HideTarget = false;
+            Renders = 0;
+            TargetTaggedAtHide = null;
             RenderTarget.Reset();
             LaterTarget.Reset();
             DisposeThrower.Reset();
         }
 
+        /// <summary>18.2 (#500): how many times this probe has rendered.</summary>
+        public static volatile int Renders;
+        /// <summary>18.2 (#500): whether A held a render tag on the target when this probe first
+        /// rendered with <see cref="HideTarget"/> set, or null before that render.</summary>
+        public static bool? TargetTaggedAtHide;
         /// <summary>18.2 (#500): when set, this probe stops rendering its <see cref="RenderTarget"/>.</summary>
         public static bool HideTarget;
         /// <summary>18.2 (#500): bumped on every render and passed to the target, so each
@@ -1982,6 +2006,12 @@ public sealed class FaultNoticeTests
 
         protected override void BuildRenderTree(RenderTreeBuilder b)
         {
+            Renders++;
+            if (HideTarget && TargetTaggedAtHide is null && Renderer is { } renderer)
+            {
+                int[] target = renderer.ComponentIdsOfTypeForTests(typeof(RenderTarget));
+                TargetTaggedAtHide = target.Length == 1 && renderer.HasRenderTagForTests(target[0]);
+            }
             if (ThrowOnRender is { } armed)
             {
                 ThrowOnRender = null;
@@ -2156,6 +2186,8 @@ public sealed class FaultNoticeTests
         /// <summary>How many times the target has rendered, and that count when it was last poked.</summary>
         public static volatile int Renders;
         public static volatile int RendersAtPoke;
+        /// <summary>How many times the probe had rendered when the target was last poked.</summary>
+        public static volatile int ProbeRendersAtPoke;
         public static volatile bool Disposed;
 
         [Parameter] public int Generation { get; set; }
@@ -2168,6 +2200,7 @@ public sealed class FaultNoticeTests
             HideGrandchild = false;
             Renders = 0;
             RendersAtPoke = 0;
+            ProbeRendersAtPoke = 0;
             Disposed = false;
         }
 
@@ -2176,6 +2209,7 @@ public sealed class FaultNoticeTests
         public void Poke()
         {
             RendersAtPoke = Renders;
+            ProbeRendersAtPoke = InlineContinuationProbe.Renders;
             StateHasChanged();
         }
 
@@ -2212,8 +2246,17 @@ public sealed class FaultNoticeTests
         public static LaterTarget? Instance;
         public static string? ThrowOn;
         public static volatile int TargetRendersAtThrow = -1;
+        public static volatile int ProbeRendersAtThrow = -1;
+        public static volatile int TagsAtThrow = -1;
 
-        public static void Reset() { Instance = null; ThrowOn = null; TargetRendersAtThrow = -1; }
+        public static void Reset()
+        {
+            Instance = null;
+            ThrowOn = null;
+            TargetRendersAtThrow = -1;
+            ProbeRendersAtThrow = -1;
+            TagsAtThrow = -1;
+        }
 
         protected override void OnInitialized() => Instance = this;
 
@@ -2225,6 +2268,8 @@ public sealed class FaultNoticeTests
             {
                 ThrowOn = null;
                 TargetRendersAtThrow = RenderTarget.Renders - RenderTarget.RendersAtPoke;
+                ProbeRendersAtThrow = InlineContinuationProbe.Renders - RenderTarget.ProbeRendersAtPoke;
+                TagsAtThrow = InlineContinuationProbe.Renderer?.RenderTagCountForTests ?? -1;
                 throw new InvalidOperationException(armed);
             }
             b.AddContent(0, "later");

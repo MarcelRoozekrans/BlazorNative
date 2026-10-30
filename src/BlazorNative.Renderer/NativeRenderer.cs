@@ -1932,6 +1932,13 @@ public sealed class NativeRenderer : BlazorRenderer
     /// Cleared at the outermost window close. Render thread only.</summary>
     private readonly Dictionary<int, DispatchScope> _renderTags = new();
 
+    /// <summary>18.2 (#500): whether a render tag is outstanding for this component id. Render
+    /// thread only.</summary>
+    internal bool HasRenderTagForTests(int componentId) => _renderTags.ContainsKey(componentId);
+
+    /// <summary>18.2 (#500): how many render tags are outstanding. Render thread only.</summary>
+    internal int RenderTagCountForTests => _renderTags.Count;
+
     /// <summary>18.2 (#500): set while a segment body runs, so a nested callback leaves the
     /// snapshot alone. Render thread only.</summary>
     private bool _inSegment;
