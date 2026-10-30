@@ -73,10 +73,10 @@ public sealed class FaultNoticeTests
     private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
         // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it:
-        // the send after a begun shell call, and since 18.2 the send for a pending Task that
-        // faulted, which the tap learns of before its host call begins. Installed before the
-        // reset and never removed, so a send from an earlier fact that is still in flight is
-        // recorded too, wherever it lands.
+        // the send after a begun shell call, and since 18.2 the send for a pending Task, whose
+        // tap Task the export hands on before it returns. Installed before the reset and never
+        // removed, so a send from an earlier fact that is still in flight is recorded too,
+        // wherever it lands.
         Exports.LateFaultNoticeObserver = (_, _, send) => { lock (s_noticeSends) s_noticeSends.Add(send); };
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
@@ -90,8 +90,10 @@ public sealed class FaultNoticeTests
     /// <summary>Tears a fact down. <paramref name="release"/> frees whatever the fact holds
     /// open, such as a gate a handler waits on, so a dispatch that overran its budget can
     /// finish. When the last <see cref="DispatchBounded"/> overran, this first waits for that
-    /// dispatch to return. Then it waits for every late FaultNotice send to complete, so each
-    /// notice lands in this fact and not in the next one (18.1, #564).</summary>
+    /// dispatch to return. Then it answers every open host call, waits for the fact's pending
+    /// Tasks, and only then waits for every late FaultNotice send to complete, so a Task that
+    /// faults once its call is answered still sends into this fact and not the next one (18.1,
+    /// #564; 18.2). The notices those sends begin are answered last.</summary>
     private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
@@ -102,7 +104,6 @@ public sealed class FaultNoticeTests
             // Once it has returned, the dispatch has handed its notice send to the tap.
             overrun.Join(Budget);
         }
-        WaitForNoticeSends();
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
         // that already completed answers rc 1, which is benign here.
@@ -111,6 +112,11 @@ public sealed class FaultNoticeTests
         Task[] snapshot;
         lock (pending) snapshot = pending.ToArray();
         Task.WaitAll(snapshot.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        // After the pending Tasks: one that faulted only once its call was answered above sends
+        // its notice now, and the send must land in this fact. Then answer what it began.
+        WaitForNoticeSends();
+        foreach (var call in FakeShellHost.HostCalls())
+            NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Exports.PendingDispatchObserver = previousObserver;
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
