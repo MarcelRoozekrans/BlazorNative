@@ -3971,13 +3971,21 @@ the app's handler through a forwarding hook.
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md) · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
 
-#### Phase 18.1: CI flakes at their cause (#551, #564, #453, #444, #407) [status: active]
+#### Phase 18.1: CI flakes at their cause (#551, #564, #453, #444, #407) [status: complete]
 **Goal:** Find and fix the cause of each Windows .NET flake and each device flake, so every later M18 PR gets clean CI. No fix raises a bound to hide a slow path.
 **Surface:** Mixed
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-24-phase-18.1-design.md`](../superpowers/specs/2026-10-24-phase-18.1-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-24-phase-18.1-flakes.md`](../superpowers/plans/2026-10-24-phase-18.1-flakes.md)
 **Record:** [`docs/plans/2026-10-24-phase-18.1-record.md`](../plans/2026-10-24-phase-18.1-record.md)
+**Completed:** 2026-10-30 · [PR #584](https://github.com/MarcelRoozekrans/BlazorNative/pull/584).
+- **#564:** `BnLog` writes through a non-blocking sink, and its exit drains are pinned.
+- **#551:** process waits stay off the test thread pool.
+- **#453:** the iOS shell warms `LAContext` at boot.
+- **#407:** the camera test names a recreation, and the emulator settles before the suite runs.
+- **#444:** open by owner decision. The instrumentation caught a hit on 2026-10-28: the simulator's SpringBoard delayed `willPresent` by 11 s.
+- **Filed:** #574 with upstream coverlet#2058, #575, #580 and #582.
+- **Baselines:** .NET 1387, Android 249.
 
 #### Phase 18.2: Fault attribution for queued work (#500) [status: pending]
 **Goal:** A fault in a re-render or a `RunAfterDispatch` action is charged to the dispatch that queued it, by owner decision of 2026-10-24.
