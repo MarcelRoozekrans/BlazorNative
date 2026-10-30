@@ -72,9 +72,11 @@ public sealed class FaultNoticeTests
 
     private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
-        // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it.
-        // Installed before the reset and never removed, so a send from an earlier fact that
-        // is still in flight is recorded too, wherever it lands.
+        // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it:
+        // the send after a begun shell call, and since 18.2 the send for a pending Task that
+        // faulted, which the tap learns of before its host call begins. Installed before the
+        // reset and never removed, so a send from an earlier fact that is still in flight is
+        // recorded too, wherever it lands.
         Exports.LateFaultNoticeObserver = (_, _, send) => { lock (s_noticeSends) s_noticeSends.Add(send); };
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
@@ -175,8 +177,9 @@ public sealed class FaultNoticeTests
     private static Thread? s_overrunDispatch;
 
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
-    private static int DispatchBounded(int handlerId, string argsJson)
+    private static int DispatchBounded(int handlerId, string argsJson, TimeSpan? budget = null)
     {
+        TimeSpan bound = budget ?? ExportBudget;
         int rc = -1;
         // Not disposed on an overrun: the worker still sets it when the dispatch returns.
         var returned = new ManualResetEventSlim(false);
@@ -188,12 +191,12 @@ public sealed class FaultNoticeTests
         })
         { IsBackground = true, Name = "fault-notice-probe" };
         worker.Start();
-        if (!returned.Wait(ExportBudget))
+        if (!returned.Wait(bound))
             s_overrunDispatch = worker;
         else
             returned.Dispose();
         Assert.True(s_overrunDispatch != worker,
-            $"dispatch_event for handler {handlerId} did not return within {ExportBudget.TotalSeconds:0}s");
+            $"dispatch_event for handler {handlerId} did not return within {bound.TotalSeconds:0}s");
         return rc;
     }
 
@@ -1358,8 +1361,9 @@ public sealed class FaultNoticeTests
         // closes, it waits until A's pending Task has reached its settle, either waiting on a
         // hold or Done. Only the hold the window takes at segment entry keeps A from being Done
         // there, so without it this fact reds every run, whatever the pool's timing. The wait
-        // runs inside B's dispatch, so its budget stays under the export's 1 s bound: a pending
-        // Task that never gets there must red the settle anchor, not B's dispatch timeout.
+        // runs inside B's dispatch, so B is given the fact Budget, not the export's 1 s, and the
+        // wait's own 5 s stays under it: a pending Task that never gets there reds the settle
+        // anchor, not B's dispatch timeout.
         int seamCalls = 0;
         bool doneAtFlush = false;
         bool settleReached = false;
@@ -1368,9 +1372,9 @@ public sealed class FaultNoticeTests
             {
                 if (Interlocked.Increment(ref seamCalls) != 1)
                     return;
-                settleReached = SpinWait.SpinUntil(reachedSettle, TimeSpan.FromMilliseconds(700));
+                settleReached = SpinWait.SpinUntil(reachedSettle, TimeSpan.FromSeconds(5));
                 doneAtFlush = isDone();
-            });
+            }, budgetB: Budget);
         try
         {
             Assert.True(InlineContinuationProbe.RanInsideB,
@@ -1378,7 +1382,7 @@ public sealed class FaultNoticeTests
             Assert.True(Volatile.Read(ref seamCalls) == 1,
                 $"anchor: the seam ran {seamCalls} times, not once as A's inline segment closed, so the race was not forced.");
             Assert.True(settleReached,
-                "anchor: A's pending Task never reached its settle within 700 ms while the segment was open, so the race was not forced.");
+                "anchor: A's pending Task never reached its settle within 5 s while the segment was open, so the race was not forced.");
             Assert.True(run.RcB == 0, $"rc was {run.RcB}: the re-render A's continuation queued was charged to B's window, which is #500.");
             Assert.False(doneAtFlush,
                 "A was Done before its inline segment closed: its pending Task resumed on the thread pool and finished while "
@@ -2022,7 +2026,8 @@ public sealed class FaultNoticeTests
     /// <summary>17.1 (#464): two dispatches, A then B, against one InlineContinuationProbe. A null
     /// <paramref name="labelA"/> dispatches B alone, and A's rc and handler id are then 0.</summary>
     private static (int RcA, int RcB, int HandlerA, int HandlerB, List<Task> Pending, Action<ulong, string, Task>? Previous)
-        DispatchTwo(string? labelA, string labelB, bool strict = false, Action<NativeRenderer>? arm = null)
+        DispatchTwo(string? labelA, string labelB, bool strict = false, Action<NativeRenderer>? arm = null,
+            TimeSpan? budgetB = null)
     {
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
@@ -2040,7 +2045,7 @@ public sealed class FaultNoticeTests
             int b = HandlerFor(frames, "click", labelB);
             FakeShellHost.AutoCompleteHostCall = true;
             int rcA = labelA is null ? 0 : DispatchBounded(a, """{"name":"click"}""");
-            int rcB = DispatchBounded(b, """{"name":"click"}""");
+            int rcB = DispatchBounded(b, """{"name":"click"}""", budgetB);
             return (rcA, rcB, a, b, pending, previous);
         }
         catch

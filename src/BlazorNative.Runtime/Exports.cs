@@ -467,11 +467,13 @@ public static class Exports
     /// directly by the export whether or not this is set.</summary>
     internal static Action<ulong, string, Task>? PendingDispatchObserver;
 
-    /// <summary>TEST TAP: also receives the Task that sends the FaultNotice for a dispatch
-    /// that faulted after beginning a shell call, with the handler id and the event name
-    /// (Phase 18.1, #564). The send runs on the pool after the export returns, so a test that
-    /// must not let it outlive its fact waits for this Task. Null in production, and delivery
-    /// never depends on it.</summary>
+    /// <summary>TEST TAP: also receives a Task for every late FaultNotice send, with the handler
+    /// id and the event name: the send for a dispatch that faulted after beginning a shell call
+    /// (Phase 18.1, #564), and the send <see cref="DeliverLateFault"/> makes once a still-running
+    /// Task faults (18.2, #500). The Task is handed on before the first host call begins and
+    /// completes after the last one, so a test that waits for it sees every notice the send
+    /// makes, and none outlives its fact. Each send runs on the pool after the export returns.
+    /// Null in production, and delivery never depends on it.</summary>
     internal static Action<ulong, string, Task>? LateFaultNoticeObserver;
 
     /// <summary>
@@ -656,9 +658,16 @@ public static class Exports
             static (t, state) =>
             {
                 var (id, evt, label) = ((ulong, string, string))state!;
-                Exception fault = t.Exception!.InnerException ?? t.Exception;
-                BnLog.Error("Exports", $"{label} faulted after its first await", fault);
-                NativeShellBridge.SendFaultNotice(id, evt, fault);
+                // 18.2 (#500): the test tap learns of the send before its host call begins.
+                var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                LateFaultNoticeObserver?.Invoke(id, evt, sent.Task);
+                try
+                {
+                    Exception fault = t.Exception!.InnerException ?? t.Exception;
+                    BnLog.Error("Exports", $"{label} faulted after its first await", fault);
+                    NativeShellBridge.SendFaultNotice(id, evt, fault);
+                }
+                finally { sent.TrySetResult(); }
             },
             (handlerId, eventName, what),
             CancellationToken.None,
