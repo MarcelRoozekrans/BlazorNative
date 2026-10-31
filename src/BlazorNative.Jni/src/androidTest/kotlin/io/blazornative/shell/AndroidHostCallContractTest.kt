@@ -424,6 +424,8 @@ class AndroidHostCallContractTest {
         val gateB = awaitGate("second auth set, drained when the first was denied,")
         onMain { gateA.deny(SecureStorageStatus.AUTH_FAILED) }
         bridge.drainForTest()
+        assertEquals("A's late answer completed it a second time", 1,
+            synchronized(completions) { completions.count { it.requestId == a } })
         assertNull("anchor: A's second answer released B's hold", completionNow(c))
 
         onMain { gateB.deny(SecureStorageStatus.AUTH_FAILED) }
@@ -608,6 +610,49 @@ class AndroidHostCallContractTest {
                     assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
                 } finally {
                     stopped.drainForTest()
+                }
+            }
+        } finally {
+            SecureHarness.clearPin()
+        }
+    }
+
+    @Test
+    fun a_prompt_that_cannot_be_shown_is_denied() {
+        // The REAL gate path, no hook, on a RESUMED Activity: the gate passes its Activity-state
+        // check, and building or showing the prompt throws on main. That runs after the caller
+        // returned, so only the main-thread catch can answer: a prompt that cannot be shown is a
+        // denial. Without it the auth set would never complete, its key would stay held, and the
+        // delete behind it would hang. promptThrowForTest throws where the real prompt is built.
+        SecureHarness.setPin()
+        try {
+            AndroidShellBridge.setAuthAllowsDeviceCredentialForTest = true
+            AndroidShellBridge.promptThrowForTest = { throw IllegalStateException("prompt-throw") }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.awaitBooted()
+                // Held strongly, so the bridge's WeakReference still yields the Activity.
+                val activity = AtomicReference<MainActivity>()
+                val onIt = AtomicReference<AndroidShellBridge>()
+                scenario.onActivity { a ->
+                    activity.set(a)
+                    onIt.set(AndroidShellBridge(a) { _, _ -> })
+                }
+                assertEquals("anchor: the Activity is not resumed, which is another pin's case",
+                    Lifecycle.State.RESUMED, scenario.state)
+
+                val resumed = onIt.get()
+                try {
+                    val set = ids.getAndIncrement()
+                    resumed.hostCallBegin(set, HostCallOp.SECURE_STORAGE, authSet("v1"))
+                    val del = ids.getAndIncrement()
+                    resumed.hostCallBegin(del, HostCallOp.SECURE_STORAGE, deleteArgs)
+                    assertEquals("the auth set whose prompt could not be shown must complete AuthFailed",
+                        SecureStorageStatus.AUTH_FAILED, mustComplete("auth set whose prompt could not be shown", set).status)
+                    assertEquals("the delete parked behind it must complete Ok",
+                        SecureStorageStatus.OK, mustComplete("delete parked behind the prompt that could not be shown", del).status)
+                    assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
+                } finally {
+                    resumed.drainForTest()
                 }
             }
         } finally {
