@@ -2,7 +2,7 @@
 
 **Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: pending]`, in design. Its design is drafted and awaits owner approval. 18.2 is complete and merged.
+**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: active]`. The owner approved its design on 2026-10-31, and its plan is written. 18.2 is complete and merged.
 **Branch:** `feat/18.3-secure-storage-per-key`, from `main` at `d246778f`.
 
 ## Current Position
@@ -45,7 +45,7 @@
 ## Recommended Next Step
 
 1. ~~Merge #596.~~ **Done:** squash-merged as `d246778f`, now in release PR #597.
-2. **18.3, #506:** get the owner's approval of `docs/superpowers/specs/2026-10-31-phase-18.3-design.md`. Then write the plan and execute it subagent-driven. The plan's first task measures whether an Android `BiometricPrompt` answers when its Activity is destroyed or recreated.
+2. **18.3, #506:** execute `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md` subagent-driven. The design is approved. The plan's first task measures whether an Android `BiometricPrompt` answers when its Activity is destroyed or recreated.
 3. Lessons from 18.2 still apply:
    - Have every implementer tick its plan checkboxes.
    - Grep for hard-coded test counts early.
