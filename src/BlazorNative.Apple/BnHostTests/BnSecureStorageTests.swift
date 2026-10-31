@@ -233,6 +233,7 @@ final class BnSecureStorageTests: BnHostTestCase {
                       "another request's completion released the waiting prompt's context")
 
         gate?.authenticate()
+        bridge.secureStorage.drainForTest() // 18.3 (#506): the answer hops onto the handler's queue
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the gated read completes")
         XCTAssertFalse(bridge.secureStorage.isRetainingContextForTest(48), "the context is released on its own completion")
     }
@@ -358,6 +359,284 @@ final class BnSecureStorageTests: BnHostTestCase {
                        "hostCallBegin did not return while LAContext creation was blocked: the begin contract is broken",
                        file: file, line: line)
         XCTAssertNil(captured1(), "no outcome before the context exists", file: file, line: line)
+    }
+
+    // ── 18.3 (#506): a getWithAuth whose gate is up holds its key ──────────────────────
+    //
+    // WHAT IT PINS. Requests on one key take effect in begin order. A getWithAuth of an
+    // auth-bound item holds its key from the gate until its answer has run on `workQueue`;
+    // a later request on that key parks and runs when the gate answers, granted or denied.
+    // Requests on other keys keep flowing. The gate's answer hops onto `workQueue`, so the
+    // read, the denial and the hold bookkeeping all run there. `holdEveryGate` keeps every
+    // gate it is handed, in order, and answers none, so a gate stays up until the test
+    // answers it from a background thread, as LocalAuthentication answers on its own reply
+    // queue. "Completes before" is the position in `captured`, which the completion hook
+    // appends to in completion order. "Has no completion" is read after `drainForTest`,
+    // never after a sleep.
+    //
+    // WHAT IT DOES NOT COVER. The real Face ID sheet and its reply queue; the seam stands in
+    // for both. An auth-bound set holds nothing on iOS, because it does not prompt; the last
+    // but one pin says so. There is no lost-answer path to pin here: LAContext's reply
+    // always fires and its context is retained in `inFlightContexts` until the request
+    // completes (spec section 5).
+
+    private let gatesLock = NSLock()
+    private var gates: [BnSecureAuthGate] = []
+
+    private func holdEveryGate() {
+        BnSecureStorage.authGateHookForTest = { [weak self] gate in
+            guard let self = self else { return }
+            self.gatesLock.lock(); self.gates.append(gate); self.gatesLock.unlock()
+        }
+    }
+
+    /// The oldest gate not yet taken, or a failure naming `what` when none is up.
+    private func takeGate(_ what: String, file: StaticString = #filePath, line: UInt = #line) -> BnSecureAuthGate? {
+        gatesLock.lock(); defer { gatesLock.unlock() }
+        guard !gates.isEmpty else {
+            XCTFail("anchor: the \(what) never reached its gate", file: file, line: line)
+            return nil
+        }
+        return gates.removeFirst()
+    }
+
+    private func beginSecure(_ bridge: AppleShellBridge, _ id: Int64, _ args: String) {
+        _ = bridge.hostCallBegin(id, BnHostCallOp.secureStorage, args)
+    }
+
+    private func getWithAuthArgs(_ key: String) -> String {
+        "{\"action\":\"getWithAuth\",\"key\":\"\(key)\",\"reason\":\"Unlock\"}"
+    }
+
+    private func deleteArgs(_ key: String) -> String { "{\"action\":\"delete\",\"key\":\"\(key)\"}" }
+
+    /// `id`'s first completion as it stands now.
+    private func completion(_ id: Int64) -> (status: Int32, payload: String?)? {
+        capturedLock.lock(); defer { capturedLock.unlock() }
+        return captured.first { $0.id == id }.map { (status: $0.status, payload: $0.payload) }
+    }
+
+    /// The position of `id`'s first completion in completion order, or -1.
+    private func indexOf(_ id: Int64) -> Int {
+        capturedLock.lock(); defer { capturedLock.unlock() }
+        return captured.firstIndex { $0.id == id } ?? -1
+    }
+
+    /// Answers a gate from a background thread, as LocalAuthentication answers on its own
+    /// reply queue, waits for that thread to return, then drains `workQueue`.
+    private func answerOffQueue(_ bridge: AppleShellBridge, _ answer: @escaping () -> Void,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async { answer(); done.signal() }
+        XCTAssertEqual(done.wait(timeout: .now() + 10), .success, "the gate's answer did not return", file: file, line: line)
+        bridge.secureStorage.drainForTest()
+    }
+
+    func testASameKeyDeleteWaitsBehindAPendingGetWithAuth() {
+        let bridge = AppleShellBridge()
+        holdEveryGate()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 60, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gate = takeGate("getWithAuth") else { return }
+        beginSecure(bridge, 61, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertNil(completion(61), "anchor: the delete completed while the getWithAuth's gate was up: #506")
+
+        answerOffQueue(bridge) { gate.authenticate() }
+        XCTAssertEqual(completion(60)?.status, BnSecureStorageStatus.ok, "the gated read must complete Ok")
+        XCTAssertEqual(completion(60)?.payload, "{\"value\":\"hunter2\"}", "the gated read must return the value")
+        XCTAssertEqual(completion(61)?.status, BnSecureStorageStatus.ok, "the parked delete must complete Ok")
+        XCTAssertTrue(indexOf(60) >= 0 && indexOf(60) < indexOf(61),
+                      "the delete overtook the getWithAuth's read: read=\(indexOf(60)) delete=\(indexOf(61))")
+    }
+
+    func testASecondGetWithAuthTakesTheHoldWhenItDrains() {
+        let bridge = AppleShellBridge()
+        holdEveryGate()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 62, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gateA = takeGate("first getWithAuth") else { return }
+        beginSecure(bridge, 63, getWithAuthArgs(authKey))
+        beginSecure(bridge, 64, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+
+        answerOffQueue(bridge) { gateA.authenticate() }
+        guard let gateB = takeGate("second getWithAuth, drained when the first answered,") else { return }
+        bridge.secureStorage.drainForTest()
+        XCTAssertNil(completion(64), "anchor: the delete ran while the second getWithAuth's gate was up")
+
+        // A second answer for the first request must not end the hold the second one now owns.
+        answerOffQueue(bridge) { gateA.authenticate() }
+        XCTAssertNil(completion(64), "A's second answer released the second request's hold")
+        XCTAssertTrue(bridge.secureStorage.isKeyHeldForTest(authKey), "A's second answer released the second request's hold")
+
+        answerOffQueue(bridge) { gateB.authenticate() }
+        XCTAssertEqual(completion(62)?.status, BnSecureStorageStatus.ok, "the first gated read must complete Ok")
+        XCTAssertEqual(completion(63)?.status, BnSecureStorageStatus.ok, "the second gated read must complete Ok")
+        XCTAssertEqual(completion(64)?.status, BnSecureStorageStatus.ok, "the parked delete must complete Ok")
+        XCTAssertTrue(indexOf(62) < indexOf(64) && indexOf(63) < indexOf(64) && indexOf(62) >= 0 && indexOf(63) >= 0,
+                      "the delete did not complete last: first=\(indexOf(62)) second=\(indexOf(63)) delete=\(indexOf(64))")
+    }
+
+    func testAnInlineAnswerReleasesItsKey() {
+        // The seam answers inside the hook, on workQueue, so the answer runs inline in the
+        // same queue task that took the hold. Phase 1: from a free key. Phase 2: from inside
+        // releaseHold's drain, where the drained getWithAuth takes the hold and its inline
+        // answer releases it before the drain loop resumes.
+        let bridge = AppleShellBridge()
+        let modeLock = NSLock()
+        var holdNextGate = false
+        BnSecureStorage.authGateHookForTest = { [weak self] gate in
+            modeLock.lock(); let hold = holdNextGate; holdNextGate = false; modeLock.unlock()
+            if hold {
+                guard let self = self else { return }
+                self.gatesLock.lock(); self.gates.append(gate); self.gatesLock.unlock()
+            } else {
+                gate.authenticate()
+            }
+        }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 74, getWithAuthArgs(authKey))
+        beginSecure(bridge, 75, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(completion(74)?.status, BnSecureStorageStatus.ok, "the inline-answered read must complete Ok")
+        XCTAssertEqual(completion(74)?.payload, "{\"value\":\"hunter2\"}", "the inline-answered read must return the value")
+        XCTAssertEqual(completion(75)?.status, BnSecureStorageStatus.ok,
+                       "the delete after an inline-answered read must complete Ok")
+        XCTAssertTrue(indexOf(74) >= 0 && indexOf(74) < indexOf(75),
+                      "the delete overtook the inline-answered read: read=\(indexOf(74)) delete=\(indexOf(75))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey), "an inline answer left its key held")
+
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter3", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        modeLock.lock(); holdNextGate = true; modeLock.unlock()
+        beginSecure(bridge, 76, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gate = takeGate("held getWithAuth") else { return }
+        beginSecure(bridge, 77, getWithAuthArgs(authKey))
+        beginSecure(bridge, 78, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertNil(completion(77), "the parked getWithAuth ran while the first gate was up")
+
+        answerOffQueue(bridge) { gate.authenticate() }
+        XCTAssertEqual(completion(76)?.status, BnSecureStorageStatus.ok, "the held read must complete Ok")
+        XCTAssertEqual(completion(77)?.status, BnSecureStorageStatus.ok,
+                       "the drained, inline-answered read must complete Ok")
+        XCTAssertEqual(completion(78)?.status, BnSecureStorageStatus.ok,
+                       "the delete behind a drained inline-answered read must complete Ok")
+        XCTAssertTrue(indexOf(76) >= 0 && indexOf(76) < indexOf(77) && indexOf(77) < indexOf(78),
+                      "the drain lost begin order: held=\(indexOf(76)) drained=\(indexOf(77)) delete=\(indexOf(78))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey),
+                       "an inline answer inside the drain left its key held")
+    }
+
+    func testAnotherKeyIsNotBlockedByAPendingGetWithAuth() {
+        let bridge = AppleShellBridge()
+        holdEveryGate()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 65, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gate = takeGate("getWithAuth") else { return }
+        beginSecure(bridge, 66, "{\"action\":\"set\",\"key\":\"\(plainKey)\",\"value\":\"o1\",\"auth\":\"0\"}")
+        beginSecure(bridge, 67, "{\"action\":\"get\",\"key\":\"\(plainKey)\"}")
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(completion(66)?.status, BnSecureStorageStatus.ok,
+                       "a plain set on another key waited behind the auth key's gate")
+        XCTAssertEqual(completion(67)?.status, BnSecureStorageStatus.ok,
+                       "a get on another key waited behind the auth key's gate")
+        XCTAssertEqual(completion(67)?.payload, "{\"value\":\"o1\"}", "the get on another key returned the wrong value")
+        XCTAssertNil(completion(65), "anchor: the auth key's gate is still up")
+        XCTAssertTrue(bridge.secureStorage.isKeyHeldForTest(authKey), "anchor: the auth key's gate is still up")
+
+        answerOffQueue(bridge) { gate.deny() }
+        XCTAssertEqual(completion(65)?.status, BnSecureStorageStatus.authFailed, "the denied read must complete AuthFailed")
+    }
+
+    func testADeniedGateReleasesItsKey() {
+        let bridge = AppleShellBridge()
+        holdEveryGate()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 68, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gate = takeGate("getWithAuth") else { return }
+        beginSecure(bridge, 69, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertNil(completion(69), "anchor: the delete completed while the getWithAuth's gate was up: #506")
+
+        answerOffQueue(bridge) { gate.deny() }
+        XCTAssertEqual(completion(68)?.status, BnSecureStorageStatus.authFailed, "the denied read must complete AuthFailed")
+        XCTAssertEqual(completion(69)?.status, BnSecureStorageStatus.ok, "the delete parked behind the denied gate must complete Ok")
+        XCTAssertTrue(indexOf(68) >= 0 && indexOf(68) < indexOf(69),
+                      "the delete overtook the denied read: read=\(indexOf(68)) delete=\(indexOf(69))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey), "the denied gate left its key held")
+    }
+
+    func testAnAuthBoundSetDoesNotHoldItsKey() {
+        // No gate hook: an auth-bound set does not prompt on iOS, so it never reaches a gate
+        // and must not hold its key. The get that follows it is a plain get of an auth item,
+        // refused as AuthFailed: the contract, not a hold.
+        let bridge = AppleShellBridge()
+        installCapture()
+        beginSecure(bridge, 70, "{\"action\":\"set\",\"key\":\"\(authKey)\",\"value\":\"hunter2\",\"auth\":\"1\"}")
+        beginSecure(bridge, 71, "{\"action\":\"get\",\"key\":\"\(authKey)\"}")
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(completion(70)?.status, BnSecureStorageStatus.ok, "the auth-bound set must complete Ok")
+        XCTAssertEqual(completion(71)?.status, BnSecureStorageStatus.authFailed,
+                       "the get after an auth-bound set must complete, refused as AuthFailed")
+        XCTAssertTrue(indexOf(70) >= 0 && indexOf(70) < indexOf(71),
+                      "the get overtook the auth-bound set: set=\(indexOf(70)) get=\(indexOf(71))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey),
+                       "an auth-bound set held its key: on iOS it does not prompt, the iOS asymmetry, so it holds nothing")
+    }
+
+    func testTheGatesAnswerRunsOnTheWorkQueue() {
+        let bridge = AppleShellBridge()
+        holdEveryGate()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        let queueKey = bridge.secureStorage.workQueueSpecificKeyForTest()
+        let ranOnQueueLock = NSLock()
+        var ranOnQueue: [Int64: Bool] = [:]
+        BnSecureStorage.completeHookForTest = { [weak self] id, status, payload in
+            let onQueue = DispatchQueue.getSpecific(key: queueKey) == true
+            ranOnQueueLock.lock(); ranOnQueue[id] = onQueue; ranOnQueueLock.unlock()
+            guard let self = self else { return 0 }
+            self.capturedLock.lock(); self.captured.append((id, status, payload)); self.capturedLock.unlock()
+            return 0
+        }
+
+        beginSecure(bridge, 72, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let granted = takeGate("granted getWithAuth") else { return }
+        answerOffQueue(bridge) { granted.authenticate() }
+        XCTAssertEqual(completion(72)?.status, BnSecureStorageStatus.ok, "the granted read must complete Ok")
+
+        beginSecure(bridge, 73, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let denied = takeGate("denied getWithAuth") else { return }
+        answerOffQueue(bridge) { denied.deny() }
+        XCTAssertEqual(completion(73)?.status, BnSecureStorageStatus.authFailed, "the denied read must complete AuthFailed")
+
+        ranOnQueueLock.lock(); let granted72 = ranOnQueue[72], denied73 = ranOnQueue[73]; ranOnQueueLock.unlock()
+        XCTAssertEqual(granted72, true, "the answer ran off workQueue")
+        XCTAssertEqual(denied73, true, "the denial ran off workQueue")
     }
 
     // ── BOOT: the pairing round-trips through the REAL host_call_complete (/secure) ─

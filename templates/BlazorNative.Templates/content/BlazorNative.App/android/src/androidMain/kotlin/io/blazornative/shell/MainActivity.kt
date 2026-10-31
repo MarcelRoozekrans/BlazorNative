@@ -494,6 +494,12 @@ class MainActivity : FragmentActivity() {
         // the recreated Activity's start() re-registers its own mapper.
         // (isInitialized: a throw in onCreate before the assignment still destroys.)
         if (::mapper.isInitialized) mapper.destroy()
+        // 18.3 (#506): a destroy that is not a configuration change can drop a pending
+        // secure-storage prompt's answer, which would hold its key forever; the bridge denies
+        // those prompts. A configuration change keeps the prompt up, so the bridge skips it.
+        // The per-key order holds within one bridge; a configuration change splits the hold
+        // across two bridges, #601.
+        shellBridge?.onHostActivityDestroyed(isChangingConfigurations)
         super.onDestroy()
     }
 
