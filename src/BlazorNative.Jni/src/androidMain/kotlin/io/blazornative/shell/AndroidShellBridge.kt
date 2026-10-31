@@ -1114,6 +1114,7 @@ class AndroidShellBridge(
     ) {
         gateThrowForTest?.invoke()
         if (hostActivityDestroyed) {
+            biometricGateHook?.invoke(BiometricGate(crypto != null, onAuthenticated, onDenied))
             onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
             return
         }
