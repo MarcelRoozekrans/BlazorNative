@@ -322,7 +322,7 @@ class AndroidShellBridge(
      * synchronously. The key is free here: a request reaches its prompt only when it started on
      * a free key, or was drained by [releaseHold], which removes the hold before it drains. */
     private fun takeHold(key: String, requestId: Long) {
-        held[key] = Hold(requestId)
+        Unit
     }
 
     /** 18.3 (#506): ends [requestId]'s hold on [key] and runs the requests parked behind it, in
