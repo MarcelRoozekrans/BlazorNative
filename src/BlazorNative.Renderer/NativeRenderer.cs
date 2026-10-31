@@ -476,15 +476,12 @@ public sealed class NativeRenderer : BlazorRenderer
     // the logger the renderer handed it. NativeRendererLoggerFactory's logger forwards that one
     // event here. The id is the signal a re-render needs to be charged to the dispatch that queued it.
 
-    /// <summary>18.2 (#500): the component Blazor last announced it was rendering, or null once
-    /// the batch has been delivered. Render thread only.</summary>
-    private int? _renderingNow;
     private int _renderingComponentEvents;
 
     /// <summary>18.2 (#500): the dispatch the render now running is charged to: the queuer of
     /// the tag <see cref="NoteRenderingComponent"/> used up, or null for an untagged render.
-    /// Cleared with <see cref="_renderingNow"/>, and at the outermost window close. Read by
-    /// <see cref="HandleException"/>. Render thread only.</summary>
+    /// Cleared when <see cref="UpdateDisplayAsync"/> starts, and at the outermost window close.
+    /// Read by <see cref="HandleException"/>. Render thread only.</summary>
     private DispatchScope? _renderingFor;
 
     /// <summary>18.2 (#500): test seam that makes <see cref="WantsRenderLog"/> true.</summary>
@@ -503,13 +500,11 @@ public sealed class NativeRenderer : BlazorRenderer
     internal int RenderingComponentEventsForTests => Volatile.Read(ref _renderingComponentEvents);
 
     /// <summary>18.2 (#500): called by the logger on the render thread. Lock-free and
-    /// allocation-free: it counts, stores the id, and uses up the component's render tag, if
-    /// any. A tag is used up by its component's FIRST render: that render is the one the
+    /// allocation-free: it counts the event and uses up the component's render tag, if any. A tag is used up by its component's FIRST render: that render is the one the
     /// tagging dispatch queued, so it is that dispatch's. A later render of the same component
     /// in the batch finds no tag and is the window's.</summary>
     internal void NoteRenderingComponent(int componentId)
     {
-        _renderingNow = componentId;
         _renderingFor = _renderTags.Remove(componentId, out DispatchScope? queuer) ? queuer : null;
         Interlocked.Increment(ref _renderingComponentEvents);
     }
@@ -519,7 +514,6 @@ public sealed class NativeRenderer : BlazorRenderer
     protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
     {
         // 18.2 (#500): the batch is delivered, so no component is being rendered any more.
-        _renderingNow = null;
         _renderingFor = null;
 
         // 13.2, an assertion since 16.1. No renderer state is touched, so it sits ahead of
@@ -2446,7 +2440,6 @@ public sealed class NativeRenderer : BlazorRenderer
                     // become a tag this same finally clears (R13).
                     _renderTags.Clear();
                     _renderingFor = null;
-                    _renderingNow = null;
                     _segmentFor = null;
                     ReleaseHolds(scope);
                 }
