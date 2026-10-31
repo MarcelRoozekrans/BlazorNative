@@ -460,8 +460,11 @@ class BlazorNativeRuntime(
      * [shutdown] IS quiescent: it calls `blazornative_shutdown`, which closes
      * .NET's frame gate and waits out any callback in flight before it
      * returns, so no frame reaches this runtime afterwards
-     * (ShutdownQuiescenceTest). Concurrent start() calls (multiple threads) are
-     * unguarded — callers must serialize.
+     * (ShutdownQuiescenceTest). Since 18.4 a process-wide lock serializes
+     * concurrent start() calls, so two boots are never inside the session at
+     * once (StartLockTest). The lock does not order them: which Activity's boot
+     * goes last, and so owns the session, is the shell's job (MainActivity's
+     * boot record, #511).
      *
      * Returns human-readable status lines for a console pane.
      * Throws [IllegalStateException] on init/registration/mount failure.
@@ -487,66 +490,71 @@ class BlazorNativeRuntime(
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
     ): List<String> {
-        enteredStartForTest.incrementAndGet() // 18.4 test probe; StartLockTest reads it
-        val lines = mutableListOf<String>()
-        val lib = NativeBindings.INSTANCE
+        // 18.4 (#511): the native session is process-wide, so the lock is too. Nothing inside
+        // takes it again: the mount's frame callback only posts (WidgetMapper.apply), and retire()
+        // never takes it.
+        synchronized(startLock) {
+            enteredStartForTest.incrementAndGet() // 18.4 test probe, first line inside the lock
+            val lines = mutableListOf<String>()
+            val lib = NativeBindings.INSTANCE
 
-        // Keep the Memory allocations referenced in locals until init returns —
-        // init copies the strings, it doesn't retain the pointers, but the
-        // buffers must stay alive across the call (mirrors BootSmokeNativeTest).
-        val osMem = utf8CString(platformOs)
-        val noteMem = utf8CString("android-shell")
-        val opts = BlazorNativeInitOptions.ByReference().apply {
-            platformInfoOs = osMem
-            platformInfoApiLevel = apiLevel
-            platformInfoNote = noteMem
-            platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
-            this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
-        }
-        // #213 item 3: pass our compiled struct size so the runtime size-negotiates.
-        // opts.size() is JNA's measured sizeof for THIS shell's struct — a runtime built
-        // against a newer header reads only what we sent and defaults the rest, rather
-        // than reading past the buffer.
-        val init = lib.blazornative_init(opts.size(), opts)
-        if (init.status != 0) {
-            val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
-            throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")
-        }
-        val version = init.versionString?.getString(0, "UTF-8") ?: "<null>"
-        lines += "[BOOT] native init ok — $version"
+            // Keep the Memory allocations referenced in locals until init returns —
+            // init copies the strings, it doesn't retain the pointers, but the
+            // buffers must stay alive across the call (mirrors BootSmokeNativeTest).
+            val osMem = utf8CString(platformOs)
+            val noteMem = utf8CString("android-shell")
+            val opts = BlazorNativeInitOptions.ByReference().apply {
+                platformInfoOs = osMem
+                platformInfoApiLevel = apiLevel
+                platformInfoNote = noteMem
+                platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
+                this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
+            }
+            // #213 item 3: pass our compiled struct size so the runtime size-negotiates.
+            // opts.size() is JNA's measured sizeof for THIS shell's struct — a runtime built
+            // against a newer header reads only what we sent and defaults the rest, rather
+            // than reading past the buffer.
+            val init = lib.blazornative_init(opts.size(), opts)
+            if (init.status != 0) {
+                val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
+                throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")
+            }
+            val version = init.versionString?.getString(0, "UTF-8") ?: "<null>"
+            lines += "[BOOT] native init ok — $version"
 
-        // 18.4 test seam, null in production: StartLockTest holds one start() here.
-        val hook = insideStartHookForTest
-        if (hook != null) hook(this)
+            // 18.4 test seam, null in production: StartLockTest holds one start() here.
+            val hook = insideStartHookForTest
+            if (hook != null) hook(this)
 
-        check(lib.blazornative_register_frame_callback(callback) == 0) {
-            "blazornative_register_frame_callback failed"
-        }
-        lines += "[BOOT] frame callback registered"
+            check(lib.blazornative_register_frame_callback(callback) == 0) {
+                "blazornative_register_frame_callback failed"
+            }
+            lines += "[BOOT] frame callback registered"
 
-        if (bridge != null) {
-            // Registered BEFORE mount. register() throws on non-zero status;
-            // the registrar keeps the callback trampolines alive (field here
-            // + the process-lifetime park list inside BridgeRegistrar).
-            bridgeRegistrar = BridgeRegistrar(
-                bridge,
-                onBackState = onBackState,
-                onBackUnhandled = onBackUnhandled,
-                onError = onError,
-            ).also { it.register() }
-            lines += "[BOOT] shell bridge registered"
-        }
+            if (bridge != null) {
+                // Registered BEFORE mount. register() throws on non-zero status;
+                // the registrar keeps the callback trampolines alive (field here
+                // + the process-lifetime park list inside BridgeRegistrar).
+                bridgeRegistrar = BridgeRegistrar(
+                    bridge,
+                    onBackState = onBackState,
+                    onBackUnhandled = onBackUnhandled,
+                    onError = onError,
+                ).also { it.register() }
+                lines += "[BOOT] shell bridge registered"
+            }
 
-        when (val rc = lib.blazornative_mount(componentName.toByteArray(Charsets.UTF_8) + 0)) {
-            0 -> lines += "[BOOT] mounted $componentName"
-            1 -> throw IllegalStateException("unknown component '$componentName'")
-            else -> throw IllegalStateException(
-                "mount($componentName) failed with status $rc — detail went to " +
-                    "the runtime's stderr; on Android the shell's stderr pump " +
-                    "forwards it to logcat (`adb logcat -s BlazorNative/…`)"
-            )
+            when (val rc = lib.blazornative_mount(componentName.toByteArray(Charsets.UTF_8) + 0)) {
+                0 -> lines += "[BOOT] mounted $componentName"
+                1 -> throw IllegalStateException("unknown component '$componentName'")
+                else -> throw IllegalStateException(
+                    "mount($componentName) failed with status $rc — detail went to " +
+                        "the runtime's stderr; on Android the shell's stderr pump " +
+                        "forwards it to logcat (`adb logcat -s BlazorNative/…`)"
+                )
+            }
+            return lines
         }
-        return lines
     }
 
     /**
@@ -604,6 +612,9 @@ class BlazorNativeRuntime(
     internal companion object {
         /** The JVM name of .NET's render thread while it delivers frames (see the init block). */
         const val RENDER_THREAD_NAME = "BlazorNative-Render"
+
+        /** 18.4 (#511): serializes [start] process-wide; see its KDoc. */
+        private val startLock = Any()
 
         /**
          * 18.4 test seam, `null` in production: invoked inside [start] with the runtime that is
