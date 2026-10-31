@@ -1185,7 +1185,12 @@ public sealed class FaultNoticeTests
     //     actions still land in the outer window O's fault. Not built; it rests on reading
     //     DispatchSyncPart's nested close;
     //   - inside a nested window D, a switch to the outer window B's own flow makes B hold
-    //     itself. The hold is released at B's outermost close, so nothing hangs. Not pinned;
+    //     itself. The hold is released at B's outermost close, so nothing hangs. A fault in work
+    //     tagged with B there goes to B's late fault while B's synchronous part is still open.
+    //     If B then returns completed or faulted, DispatchSyncPart never reads the late fault,
+    //     so it is only logged under LateFaultLogLabel and reaches no rc and no notice; before
+    //     18.2 it was D's rc. 17.1's nested edge for B's own code behaves the same way. Not
+    //     pinned;
     //   - a batch that a render fault ends early. Its disposed components are cleaned up at the
     //     next batch, which AComponentDisposedInABatchAFaultEnded_IsDroppedFromTheLiveSet pins,
     //     but the batch never delivers their remove patches or their disposed handler ids, so
