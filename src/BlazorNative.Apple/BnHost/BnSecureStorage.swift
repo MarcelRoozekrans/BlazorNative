@@ -153,6 +153,13 @@ final class BnSecureStorage {
     /// the thread that called `hostCallBegin` (see THE BEGIN CONTRACT in the header).
     private let workQueue = DispatchQueue(label: "io.blazornative.secure-storage", qos: .userInitiated)
 
+    /// 18.3 (#506): set on `workQueue` only, so code can ask whether it is running there.
+    private let workQueueKey = DispatchSpecificKey<Bool>()
+
+    init() {
+        workQueue.setSpecific(key: workQueueKey, value: true)
+    }
+
     /// STRONG. The `LAContext` under each getWithAuth evaluation, keyed by its request
     /// id — held for the call's duration so a deallocated context cannot cancel the
     /// in-flight read (the CLLocationManager/LAContext retention lesson). `complete`
@@ -247,6 +254,15 @@ final class BnSecureStorage {
     /// serial, so this is a barrier: a unit test calls it after `hostCallBegin` instead
     /// of sleeping. Never call it from `workQueue` itself.
     func drainForTest() { workQueue.sync {} }
+
+    /// 18.3 (#506) test seam: whether `key` is held by a getWithAuth whose gate is up.
+    func isKeyHeldForTest(_ key: String) -> Bool {
+        false
+    }
+
+    /// 18.3 (#506) test seam: the key `workQueue` carries, so a test can read
+    /// `DispatchQueue.getSpecific(key:)` and learn whether code ran on `workQueue`.
+    func workQueueSpecificKeyForTest() -> DispatchSpecificKey<Bool> { workQueueKey }
 
     /// Whether the context of `requestId`'s getWithAuth is still retained (the retention
     /// pin as a property, the `BnBiometrics.contextIsRetainedForTest` twin).
