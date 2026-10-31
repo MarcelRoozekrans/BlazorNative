@@ -4002,13 +4002,19 @@ the app's handler through a forwarding hook.
 - **Filed:** #593, a faulted batch's undelivered removes. Commented on #568 for the 17.1 cells.
 - **Baselines:** .NET 1406, 19 new facts.
 
-#### Phase 18.3: Secure-storage per-key ordering (#506) [status: active]
+#### Phase 18.3: Secure-storage per-key ordering (#506) [status: complete]
 **Goal:** On Android, same-key secure-storage requests queue behind a pending auth, and iOS is matched, by owner decision of 2026-10-24.
 **Surface:** Mixed
 **HelpWanted:** no
 **Design:** [`docs/superpowers/specs/2026-10-31-phase-18.3-design.md`](../superpowers/specs/2026-10-31-phase-18.3-design.md)
 **Plan:** [`docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md`](../superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md)
 **Record:** [`docs/plans/2026-10-31-phase-18.3-record.md`](../plans/2026-10-31-phase-18.3-record.md)
+**Completed:** 2026-10-31 · [PR #599](https://github.com/MarcelRoozekrans/BlazorNative/pull/599).
+- **The hold:** a secure-storage request that shows a biometric prompt holds its key on both shells, and a same-key request parks in a per-key queue until the prompt answers. Other keys keep flowing.
+- **Android:** a pending prompt is denied on a destroy that is not a configuration change, and the main-thread gate denies at once on a destroyed or stopped Activity instead of hanging.
+- **iOS:** `getWithAuth` takes the same hold, and the gate's answer hops onto the work queue.
+- **Filed:** #600 and #601 (Android, owner decisions), #602, #603 and #604 (one-off device and runner flakes). #598 stays out of scope.
+- **Baselines:** .NET 1406, JVM 206, Android 263, iOS 296.
 
 #### Phase 18.4: Recreation during boot (#511) [status: pending]
 **Goal:** An Activity recreated before boot completes shows its page.

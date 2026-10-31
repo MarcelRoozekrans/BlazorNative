@@ -2,28 +2,28 @@
 
 **Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: active]`. The owner approved its design on 2026-10-31, and its plan is written. 18.2 is complete and merged.
-**Branch:** `feat/18.3-secure-storage-per-key`, from `main` at `d246778f`.
+**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: complete]` on its branch. 18.2 is complete and merged.
+**Branch:** `feat/18.3-secure-storage-per-key`, PR #599, ready and awaiting the owner's merge OK.
 
 ## Current Position
 
-- **18.1 is complete on `main`:** #584 shipped it, and #591 recorded it.
-- **18.2 is complete and merged.** PR #596 was squash-merged as `d246778f` and closed #500. It is in release PR #597.
-  - Design: `docs/superpowers/specs/2026-10-30-phase-18.2-design.md`, approved 2026-10-30 and amended 2026-10-31.
-  - Plan: `docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`.
-  - Record: `docs/plans/2026-10-30-phase-18.2-record.md`. Its §6 lists the deviations from the design.
-- **The owner confirmed R10 on 2026-10-31.** A is held from its inline segment's entry until B's window closes, even when it dirtied nothing. The design's `AwaitWholeHandler` flush could not work, because that continuation runs on the thread pool.
-- **Filed in 18.2:** #593, a faulted batch never delivers its remove patches or its disposed handler ids. Its options need an owner decision. Also a comment on #568: the 17.1 cell lines name their commits now, and the 17.1 reds may be stale after the 18.1 and 18.2 harness changes. That is 18.9's audit question.
-- **Baselines:** .NET 1406, JVM 206, Android 249, iOS 289.
+- **18.3 is complete on `feat/18.3-secure-storage-per-key`.** PR #599 is ready. Its body says "Closes #506." on purpose. After the merge, read state from `origin/main`, not from this branch.
+  - Design: `docs/superpowers/specs/2026-10-31-phase-18.3-design.md`.
+  - Plan: `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md`.
+  - Record: `docs/plans/2026-10-31-phase-18.3-record.md`.
+- **What shipped:** a request that shows a biometric prompt holds its key on both shells, and same-key requests park until it answers. Android denies a pending prompt on a destroy that is not a configuration change, and on a destroyed or stopped Activity. iOS hops the gate's answer onto the work queue.
+- **Filed in 18.3:** #600, #601, #602, #603 and #604. #598 is out of scope.
+- **18.1 and 18.2 are complete on `main`:** #584 and #596, the latter in release PR #597.
+- **Baselines:** .NET 1406, JVM 206, Android 263, iOS 296.
 - **The grading rule** for pins lives in `docs/pin-standard.md`, in the section "Grading a pin: sites and reds".
-- **Owner rule (2026-10-25):** no Claude signature anywhere, meaning no `Co-Authored-By` trailer and no "Generated with" line. When merging, strip any signature from the squash message. #596's commits were checked with `scripts/commit-parse-check`: all 35 parse, and none carries a signature.
+- **Owner rule (2026-10-25):** no Claude signature anywhere, meaning no `Co-Authored-By` trailer and no "Generated with" line. When merging, strip any signature from the squash message. #599's 28 commits were checked with `scripts/commit-parse-check`: all parse, and none carries a signature.
 
 ## Owner decisions for M18 (2026-10-24)
 
 | Issue | Decision |
 |---|---|
 | #500 | Attribute a fault in a re-render or `RunAfterDispatch` action to the dispatch that queued it. Done in 18.2, PR #596. |
-| #506 | Per-key secure-storage queue on Android; check iOS too. |
+| #506 | Per-key secure-storage queue on Android; check iOS too. Done in 18.3, PR #599. |
 | #522 | Name the page plus the wrapper position, never a compiler lambda. |
 | #543 | Bounded wait plus a Gradle per-test timeout. |
 
@@ -31,6 +31,8 @@
 
 ## Open Decisions (owner)
 
+- #601: a configuration change splits the per-key hold across two bridges. It sits next to #511, so feed it into 18.4's brainstorm.
+- Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
@@ -44,10 +46,10 @@
 
 ## Recommended Next Step
 
-1. ~~Merge #596.~~ **Done:** squash-merged as `d246778f`, now in release PR #597.
-2. **18.3, #506:** execute `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md` subagent-driven. The design is approved. The plan's first task measures whether an Android `BiometricPrompt` answers when its Activity is destroyed or recreated.
-3. Lessons from 18.2 still apply:
+1. **Merge #599** on the owner's OK. It is green and ready. Then read state from `origin/main`.
+2. **18.4, #511:** recreation during boot. Brainstorm it first. Take #601 as input, because the per-key hold crosses a recreation there.
+3. Lessons from 18.2 and 18.3 still apply:
    - Have every implementer tick its plan checkboxes.
    - Grep for hard-coded test counts early.
    - Expect the staleness rule to force a full re-run of the reds after any late edit to a subject or test file.
-4. Watch for a recurrence of #598, the one-off .NET secure-storage timeout on Windows. 18.3 does not touch .NET.
+4. Watch for a recurrence of #598, the one-off .NET secure-storage timeout on Windows.
