@@ -467,11 +467,18 @@ public static class Exports
     /// directly by the export whether or not this is set.</summary>
     internal static Action<ulong, string, Task>? PendingDispatchObserver;
 
-    /// <summary>TEST TAP: also receives the Task that sends the FaultNotice for a dispatch
-    /// that faulted after beginning a shell call, with the handler id and the event name
-    /// (Phase 18.1, #564). The send runs on the pool after the export returns, so a test that
-    /// must not let it outlive its fact waits for this Task. Null in production, and delivery
-    /// never depends on it.</summary>
+    /// <summary>TEST TAP: also receives a Task for every late FaultNotice send, with the handler
+    /// id and the event name, and the sends run on the pool after the export returns. Two kinds:
+    /// <list type="bullet">
+    /// <item>for a dispatch that faulted after beginning a shell call (Phase 18.1, #564), the
+    /// send itself, handed on just after it is started;</item>
+    /// <item>for a Task the export hands on still running (18.2, #500), a Task handed on before
+    /// the export returns, which completes once <see cref="DeliverLateFault"/> has sent the
+    /// notice, or at once when the Task ends without a fault.</item>
+    /// </list>
+    /// So a test that waits for these Tasks after its own pending Tasks have ended has seen every
+    /// notice its dispatches send. Null in production. Delivery never depends on it: a tap that
+    /// throws is logged, and the send goes ahead.</summary>
     internal static Action<ulong, string, Task>? LateFaultNoticeObserver;
 
     /// <summary>
@@ -596,7 +603,7 @@ public static class Exports
                     Exception fault = outcome.Fault!;
                     BnLog.Error("Exports", $"dispatch_event handler {handlerId} '{name}' faulted after beginning a shell call", fault);
                     Task send = Task.Run(() => NativeShellBridge.SendFaultNotice(handlerId, name, fault));
-                    LateFaultNoticeObserver?.Invoke(handlerId, name, send);
+                    ObserveLateFaultNotice(handlerId, name, send);
                 }
                 break;
 
@@ -652,18 +659,50 @@ public static class Exports
     /// render thread, and never throws: SendFaultNotice swallows its own failures. Never
     /// the payload: it can carry the user's input.</summary>
     private static void DeliverLateFault(ulong handlerId, string eventName, string what, Task pending)
-        => pending.ContinueWith(
+    {
+        // 18.2 (#500): with a test tap set, it gets a Task now, before the export returns, and
+        // the Task completes once delivery is decided. A tap learning of the send only once the
+        // pending Task faulted could miss it: the continuation below runs on the pool.
+        TaskCompletionSource? decided = null;
+        if (LateFaultNoticeObserver is not null)
+        {
+            decided = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            ObserveLateFaultNotice(handlerId, eventName, decided.Task);
+        }
+        pending.ContinueWith(
             static (t, state) =>
             {
-                var (id, evt, label) = ((ulong, string, string))state!;
-                Exception fault = t.Exception!.InnerException ?? t.Exception;
-                BnLog.Error("Exports", $"{label} faulted after its first await", fault);
-                NativeShellBridge.SendFaultNotice(id, evt, fault);
+                var (id, evt, label, done) = ((ulong, string, string, TaskCompletionSource?))state!;
+                try
+                {
+                    if (!t.IsFaulted)
+                        return;
+                    Exception fault = t.Exception!.InnerException ?? t.Exception;
+                    BnLog.Error("Exports", $"{label} faulted after its first await", fault);
+                    NativeShellBridge.SendFaultNotice(id, evt, fault);
+                }
+                finally { done?.TrySetResult(); }
             },
-            (handlerId, eventName, what),
+            (handlerId, eventName, what, decided),
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
+            // With no tap, only a fault runs the continuation, as before 18.2.
+            decided is null ? TaskContinuationOptions.OnlyOnFaulted : TaskContinuationOptions.None,
             TaskScheduler.Default);
+    }
+
+    /// <summary>Hands <paramref name="send"/> to the <see cref="LateFaultNoticeObserver"/> test
+    /// tap, if one is set. A tap that throws is logged and never stops a send.</summary>
+    private static void ObserveLateFaultNotice(ulong handlerId, string name, Task send)
+    {
+        try
+        {
+            LateFaultNoticeObserver?.Invoke(handlerId, name, send);
+        }
+        catch (Exception tapFault)
+        {
+            BnLog.Error("Exports", "the late FaultNotice test tap threw", tapFault);
+        }
+    }
 
     /// <summary>
     /// Phase 3.1 / Phase 5.4: COPIES the host's callback struct into
