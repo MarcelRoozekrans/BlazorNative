@@ -487,6 +487,7 @@ class BlazorNativeRuntime(
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
     ): List<String> {
+        enteredStartForTest.incrementAndGet() // 18.4 test probe; StartLockTest reads it
         val lines = mutableListOf<String>()
         val lib = NativeBindings.INSTANCE
 
@@ -513,6 +514,10 @@ class BlazorNativeRuntime(
         }
         val version = init.versionString?.getString(0, "UTF-8") ?: "<null>"
         lines += "[BOOT] native init ok — $version"
+
+        // 18.4 test seam, null in production: StartLockTest holds one start() here.
+        val hook = insideStartHookForTest
+        if (hook != null) hook(this)
 
         check(lib.blazornative_register_frame_callback(callback) == 0) {
             "blazornative_register_frame_callback failed"
@@ -599,6 +604,16 @@ class BlazorNativeRuntime(
     internal companion object {
         /** The JVM name of .NET's render thread while it delivers frames (see the init block). */
         const val RENDER_THREAD_NAME = "BlazorNative-Render"
+
+        /**
+         * 18.4 test seam, `null` in production: invoked inside [start] with the runtime that is
+         * starting, after `blazornative_init` succeeds and before the frame callback is
+         * registered. StartLockTest holds one start() there.
+         */
+        @VisibleForTesting @Volatile internal var insideStartHookForTest: ((BlazorNativeRuntime) -> Unit)? = null
+
+        /** 18.4 test probe: how many [start] calls have entered the body. StartLockTest reads it. */
+        @VisibleForTesting internal val enteredStartForTest = java.util.concurrent.atomic.AtomicInteger(0)
     }
 
     /** Caller-allocated NUL-terminated UTF-8 cstring for input pointers. */
