@@ -274,17 +274,68 @@ class AndroidShellBridge(
      * caller's thread, which is .NET's render thread. Each handler now owns a serial executor,
      * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests START in
      * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
-     * An auth-bound request frees its executor while its prompt is up, so its after-auth work
-     * runs when the prompt answers, behind whatever was queued meanwhile; that was already so
-     * when the work ran inline, and is #506's question. An auth-bound storage request completes
-     * on its executor whether the prompt is granted or denied, while biometrics' authenticate
-     * completes from the prompt's own callback, because it does no work after the prompt. Daemon,
-     * so neither blocks process exit. */
+     * An auth-bound request frees its executor while its prompt is up. 18.3 (#506): requests on
+     * one key take effect in begin order. A storage request that shows a prompt holds its key
+     * ([held]) until its after-auth work has run; a later request on that key parks behind it
+     * and runs when the prompt answers, granted or denied. Requests on other keys keep flowing.
+     * An auth-bound storage request completes on its executor whether the prompt is granted or
+     * denied, while biometrics' authenticate completes from the prompt's own callback, because
+     * it does no work after the prompt. Daemon, so neither blocks process exit. */
     private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
     }
     private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
+    }
+
+    /** 18.3 (#506): a key held by the request [owner], whose prompt is up, and the requests
+     * begun on that key since, in begin order. Each parked entry is the request's whole runJob
+     * wrapper, so the work gate and the Error-on-throw rule apply when it runs. */
+    private class Hold(val owner: Long) {
+        val parked = ArrayDeque<() -> Unit>()
+    }
+
+    /** 18.3 (#506): the held keys. A key in the map is held, even when nothing is parked behind
+     * it. Read and written ONLY on [secureStorageExecutor], so it needs no lock. */
+    private val held: MutableMap<String, Hold> = HashMap()
+
+    /** 18.3 (#506): [requestId] holds [key] from now until its after-auth work has run. Called
+     * on the executor immediately before the gate call, because the no-Activity path denies
+     * synchronously. The key is free here: a request reaches its prompt only when it started on
+     * a free key, or was drained by [releaseHold], which removes the hold before it drains. */
+    private fun takeHold(key: String, requestId: Long) {
+        held[key] = Hold(requestId)
+    }
+
+    /** 18.3 (#506): ends [requestId]'s hold on [key] and runs the requests parked behind it, in
+     * order, inline in this executor task. A drained request that takes the hold itself, because
+     * it shows a prompt too, stops the drain, and the rest stay parked behind it. When nothing
+     * takes the hold, the key leaves the map.
+     * A no-op unless [requestId] owns the hold: a second or late answer for a request that no
+     * longer holds the key must not release another request's hold. */
+    private fun releaseHold(key: String, requestId: Long) {
+        val hold = held[key]
+        if (hold == null || hold.owner != requestId) {
+            BnShellLog.warn(TAG, "secure storage: ignored a release by request $requestId, which does not hold its key")
+            return
+        }
+        held.remove(key)
+        val rest = hold.parked
+        while (rest.isNotEmpty()) {
+            val next = rest.removeFirst()
+            try {
+                next()
+            } catch (t: Throwable) {
+                // runJob already turns a throw into an Error completion; this keeps the rest of the
+                // queue draining even if that completion itself throws.
+                onError("secure storage: a parked request threw while its key drained", t)
+            }
+            val taken = held[key]
+            if (taken != null) {
+                taken.parked.addAll(rest)
+                return
+            }
+        }
     }
 
     /** 17.2: the secure-storage completion after a biometric prompt answers, its KeyStore work
@@ -293,17 +344,31 @@ class AndroidShellBridge(
      * Both auth paths, the auth-bound set and getWithAuth, come through here, so one hop is
      * pinned for both: AndroidHostCallContractTest's after-auth pin. A throw completes AuthFailed.
      * 17.7 (#537): a denied prompt's AuthFailed completion comes through here too, for both
-     * paths, pinned by AndroidHostCallContractTest's denied-prompt pin. */
-    private fun afterAuth(requestId: Long, failure: String, work: () -> Unit) {
+     * paths, pinned by AndroidHostCallContractTest's denied-prompt pin.
+     * 18.3 (#506): then, in a finally so that a throw still releases, [requestId]'s hold on [key]
+     * ends and the requests parked behind it run. */
+    private fun afterAuth(requestId: Long, key: String, failure: String, work: () -> Unit) {
         secureStorageExecutor.execute {
             try {
                 work()
             } catch (t: Throwable) {
                 onError("$failure (request $requestId)", t)
                 completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+            } finally {
+                releaseHold(key, requestId)
             }
         }
     }
+
+    /** 18.3 (#506): the key a secure-storage request names, parsed as [handleSecureStorage] does.
+     * Malformed JSON or a missing key is "", a key like any other; the request then fails in
+     * [handleSecureStorage] as it always has. */
+    private fun secureStorageKeyOf(argsJson: String): String =
+        try {
+            FlatJson.parse(argsJson)["key"].orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
 
     /** Runs one biometrics or secure-storage job on its executor. A throw is DATA, never a
      * hang: it is reported to onError and the request completes with [errorStatus]. If the job
@@ -327,8 +392,11 @@ class AndroidShellBridge(
             HostCallOp.BIOMETRICS -> biometricsExecutor.execute {
                 runJob(requestId, BiometricStatus.ERROR) { handleBiometrics(requestId, argsJson) }
             }
+            // 18.3 (#506): a request on a held key parks until that key's prompt answers.
             HostCallOp.SECURE_STORAGE -> secureStorageExecutor.execute {
-                runJob(requestId, SecureStorageStatus.ERROR) { handleSecureStorage(requestId, argsJson) }
+                val job = { runJob(requestId, SecureStorageStatus.ERROR) { handleSecureStorage(requestId, argsJson) } }
+                val hold = held[secureStorageKeyOf(argsJson)]
+                if (hold != null) hold.parked.addLast(job) else job()
             }
             HostCallOp.CAMERA -> handleCamera(requestId, argsJson)
             // HostCallOp.FAULT_NOTICE (Phase 16.1) has no arm here ON PURPOSE: the shared
@@ -698,7 +766,9 @@ class AndroidShellBridge(
     }
 
     /** 17.2 test seam: waits, bounded, until the biometrics and secure-storage work queued so far
-     * has run. Each executor is serial, so a latch queued behind the work is a barrier. */
+     * has run. Each executor is serial, so a latch queued behind the work is a barrier. It is a
+     * barrier only for work that CAN run: 18.3 (#506), a request parked behind a held key does
+     * not run until that key's prompt answers, so a drain does not wait for it. */
     internal fun drainForTest(timeoutMs: Long = 5_000) {
         for (executor in listOf(biometricsExecutor, secureStorageExecutor)) {
             val done = java.util.concurrent.CountDownLatch(1)
@@ -843,22 +913,31 @@ class AndroidShellBridge(
             completeHostCall(requestId, secureErrorStatus(t), null)
             return
         }
-        runBiometricGate(
-            reason = "Confirm to store a protected secret",
-            crypto = BiometricPrompt.CryptoObject(cipher),
-            onAuthenticated = { result ->
-                afterAuth(requestId, "secure set('$key', auth) encrypt failed after auth") {
-                    val c = result?.cryptoObject?.cipher ?: cipher
-                    storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
-                    completeHostCall(requestId, SecureStorageStatus.OK, null)
-                }
-            },
-            onDenied = {
-                afterAuth(requestId, "secure set('$key', auth) denial failed to complete") {
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
-                }
-            },
-        )
+        // 18.3 (#506): hold the key before the gate call; afterAuth releases it. A throw before
+        // the gate is armed undoes the take, drains the parked requests, and completes Error
+        // through runJob.
+        takeHold(key, requestId)
+        try {
+            runBiometricGate(
+                reason = "Confirm to store a protected secret",
+                crypto = BiometricPrompt.CryptoObject(cipher),
+                onAuthenticated = { result ->
+                    afterAuth(requestId, key, "secure set('$key', auth) encrypt failed after auth") {
+                        val c = result?.cryptoObject?.cipher ?: cipher
+                        storeBlob(key, iv, c.doFinal(value.toByteArray(Charsets.UTF_8)))
+                        completeHostCall(requestId, SecureStorageStatus.OK, null)
+                    }
+                },
+                onDenied = {
+                    afterAuth(requestId, key, "secure set('$key', auth) denial failed to complete") {
+                        completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                    }
+                },
+            )
+        } catch (t: Throwable) {
+            releaseHold(key, requestId)
+            throw t
+        }
     }
 
     /** A plain get: NotFound when absent; AUTH-BOUND ITEMS RETURN AuthFailed (a plain
@@ -904,24 +983,31 @@ class AndroidShellBridge(
             completeHostCall(requestId, secureErrorStatus(t), null)
             return
         }
-        runBiometricGate(
-            reason = reason,
-            crypto = BiometricPrompt.CryptoObject(cipher),
-            onAuthenticated = { result ->
-                afterAuth(requestId, "secure getWithAuth('$key') decrypt failed after auth") {
-                    // The OS-unlocked cipher from the CryptoObject is the ONLY one that
-                    // can decrypt — use it, never a fresh unbound cipher.
-                    val c = result?.cryptoObject?.cipher ?: cipher
-                    val plain = String(c.doFinal(blob.ct), Charsets.UTF_8)
-                    completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
-                }
-            },
-            onDenied = {
-                afterAuth(requestId, "secure getWithAuth('$key') denial failed to complete") {
-                    completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
-                }
-            },
-        )
+        // 18.3 (#506): hold the key before the gate call, as secureSetAuth does.
+        takeHold(key, requestId)
+        try {
+            runBiometricGate(
+                reason = reason,
+                crypto = BiometricPrompt.CryptoObject(cipher),
+                onAuthenticated = { result ->
+                    afterAuth(requestId, key, "secure getWithAuth('$key') decrypt failed after auth") {
+                        // The OS-unlocked cipher from the CryptoObject is the ONLY one that
+                        // can decrypt — use it, never a fresh unbound cipher.
+                        val c = result?.cryptoObject?.cipher ?: cipher
+                        val plain = String(c.doFinal(blob.ct), Charsets.UTF_8)
+                        completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
+                    }
+                },
+                onDenied = {
+                    afterAuth(requestId, key, "secure getWithAuth('$key') denial failed to complete") {
+                        completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+                    }
+                },
+            )
+        } catch (t: Throwable) {
+            releaseHold(key, requestId)
+            throw t
+        }
     }
 
     /** delete: drop the keystore key AND the stored ciphertext. Idempotent — a missing
@@ -966,26 +1052,34 @@ class AndroidShellBridge(
             return
         }
         activity.runOnUiThread {
-            val prompt = BiometricPrompt(
-                activity, ContextCompat.getMainExecutor(appContext),
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) =
-                        onAuthenticated(result)
+            // 18.3 (#506): this runs after the caller returned, so a throw here would otherwise go
+            // uncaught on main and never answer: the request would hang, and a held key with it.
+            // A prompt that cannot be shown is a denial, DATA.
+            try {
+                val prompt = BiometricPrompt(
+                    activity, ContextCompat.getMainExecutor(appContext),
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) =
+                            onAuthenticated(result)
 
-                    // Non-terminal on device (retry allowed; the sheet stays up) — do
-                    // NOT complete here. A terminal outcome arrives via onError
-                    // (cancel/lockout) or a later success, so the await never hangs.
-                    override fun onAuthenticationFailed() {}
+                        // Non-terminal on device (retry allowed; the sheet stays up) — do
+                        // NOT complete here. A terminal outcome arrives via onError
+                        // (cancel/lockout) or a later success, so the await never hangs.
+                        override fun onAuthenticationFailed() {}
 
-                    override fun onAuthenticationError(code: Int, msg: CharSequence) =
-                        onDenied(errorCodeToStatus(code, crypto != null))
-                })
-            val info = BiometricPrompt.PromptInfo.Builder()
-                .setTitle(reason)
-                .setNegativeButtonText("Cancel")
-                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                .build()
-            if (crypto != null) prompt.authenticate(info, crypto) else prompt.authenticate(info)
+                        override fun onAuthenticationError(code: Int, msg: CharSequence) =
+                            onDenied(errorCodeToStatus(code, crypto != null))
+                    })
+                val info = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(reason)
+                    .setNegativeButtonText("Cancel")
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                    .build()
+                if (crypto != null) prompt.authenticate(info, crypto) else prompt.authenticate(info)
+            } catch (t: Throwable) {
+                onError("biometric prompt: could not be shown", t)
+                onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
+            }
         }
     }
 
@@ -1231,8 +1325,18 @@ class AndroidShellBridge(
      * prove no orphan blob survives a delete. Reads the prefs only. */
     internal fun hasBlobForTest(key: String): Boolean = loadBlob(key) != null
 
-    /** 18.3 (#506) test seam: whether [key] is held by a pending prompt. No hold exists yet. */
-    internal fun isKeyHeldForTest(@Suppress("UNUSED_PARAMETER") key: String): Boolean = false
+    /** 18.3 (#506) test seam: whether [key] is held by a pending prompt. Reads [held] on the
+     * secure-storage executor, its only thread, through a latch, as [drainForTest] does. */
+    internal fun isKeyHeldForTest(key: String): Boolean {
+        val result = java.util.concurrent.atomic.AtomicBoolean(false)
+        val done = java.util.concurrent.CountDownLatch(1)
+        secureStorageExecutor.execute {
+            result.set(held.containsKey(key))
+            done.countDown()
+        }
+        done.await(5_000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return result.get()
+    }
 
     // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
     //
