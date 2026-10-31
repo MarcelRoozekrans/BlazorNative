@@ -443,8 +443,9 @@ class MainActivity : FragmentActivity() {
             if (older != null) {
                 older.thread.join(10_000)
                 if (older.thread.isAlive) {
-                    BnShellLog.warn(tag, "The previous Activity's boot is still running after 10 s; " +
-                        "this boot waits for it to finish", privacy = BnPrivacy.SAFE)
+                    BnShellLog.warn(tag,
+                        "The previous Activity's boot is still running after 10 s; this boot waits for it",
+                        privacy = BnPrivacy.SAFE)
                     older.thread.join()
                 }
                 older.runtime.retire()
