@@ -76,8 +76,16 @@ public sealed class FaultNoticeTests
         // the send after a begun shell call, and since 18.2 the send for a pending Task, whose
         // tap Task the export hands on before it returns. Installed before the reset and never
         // removed, so a send from an earlier fact that is still in flight is recorded too,
-        // wherever it lands.
-        Exports.LateFaultNoticeObserver = (_, _, send) => { lock (s_noticeSends) s_noticeSends.Add(send); };
+        // wherever it lands. Each add first drops the sends already complete, which no wait
+        // needs, so the list holds only what is in flight, even in a class that never waits.
+        Exports.LateFaultNoticeObserver = (_, _, send) =>
+        {
+            lock (s_noticeSends)
+            {
+                s_noticeSends.RemoveAll(t => t.IsCompleted);
+                s_noticeSends.Add(send);
+            }
+        };
         FakeShellHost.Reset();
         NativeShellBridge.Register(FakeShellHost.BuildCallbacks());
         HostSession.ResetForTests();

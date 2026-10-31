@@ -685,7 +685,8 @@ public static class Exports
             },
             (handlerId, eventName, what, decided),
             CancellationToken.None,
-            TaskContinuationOptions.None,
+            // With no tap, only a fault runs the continuation, as before 18.2.
+            decided is null ? TaskContinuationOptions.OnlyOnFaulted : TaskContinuationOptions.None,
             TaskScheduler.Default);
     }
 
