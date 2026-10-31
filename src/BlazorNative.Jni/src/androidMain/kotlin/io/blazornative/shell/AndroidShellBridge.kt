@@ -38,6 +38,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import io.blazornative.jni.BiometricStatus
+import io.blazornative.jni.BnPrivacy
 import io.blazornative.jni.BridgeFetchCompleter
 import io.blazornative.jni.BridgeFetchRequest
 import io.blazornative.jni.BridgeHostCallCompleter
@@ -299,6 +300,23 @@ class AndroidShellBridge(
      * it. Read and written ONLY on [secureStorageExecutor], so it needs no lock. */
     private val held: MutableMap<String, Hold> = HashMap()
 
+    /** 18.3 (#506): a secure-storage request whose prompt is up: its key, its denial path, and,
+     * once main has built it, its real [prompt]. [prompt] is written and read on main only; it
+     * stays null under [biometricGateHook], which shows no real prompt. */
+    private class PendingPrompt(val requestId: Long, val key: String, val deny: () -> Unit) {
+        var prompt: BiometricPrompt? = null
+    }
+
+    /** 18.3 (#506): the prompts that are up, by request id. An entry is added with its key's hold
+     * and removed when the prompt's first answer reaches [afterAuth]. Read and written ONLY on
+     * [secureStorageExecutor]. [onHostActivityDestroyed] denies what is left in it. */
+    private val pendingPrompts: MutableMap<Long, PendingPrompt> = HashMap()
+
+    /** 18.3 (#506): set when the Activity this bridge prompts on was destroyed for good, not by a
+     * configuration change. That Activity never comes back, since a new Activity builds a new
+     * bridge, so from then on [runBiometricGate] denies at once, as it does with no Activity. */
+    @Volatile private var hostActivityDestroyed = false
+
     /** 18.3 (#506): [requestId] holds [key] from now until its after-auth work has run. Called
      * on the executor immediately before the gate call, because the no-Activity path denies
      * synchronously. The key is free here: a request reaches its prompt only when it started on
@@ -316,7 +334,9 @@ class AndroidShellBridge(
     private fun releaseHold(key: String, requestId: Long) {
         val hold = held[key]
         if (hold == null || hold.owner != requestId) {
-            BnShellLog.warn(TAG, "secure storage: ignored a release by request $requestId, which does not hold its key")
+            // SAFE needs a literal with no template, so the line names no request id.
+            BnShellLog.warn(TAG, "secure storage: ignored a release by a request that does not hold its key",
+                privacy = BnPrivacy.SAFE)
             return
         }
         held.remove(key)
@@ -346,11 +366,20 @@ class AndroidShellBridge(
      * 17.7 (#537): a denied prompt's AuthFailed completion comes through here too, for both
      * paths, pinned by AndroidHostCallContractTest's denied-prompt pin.
      * 18.3 (#506): then, in a finally so that a throw still releases, [requestId]'s hold on [key]
-     * ends and the requests parked behind it run. */
+     * ends and the requests parked behind it run.
+     * A request answers once. A later answer, from the real prompt after [onHostActivityDestroyed]
+     * denied it, or a second answer, finds no pending prompt and does no work: a late encrypt must
+     * not write a blob after the requests parked behind the denial have run. Its release is then
+     * ignored by [releaseHold]'s owner check. */
     private fun afterAuth(requestId: Long, key: String, failure: String, work: () -> Unit) {
         secureStorageExecutor.execute {
             try {
-                work()
+                if (pendingPrompts.remove(requestId) != null) {
+                    work()
+                } else {
+                    BnShellLog.warn(TAG, "secure storage: ignored an answer for a prompt that already answered",
+                        privacy = BnPrivacy.SAFE)
+                }
             } catch (t: Throwable) {
                 onError("$failure (request $requestId)", t)
                 completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
@@ -360,8 +389,42 @@ class AndroidShellBridge(
         }
     }
 
-    /** 18.3 (#506): called from MainActivity.onDestroy. Not implemented yet. */
+    /** 18.3 (#506): called from MainActivity.onDestroy, on main. Record §1 measured that a destroy
+     * that is not a configuration change, a finish() or a destroy after going to the background,
+     * can drop a prompt's answer: androidx delivers it through an observer bound to the prompt's
+     * fragment, which dies with the Activity. A lost answer would hold its key forever. So every
+     * pending secure-storage prompt is denied here: AuthFailed through [afterAuth], which releases
+     * its key, and its real prompt is cancelled so no orphan sheet stays up. A real answer that
+     * still arrives is ignored by [afterAuth].
+     * On a configuration change androidx keeps the prompt up and later answers the ORIGINAL
+     * callback, measured in record §1, so that destroy denies and cancels nothing.
+     * Biometrics' authenticate prompt holds no key and is not denied here; see record §6. */
     internal fun onHostActivityDestroyed(isChangingConfigurations: Boolean) {
+        if (isChangingConfigurations) return
+        hostActivityDestroyed = true
+        secureStorageExecutor.execute {
+            val lost = pendingPrompts.values.toList()
+            if (lost.isEmpty()) return@execute
+            for (pending in lost) pending.deny()
+            ContextCompat.getMainExecutor(appContext).execute {
+                for (pending in lost) pending.prompt?.cancelAuthentication()
+            }
+        }
+    }
+
+    /** 18.3 (#506): [requestId] holds [key] and its prompt is pending, from now until its first
+     * answer reaches [afterAuth]. Called on the executor immediately before the gate call. */
+    private fun holdForPrompt(key: String, requestId: Long, onDenied: (Int) -> Unit): PendingPrompt {
+        takeHold(key, requestId)
+        val pending = PendingPrompt(requestId, key) { onDenied(SecureStorageStatus.AUTH_FAILED) }
+        pendingPrompts[requestId] = pending
+        return pending
+    }
+
+    /** 18.3 (#506): undoes [holdForPrompt] after a throw before the gate was armed. */
+    private fun undoHoldForPrompt(key: String, requestId: Long) {
+        pendingPrompts.remove(requestId)
+        releaseHold(key, requestId)
     }
 
     /** 18.3 (#506): the key a secure-storage request names, parsed as [handleSecureStorage] does.
@@ -920,7 +983,12 @@ class AndroidShellBridge(
         // 18.3 (#506): hold the key before the gate call; afterAuth releases it. A throw before
         // the gate is armed undoes the take, drains the parked requests, and completes Error
         // through runJob.
-        takeHold(key, requestId)
+        val onDenied: (Int) -> Unit = {
+            afterAuth(requestId, key, "secure set('$key', auth) denial failed to complete") {
+                completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+            }
+        }
+        val pending = holdForPrompt(key, requestId, onDenied)
         try {
             runBiometricGate(
                 reason = "Confirm to store a protected secret",
@@ -932,14 +1000,11 @@ class AndroidShellBridge(
                         completeHostCall(requestId, SecureStorageStatus.OK, null)
                     }
                 },
-                onDenied = {
-                    afterAuth(requestId, key, "secure set('$key', auth) denial failed to complete") {
-                        completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
-                    }
-                },
+                onDenied = onDenied,
+                pending = pending,
             )
         } catch (t: Throwable) {
-            releaseHold(key, requestId)
+            undoHoldForPrompt(key, requestId)
             throw t
         }
     }
@@ -988,7 +1053,12 @@ class AndroidShellBridge(
             return
         }
         // 18.3 (#506): hold the key before the gate call, as secureSetAuth does.
-        takeHold(key, requestId)
+        val onDenied: (Int) -> Unit = {
+            afterAuth(requestId, key, "secure getWithAuth('$key') denial failed to complete") {
+                completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
+            }
+        }
+        val pending = holdForPrompt(key, requestId, onDenied)
         try {
             runBiometricGate(
                 reason = reason,
@@ -1002,14 +1072,11 @@ class AndroidShellBridge(
                         completeHostCall(requestId, SecureStorageStatus.OK, mapOf("value" to plain))
                     }
                 },
-                onDenied = {
-                    afterAuth(requestId, key, "secure getWithAuth('$key') denial failed to complete") {
-                        completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
-                    }
-                },
+                onDenied = onDenied,
+                pending = pending,
             )
         } catch (t: Throwable) {
-            releaseHold(key, requestId)
+            undoHoldForPrompt(key, requestId)
             throw t
         }
     }
@@ -1034,14 +1101,22 @@ class AndroidShellBridge(
      * split (the real prompt is owner-phone territory; the emulator's is synthetic).
      * [onAuthenticated] runs on a successful auth; [onDenied] gets a BiometricStatus for
      * every non-success terminal (cancel/lockout/unavailable/error) — all DATA.
+     * 18.3 (#506): a secure-storage gate passes its [pending] entry, so main can record the real
+     * prompt for [onHostActivityDestroyed] to cancel. After that destroy no prompt can show, so
+     * the gate denies at once, before the hook as well, since the hook stands in for a prompt.
      */
     private fun runBiometricGate(
         reason: String,
         crypto: BiometricPrompt.CryptoObject?,
         onAuthenticated: (BiometricPrompt.AuthenticationResult?) -> Unit,
         onDenied: (Int) -> Unit,
+        pending: PendingPrompt? = null,
     ) {
         gateThrowForTest?.invoke()
+        if (hostActivityDestroyed) {
+            onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
+            return
+        }
         val hook = biometricGateHook
         if (hook != null) {
             hook(BiometricGate(crypto != null, onAuthenticated, onDenied))
@@ -1059,6 +1134,12 @@ class AndroidShellBridge(
             // 18.3 (#506): this runs after the caller returned, so a throw here would otherwise go
             // uncaught on main and never answer: the request would hang, and a held key with it.
             // A prompt that cannot be shown is a denial, DATA.
+            // 18.3 (#506): so is a gate that reaches main after the destroy: androidx would
+            // drop the prompt silently on a destroyed Activity, and nothing would answer.
+            if (hostActivityDestroyed) {
+                onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
+                return@runOnUiThread
+            }
             try {
                 val prompt = BiometricPrompt(
                     activity, ContextCompat.getMainExecutor(appContext),
@@ -1079,6 +1160,7 @@ class AndroidShellBridge(
                     .setNegativeButtonText("Cancel")
                     .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                     .build()
+                pending?.prompt = prompt
                 if (crypto != null) prompt.authenticate(info, crypto) else prompt.authenticate(info)
             } catch (t: Throwable) {
                 onError("biometric prompt: could not be shown", t)
