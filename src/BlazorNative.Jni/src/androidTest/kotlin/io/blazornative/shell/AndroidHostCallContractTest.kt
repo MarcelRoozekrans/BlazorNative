@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -550,16 +551,64 @@ class AndroidHostCallContractTest {
                 assertTrue("anchor: the old Activity was not destroyed by the recreation", old.get().isDestroyed)
 
                 val dead = onOld.get()
-                val set = ids.getAndIncrement()
-                dead.hostCallBegin(set, HostCallOp.SECURE_STORAGE, authSet("v1"))
-                val del = ids.getAndIncrement()
-                dead.hostCallBegin(del, HostCallOp.SECURE_STORAGE, deleteArgs)
-                assertEquals("anchor: the auth set gated on a destroyed Activity must complete AuthFailed",
-                    SecureStorageStatus.AUTH_FAILED, mustComplete("auth set gated on a destroyed Activity", set).status)
-                assertEquals("anchor: the delete parked behind it must complete Ok",
-                    SecureStorageStatus.OK, mustComplete("delete parked behind the destroyed Activity's gate", del).status)
-                assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
-                dead.drainForTest()
+                try {
+                    val set = ids.getAndIncrement()
+                    dead.hostCallBegin(set, HostCallOp.SECURE_STORAGE, authSet("v1"))
+                    val del = ids.getAndIncrement()
+                    dead.hostCallBegin(del, HostCallOp.SECURE_STORAGE, deleteArgs)
+                    assertEquals("anchor: the auth set gated on a destroyed Activity must complete AuthFailed",
+                        SecureStorageStatus.AUTH_FAILED, mustComplete("auth set gated on a destroyed Activity", set).status)
+                    assertEquals("anchor: the delete parked behind it must complete Ok",
+                        SecureStorageStatus.OK, mustComplete("delete parked behind the destroyed Activity's gate", del).status)
+                    assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
+                } finally {
+                    dead.drainForTest()
+                }
+            }
+        } finally {
+            SecureHarness.clearPin()
+        }
+    }
+
+    @Test
+    fun a_prompt_on_a_stopped_activity_is_denied_at_once() {
+        // The REAL gate path, no hook. Once the Activity is stopped its FragmentManager has saved
+        // its state, and androidx's authenticate then drops the prompt silently ("Called after
+        // onSaveInstanceState"). No destroy need ever follow: the user may come back. Without a
+        // denial the auth set would hold its key forever and the delete behind it would hang.
+        SecureHarness.setPin()
+        try {
+            AndroidShellBridge.setAuthAllowsDeviceCredentialForTest = true
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.awaitBooted()
+                // Held strongly, so the bridge's WeakReference still yields the Activity.
+                val activity = AtomicReference<MainActivity>()
+                val onIt = AtomicReference<AndroidShellBridge>()
+                scenario.onActivity { a ->
+                    activity.set(a)
+                    onIt.set(AndroidShellBridge(a) { _, _ -> })
+                }
+                scenario.moveToState(Lifecycle.State.CREATED)
+                val saved = AtomicReference<Boolean>()
+                onMain { saved.set(activity.get().supportFragmentManager.isStateSaved) }
+                assertTrue("anchor: the stopped Activity's FragmentManager has not saved its state", saved.get())
+                assertFalse("anchor: the stopped Activity is destroyed or finishing, which is another pin's case",
+                    activity.get().isDestroyed || activity.get().isFinishing)
+
+                val stopped = onIt.get()
+                try {
+                    val set = ids.getAndIncrement()
+                    stopped.hostCallBegin(set, HostCallOp.SECURE_STORAGE, authSet("v1"))
+                    val del = ids.getAndIncrement()
+                    stopped.hostCallBegin(del, HostCallOp.SECURE_STORAGE, deleteArgs)
+                    assertEquals("anchor: the auth set gated on a stopped Activity must complete AuthFailed",
+                        SecureStorageStatus.AUTH_FAILED, mustComplete("auth set gated on a stopped Activity", set).status)
+                    assertEquals("anchor: the delete parked behind it must complete Ok",
+                        SecureStorageStatus.OK, mustComplete("delete parked behind the stopped Activity's gate", del).status)
+                    assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
+                } finally {
+                    stopped.drainForTest()
+                }
             }
         } finally {
             SecureHarness.clearPin()
