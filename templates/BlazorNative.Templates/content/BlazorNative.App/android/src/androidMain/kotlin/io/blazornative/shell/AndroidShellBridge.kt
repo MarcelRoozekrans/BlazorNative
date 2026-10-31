@@ -951,6 +951,7 @@ class AndroidShellBridge(
         onAuthenticated: (BiometricPrompt.AuthenticationResult?) -> Unit,
         onDenied: (Int) -> Unit,
     ) {
+        gateThrowForTest?.invoke()
         val hook = biometricGateHook
         if (hook != null) {
             hook(BiometricGate(crypto != null, onAuthenticated, onDenied))
@@ -1225,6 +1226,13 @@ class AndroidShellBridge(
             onError("writeAuthBoundSecretForTest('$key') failed", t)
             false
         }
+
+    /** 18.3 (#506) test seam: whether a stored ciphertext blob exists for [key], so a pin can
+     * prove no orphan blob survives a delete. Reads the prefs only. */
+    internal fun hasBlobForTest(key: String): Boolean = loadBlob(key) != null
+
+    /** 18.3 (#506) test seam: whether [key] is held by a pending prompt. No hold exists yet. */
+    internal fun isKeyHeldForTest(@Suppress("UNUSED_PARAMETER") key: String): Boolean = false
 
     // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
     //
@@ -1803,8 +1811,14 @@ class AndroidShellBridge(
          * production; reset by [resetHostCallContractForTest]. */
         @VisibleForTesting @Volatile @JvmStatic internal var setAuthAllowsDeviceCredentialForTest: Boolean = false
 
+        /** 18.3 (#506) test seam: invoked at the top of [runBiometricGate], so a pin can make an
+         * auth request throw after it took its key's hold and before its gate is armed. Null in
+         * production; reset by [resetHostCallContractForTest]. */
+        @VisibleForTesting @Volatile @JvmStatic internal var gateThrowForTest: (() -> Unit)? = null
+
         @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
             completeHookForTest = null
+            gateThrowForTest = null
             workGateForTest = null
             gateReachedForTest = null
             jobFaultForTest = null
