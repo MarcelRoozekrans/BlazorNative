@@ -2,12 +2,16 @@
 
 **Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: complete]` on its branch. 18.2 is complete and merged.
-**Branch:** `feat/18.3-secure-storage-per-key`, PR #599, ready and awaiting the owner's merge OK.
+**Phase:** 18.4 — recreation during boot (#511), with #601 folded in. It is in design, and the design awaits the owner's approval. 18.1, 18.2 and 18.3 are complete and merged.
+**Branch:** `feat/18.4-recreation-during-boot`.
 
 ## Current Position
 
-- **18.3 is complete on `feat/18.3-secure-storage-per-key`.** PR #599 is ready. Its body says "Closes #506." on purpose. After the merge, read state from `origin/main`, not from this branch.
+- **18.4 is in design.** The spec is `docs/superpowers/specs/2026-10-31-phase-18.4-design.md`.
+  - Owner decisions of 2026-10-31: approach A, where a new boot joins the previous boot thread, retires its runtime, and `start()` takes a process-wide lock.
+  - #601 is folded in, with one process-wide owner for the secure-storage hold.
+  - A destroy that is not a configuration change also denies orphaned prompts.
+- **18.3 is complete and merged.** PR #599 was squash-merged as `2eb3f22d` on 2026-10-31, and it closed #506.
   - Design: `docs/superpowers/specs/2026-10-31-phase-18.3-design.md`.
   - Plan: `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md`.
   - Record: `docs/plans/2026-10-31-phase-18.3-record.md`.
@@ -31,7 +35,7 @@
 
 ## Open Decisions (owner)
 
-- #601: a configuration change splits the per-key hold across two bridges. It sits next to #511, so feed it into 18.4's brainstorm.
+- #601 was decided on 2026-10-31: a process-wide hold, in 18.4.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
 - #575: the frame path's two thread-pool hops.
@@ -46,10 +50,16 @@
 
 ## Recommended Next Step
 
-1. **Merge #599** on the owner's OK. It is green and ready. Then read state from `origin/main`.
-2. **18.4, #511:** recreation during boot. Brainstorm it first. Take #601 as input, because the per-key hold crosses a recreation there.
+1. **#599 is merged** (`2eb3f22d`).
+2. **18.4, #511 and #601:** get the owner's approval of the design, then write the plan and execute it subagent-driven.
 3. Lessons from 18.2 and 18.3 still apply:
    - Have every implementer tick its plan checkboxes.
    - Grep for hard-coded test counts early.
    - Expect the staleness rule to force a full re-run of the reds after any late edit to a subject or test file.
-4. Watch for a recurrence of #598, the one-off .NET secure-storage timeout on Windows.
+4. Watch for a recurrence of the open one-off flakes:
+   - #598, the .NET secure-storage timeout on Windows.
+   - #602, iOS geolocation rc 1.
+   - #603, the ShutdownQuiescence positive control ending `Canceled`. That is a different signature from the closed #551.
+   - #604, the AVD screenshot that came back null.
+
+   The M18 DoD needs attempt 1 green on every lane.
