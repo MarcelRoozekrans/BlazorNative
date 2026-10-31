@@ -7,7 +7,11 @@
 
 ## Current Position
 
-- **18.4 is in design.** The spec is `docs/superpowers/specs/2026-10-31-phase-18.4-design.md`.
+- **18.4 is planned, and no task has started yet.**
+  - Spec: `docs/superpowers/specs/2026-10-31-phase-18.4-design.md`.
+  - Plan: `docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`.
+  - The record, `docs/plans/2026-10-31-phase-18.4-record.md`, is created in Task 1.
+  - No PR exists yet. Task 1, Step 2 opens the draft, whose body closes #511 and #601 on purpose.
   - Owner decisions of 2026-10-31: approach A, where a new boot joins the previous boot thread, retires its runtime, and `start()` takes a process-wide lock.
   - #601 is folded in, with one process-wide owner for the secure-storage hold.
   - A destroy that is not a configuration change also denies orphaned prompts.
