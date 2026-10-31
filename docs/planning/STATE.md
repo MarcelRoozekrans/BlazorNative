@@ -12,7 +12,7 @@
   - Design: `docs/superpowers/specs/2026-10-30-phase-18.2-design.md`, approved 2026-10-30 and amended 2026-10-31.
   - Plan: `docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`.
   - Record: `docs/plans/2026-10-30-phase-18.2-record.md`. Its §6 lists the deviations from the design.
-- **The owner should confirm R10 on #596.** A is held from its inline segment's entry until B's window closes, even when it dirtied nothing. The design's `AwaitWholeHandler` flush could not work, because that continuation runs on the thread pool.
+- **The owner confirmed R10 on 2026-10-31.** A is held from its inline segment's entry until B's window closes, even when it dirtied nothing. The design's `AwaitWholeHandler` flush could not work, because that continuation runs on the thread pool.
 - **Filed in 18.2:** #593, a faulted batch never delivers its remove patches or its disposed handler ids. Its options need an owner decision. Also a comment on #568: the 17.1 cell lines name their commits now, and the 17.1 reds may be stale after the 18.1 and 18.2 harness changes. That is 18.9's audit question.
 - **Baselines:** .NET 1406, JVM 206, Android 249, iOS 289.
 - **The grading rule** for pins lives in `docs/pin-standard.md`, in the section "Grading a pin: sites and reds".
@@ -31,7 +31,6 @@
 
 ## Open Decisions (owner)
 
-- #596: confirm deviation R10, the entry hold. See the PR body and the record's §6.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
@@ -45,7 +44,7 @@
 
 ## Recommended Next Step
 
-1. Watch #596's CI. When it is green and CLEAN, and the owner has confirmed R10, squash-merge it. Strip any signature from the squash message, then verify the merge on `origin/main`.
+1. Watch #596's CI. When it is green and CLEAN, squash-merge it. The owner confirmed R10 and approved the merge on 2026-10-31. Strip any signature from the squash message, then verify the merge on `origin/main`.
 2. Run `start-next-phase` for **18.3, #506**: brainstorm the design per the owner decision. Android needs a per-key queue, so a same-key request waits behind a pending auth-bound one, and other keys keep flowing. Check iOS for the same hazard.
 3. Execute subagent-driven, the owner's standing preference. Lessons from 18.2:
    - Have every implementer tick its plan checkboxes.
