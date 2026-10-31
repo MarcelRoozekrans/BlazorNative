@@ -30,6 +30,7 @@ import io.blazornative.jni.BnHostEvent
 import io.blazornative.jni.BnLogLevel
 import io.blazornative.jni.BnPlatformKind
 import io.blazornative.jni.BnPrivacy
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 /**
@@ -182,6 +183,18 @@ class MainActivity : FragmentActivity() {
          * Activity's boot here, chosen by runtime identity, and releases it in its `@After`.
          */
         @VisibleForTesting @Volatile internal var bootEntryHookForTest: ((BlazorNativeRuntime) -> Unit)? = null
+
+        /** 18.4 (#511): one Activity's boot, its thread and the runtime that thread starts. */
+        private class Boot(val thread: Thread, val runtime: BlazorNativeRuntime)
+
+        /**
+         * 18.4 (#511): the newest Activity's boot, process-wide, because the native session the
+         * boots share is. [onCreate] swaps its own boot in on main before it starts the thread,
+         * and Activities are created on main in creation order, so the boot it gets back is the
+         * immediately older Activity's. Its boot thread joins that one and retires its runtime
+         * before its own start(): RecreationDuringBootAndroidTest pins both.
+         */
+        private val lastBoot = AtomicReference<Boot?>(null)
     }
 
     private val tag = "BlazorNative"
@@ -413,10 +426,29 @@ class MainActivity : FragmentActivity() {
             ?: "BnStarterPage"
         val componentName = restoredRoute?.takeIf { it != launchRoute }?.let { routes[it] } ?: launchComponent
 
-        thread(name = "BlazorNative-Runtime-Boot") {
+        // 18.4 (#511): the older Activity's boot, read by the thread below. Assigned on main before
+        // the thread starts, and Thread.start orders that write before everything the thread does.
+        var previous: Boot? = null
+        val bootThread = thread(start = false, name = "BlazorNative-Runtime-Boot") {
             // 18.4 test seam, null in production; see bootEntryHookForTest.
             val entryHook = bootEntryHookForTest
             if (entryHook != null) entryHook(runtime)
+            // 18.4 (#511): wait for the older Activity's boot to leave start(), then retire its
+            // runtime, so its frame callback, bridge registration and mount all land before this
+            // boot's, and its runtime drops any frame that still reaches it. Outside the try
+            // below, so it runs whether that boot succeeded or threw. Unbounded on purpose
+            // (design 18.4 D2): a boot that hangs inside start() means a broken native session,
+            // and starting a second one beside it is concurrent entry. The warn names the hang.
+            val older = previous
+            if (older != null) {
+                older.thread.join(10_000)
+                if (older.thread.isAlive) {
+                    BnShellLog.warn(tag, "The previous Activity's boot is still running after 10 s; " +
+                        "this boot waits for it to finish", privacy = BnPrivacy.SAFE)
+                    older.thread.join()
+                }
+                older.runtime.retire()
+            }
             try {
                 val lines = runtime.start(
                     componentName = componentName,
@@ -456,6 +488,8 @@ class MainActivity : FragmentActivity() {
                 BnShellLog.error(tag, "Boot failed", t, BnPrivacy.SAFE)
             }
         }
+        previous = lastBoot.getAndSet(Boot(bootThread, runtime))
+        bootThread.start()
     }
 
     // ── Lifecycle → host events (Phase 5.1, M5 DoD #5) ───────────────────────
@@ -493,8 +527,9 @@ class MainActivity : FragmentActivity() {
         // recreated Activity's start() re-registers the callback, is dropped instead of
         // rendered into this Activity's views. retire() waits, bounded at 5 s, only for a
         // dispatch's synchronous part, since 16.1 returns at its first yield; the OnDestroy
-        // event above is queued ahead of it and still runs. NOT COVERED: a recreation during
-        // boot, while `booted` is false and the boot thread may still be inside start(): #511.
+        // event above is queued ahead of it and still runs. 18.4 (#511): a boot that is still
+        // running here, `booted` false, is not retired here: the next Activity's boot thread joins
+        // it and retires its runtime before it calls start(), RecreationDuringBootAndroidTest.
         if (booted) runtime.retire()
         // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
         // mapper is reachable from the runtime's frame callback (process-global
