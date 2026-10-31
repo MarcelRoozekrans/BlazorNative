@@ -233,6 +233,7 @@ final class BnSecureStorageTests: BnHostTestCase {
                       "another request's completion released the waiting prompt's context")
 
         gate?.authenticate()
+        bridge.secureStorage.drainForTest() // 18.3 (#506): the answer hops onto the handler's queue
         XCTAssertEqual(captured1()?.status, BnSecureStorageStatus.ok, "the gated read completes")
         XCTAssertFalse(bridge.secureStorage.isRetainingContextForTest(48), "the context is released on its own completion")
     }
