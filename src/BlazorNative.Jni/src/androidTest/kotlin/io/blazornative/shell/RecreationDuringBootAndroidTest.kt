@@ -107,7 +107,7 @@ class RecreationDuringBootAndroidTest {
     }
 
     @Test
-    fun a_recreation_after_a_failed_first_boot_still_retires_it() {
+    fun a_relaunch_after_a_failed_first_boot_still_retires_it() {
         // The first boot fails: an unknown component makes start() throw at mount, so its Activity
         // never sets booted. Its Activity is closed during the hold and the next launch, with a
         // valid component, is the Activity that replaces it. A recreate() would keep the first

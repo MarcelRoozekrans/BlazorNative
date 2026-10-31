@@ -435,8 +435,9 @@ class MainActivity : FragmentActivity() {
             if (entryHook != null) entryHook(runtime)
             // 18.4 (#511): wait for the older Activity's boot to leave start(), then retire its
             // runtime, so its frame callback, bridge registration and mount all land before this
-            // boot's, and its runtime drops any frame that still reaches it. Outside the try
-            // below, so it runs whether that boot succeeded or threw. Unbounded on purpose
+            // boot's, and its runtime drops any frame that still reaches it. The join waits for
+            // the older thread to end, not for it to succeed or set `booted`, so a failed older
+            // boot is joined and retired too. Unbounded on purpose
             // (design 18.4 D2): a boot that hangs inside start() means a broken native session,
             // and starting a second one beside it is concurrent entry. The warn names the hang.
             val older = previous
