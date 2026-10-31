@@ -162,6 +162,13 @@ class MainActivity : FragmentActivity() {
          * against the shipping parser, not a re-implementation of it. */
         @JvmStatic
         internal fun parseDeepLinkRouteForTest(intent: Intent): String? = parseDeepLinkRoute(intent)
+
+        /**
+         * 18.4 (#511) test seam, `null` in production: invoked first on the boot thread, with
+         * the runtime that thread boots. RecreationDuringBootAndroidTest holds the first
+         * Activity's boot here, chosen by runtime identity, and releases it in its `@After`.
+         */
+        @VisibleForTesting @Volatile internal var bootEntryHookForTest: ((BlazorNativeRuntime) -> Unit)? = null
     }
 
     private val tag = "BlazorNative"
@@ -394,6 +401,9 @@ class MainActivity : FragmentActivity() {
         val componentName = restoredRoute?.takeIf { it != launchRoute }?.let { routes[it] } ?: launchComponent
 
         thread(name = "BlazorNative-Runtime-Boot") {
+            // 18.4 test seam, null in production; see bootEntryHookForTest.
+            val entryHook = bootEntryHookForTest
+            if (entryHook != null) entryHook(runtime)
             try {
                 val lines = runtime.start(
                     componentName = componentName,
