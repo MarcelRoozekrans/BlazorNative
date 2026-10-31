@@ -4016,10 +4016,12 @@ the app's handler through a forwarding hook.
 - **Filed:** #600 and #601 (Android, owner decisions), #602, #603 and #604 (one-off device and runner flakes). #598 stays out of scope.
 - **Baselines:** .NET 1406, JVM 206, Android 263, iOS 296.
 
-#### Phase 18.4: Recreation during boot (#511) [status: pending]
-**Goal:** An Activity recreated before boot completes shows its page.
+#### Phase 18.4: Recreation during boot (#511, #601) [status: active]
+**Goal:** An Activity recreated before boot completes shows its page. Since the owner decision of 2026-10-31, the secure-storage hold also has one process-wide owner (#601).
 **Surface:** Mixed
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-31-phase-18.4-design.md`](../superpowers/specs/2026-10-31-phase-18.4-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`](../superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md)
 
 #### Phase 18.5: Slow-handler naming for bound inputs (#522) [status: pending]
 **Goal:** Name the page and the wrapper's position, never a compiler lambda, by owner decision of 2026-10-24.

@@ -273,50 +273,65 @@ class AndroidShellBridge(
      * once; the outcome arrives later through host_call_complete. Biometrics and secure storage
      * used to do their BiometricManager and AndroidKeyStore work inside the begin, on the
      * caller's thread, which is .NET's render thread. Each handler now owns a serial executor,
-     * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests START in
-     * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
-     * An auth-bound request frees its executor while its prompt is up. 18.3 (#506): requests on
-     * one key take effect in begin order, within one bridge; a configuration change splits the
-     * hold across two bridges, #601. A storage request that shows a prompt holds its key
-     * ([held]) until its after-auth work has run; a later request on that key parks behind it
-     * and runs when the prompt answers, granted or denied. Requests on other keys keep flowing.
+     * as iOS's handlers own a serial queue since 16.4: biometrics one per bridge, and secure
+     * storage, since 18.4 (#601), one per process, [secureStorageExecutor] in the companion
+     * object. Serial so a handler's requests START in order, a plain set then a get of one key
+     * included, and so [drainForTest] is a barrier. An auth-bound request frees its executor
+     * while its prompt is up. 18.3 (#506): requests on one key take effect in begin order. A
+     * storage request that shows a prompt holds its key ([held]) until its after-auth work has
+     * run; a later request on that key parks behind it and runs when the prompt answers, granted
+     * or denied. Requests on other keys keep flowing. 18.4 (#601): the hold is process-wide, so
+     * this order holds across every bridge in the process, a recreated Activity's included: a
+     * request on the new bridge parks behind a prompt the old bridge showed. That is pinned by
+     * AndroidHostCallContractTest's 18.4 section.
      * An auth-bound storage request completes on its executor whether the prompt is granted or
      * denied, while biometrics' authenticate completes from the prompt's own callback, because
      * it does no work after the prompt. Daemon, so neither blocks process exit. */
     private val biometricsExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "BlazorNative-Biometrics").apply { isDaemon = true }
     }
-    private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
-    }
+
+    /** 18.4 (#601): a request, named by the bridge that began it and its request id. It is the
+     * owner of a [Hold] and the key of [pendingPrompts]. The bridge is part of it because a
+     * request id is unique only within what one caller issues: the instrumented tests make up
+     * their own ids, so two bridges in one process can use the same one, and with the id alone
+     * one bridge's release would free the other bridge's hold. Pinned by
+     * AndroidHostCallContractTest.the_same_request_id_on_another_bridge_does_not_release_a_hold.
+     * The bridge compares by identity, since AndroidShellBridge does not override equals. */
+    private data class PromptId(val bridge: AndroidShellBridge, val requestId: Long)
 
     /** 18.3 (#506): a key held by the request [owner], whose prompt is up, and the requests
-     * begun on that key since, in begin order. Each parked entry is the request's whole runJob
-     * wrapper, so the work gate and the Error-on-throw rule apply when it runs. */
-    private class Hold(val owner: Long) {
+     * begun on that key since, in begin order, on any bridge since 18.4. Each parked entry is the
+     * request's whole runJob wrapper, a closure over the bridge that began it, so the work gate,
+     * the Error-on-throw rule and the completion are that bridge's when it runs. */
+    private class Hold(val owner: PromptId) {
         val parked = ArrayDeque<() -> Unit>()
     }
 
-    /** 18.3 (#506): the held keys. A key in the map is held, even when nothing is parked behind
-     * it. Read and written ONLY on [secureStorageExecutor], so it needs no lock. */
-    private val held: MutableMap<String, Hold> = HashMap()
-
-    /** 18.3 (#506): a secure-storage request whose prompt is up: its key, its denial path, and,
-     * once main has built it, its real [prompt]. [prompt] is written and read on main only; it
-     * stays null under [biometricGateHook], which shows no real prompt. */
-    private class PendingPrompt(val requestId: Long, val key: String, val deny: () -> Unit) {
+    /** 18.3 (#506): a secure-storage request whose prompt is up: its key, its denial path, the
+     * bridge that showed it, [shownBy], since 18.4 (#601), and, once main has built it, its real
+     * [prompt]. [prompt] is written and read on main only; it stays null under
+     * [biometricGateHook], which shows no real prompt. */
+    private class PendingPrompt(
+        val requestId: Long,
+        val key: String,
+        val shownBy: AndroidShellBridge,
+        val deny: () -> Unit,
+    ) {
         var prompt: BiometricPrompt? = null
     }
-
-    /** 18.3 (#506): the prompts that are up, by request id. An entry is added with its key's hold
-     * and removed when the prompt's first answer reaches [afterAuth]. Read and written ONLY on
-     * [secureStorageExecutor]. [onHostActivityDestroyed] denies what is left in it. */
-    private val pendingPrompts: MutableMap<Long, PendingPrompt> = HashMap()
 
     /** 18.3 (#506): set when the Activity this bridge prompts on was destroyed for good, not by a
      * configuration change. That Activity never comes back, since a new Activity builds a new
      * bridge, so from then on [runBiometricGate] denies at once, as it does with no Activity. */
     @Volatile private var hostActivityDestroyed = false
+
+    /** 18.4 (#601): set when the Activity this bridge prompts on was destroyed by a configuration
+     * change. androidx keeps this bridge's pending prompts up and moves them into the new
+     * Activity's fragment, so the next final destroy, the new bridge's, is the one that drops
+     * their answers, and [onHostActivityDestroyed] denies them there. Written on
+     * [secureStorageExecutor] and read there, by another bridge's destroy. */
+    @Volatile private var destroyedByConfigChange = false
 
     /** 18.3 (#506): [requestId] holds [key] from now until its after-auth work has run. Called
      * on the executor immediately before the gate call. The order is not observable on Android,
@@ -326,20 +341,21 @@ class AndroidShellBridge(
      * The key is free here: a request reaches its prompt only when it started on a free key, or
      * was drained by [releaseHold], which removes the hold before it drains. The check enforces
      * it: a throw here completes the request Error through runJob, never a hang. */
-    private fun takeHold(key: String, requestId: Long) {
+    private fun takeHold(key: String, owner: PromptId) {
         check(held[key] == null) { "secure storage: a request took a key that was already held" }
-        held[key] = Hold(requestId)
+        held[key] = Hold(owner)
     }
 
-    /** 18.3 (#506): ends [requestId]'s hold on [key] and runs the requests parked behind it, in
-     * order, inline in this executor task. A drained request that takes the hold itself, because
-     * it shows a prompt too, stops the drain, and the rest stay parked behind it. When nothing
-     * takes the hold, the key leaves the map.
-     * A no-op unless [requestId] owns the hold: a second or late answer for a request that no
-     * longer holds the key must not release another request's hold. */
-    private fun releaseHold(key: String, requestId: Long) {
+    /** 18.3 (#506): ends [owner]'s hold on [key] and runs the requests parked behind it, in
+     * order, inline in this executor task, whichever bridge began them. A drained request that
+     * takes the hold itself, because it shows a prompt too, stops the drain, and the rest stay
+     * parked behind it. When nothing takes the hold, the key leaves the map.
+     * A no-op unless [owner] owns the hold: a second or late answer for a request that no
+     * longer holds the key must not release another request's hold, and since 18.4 neither must
+     * a request on another bridge that has the same id. */
+    private fun releaseHold(key: String, owner: PromptId) {
         val hold = held[key]
-        if (hold == null || hold.owner != requestId) {
+        if (hold == null || hold.owner != owner) {
             // SAFE needs a literal with no template, so the line names no request id.
             BnShellLog.warn(TAG, "secure storage: ignored a release by a request that does not hold its key",
                 privacy = BnPrivacy.SAFE)
@@ -378,9 +394,10 @@ class AndroidShellBridge(
      * not write a blob after the requests parked behind the denial have run. Its release is then
      * ignored by [releaseHold]'s owner check. */
     private fun afterAuth(requestId: Long, key: String, failure: String, work: () -> Unit) {
+        val id = PromptId(this, requestId)
         secureStorageExecutor.execute {
             try {
-                if (pendingPrompts.remove(requestId) != null) {
+                if (pendingPrompts.remove(id) != null) {
                     work()
                 } else {
                     BnShellLog.warn(TAG, "secure storage: ignored an answer for a prompt that already answered",
@@ -390,7 +407,7 @@ class AndroidShellBridge(
                 onError("$failure (request $requestId)", t)
                 completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
             } finally {
-                releaseHold(key, requestId)
+                releaseHold(key, id)
             }
         }
     }
@@ -403,13 +420,25 @@ class AndroidShellBridge(
      * its key, and its real prompt is cancelled so no orphan sheet stays up. A real answer that
      * still arrives is ignored by [afterAuth].
      * On a configuration change androidx keeps the prompt up and later answers the ORIGINAL
-     * callback, measured in record §1, so that destroy denies and cancels nothing.
+     * callback, measured in record §1, so that destroy denies and cancels nothing. Before it
+     * returns it queues the [destroyedByConfigChange] mark on the serial executor, so a later
+     * destroy's denial, queued behind it, reads it.
+     * 18.4 (#601): the prompt maps are process-wide, so a final destroy denies only the prompts
+     * whose answer it drops: its own bridge's, and those whose bridge's Activity a configuration
+     * change destroyed, since androidx moved them into this Activity's fragment. A prompt whose
+     * bridge's Activity is still alive is never denied. Pinned by AndroidHostCallContractTest's
+     * a_final_destroy_denies_only_its_own_bridges_prompts and
+     * a_final_destroy_denies_a_prompt_orphaned_by_a_configuration_change, and on a real
+     * MainActivity by SecureHoldAcrossRecreationAndroidTest.
      * Biometrics' authenticate prompt holds no key and is not denied here; see record §6. */
     internal fun onHostActivityDestroyed(isChangingConfigurations: Boolean) {
-        if (isChangingConfigurations) return
+        if (isChangingConfigurations) {
+            secureStorageExecutor.execute { destroyedByConfigChange = true }
+            return
+        }
         hostActivityDestroyed = true
         secureStorageExecutor.execute {
-            val lost = pendingPrompts.values.toList()
+            val lost = pendingPrompts.values.filter { it.shownBy === this || it.shownBy.destroyedByConfigChange }
             if (lost.isEmpty()) return@execute
             for (pending in lost) pending.deny()
             ContextCompat.getMainExecutor(appContext).execute {
@@ -424,9 +453,10 @@ class AndroidShellBridge(
      * comes first so that `pending` reaches the gate, which wires cancelAuthentication; that half
      * needs a real prompt and is unpinned. iOS needs it. */
     private fun holdForPrompt(key: String, requestId: Long, onDenied: (Int) -> Unit): PendingPrompt {
-        takeHold(key, requestId)
-        val pending = PendingPrompt(requestId, key) { onDenied(SecureStorageStatus.AUTH_FAILED) }
-        pendingPrompts[requestId] = pending
+        val id = PromptId(this, requestId)
+        takeHold(key, id)
+        val pending = PendingPrompt(requestId, key, this) { onDenied(SecureStorageStatus.AUTH_FAILED) }
+        pendingPrompts[id] = pending
         return pending
     }
 
@@ -434,8 +464,9 @@ class AndroidShellBridge(
      * take; a request parked behind it is still in the draining loop that ran this one, and
      * continues there. */
     private fun undoHoldForPrompt(key: String, requestId: Long) {
-        pendingPrompts.remove(requestId)
-        releaseHold(key, requestId)
+        val id = PromptId(this, requestId)
+        pendingPrompts.remove(id)
+        releaseHold(key, id)
     }
 
     /** 18.3 (#506): the key a secure-storage request names, parsed as [handleSecureStorage] does.
@@ -470,7 +501,8 @@ class AndroidShellBridge(
             HostCallOp.BIOMETRICS -> biometricsExecutor.execute {
                 runJob(requestId, BiometricStatus.ERROR) { handleBiometrics(requestId, argsJson) }
             }
-            // 18.3 (#506): a request on a held key parks until that key's prompt answers.
+            // 18.3 (#506): a request on a held key parks until that key's prompt answers, and since
+            // 18.4 (#601) whichever bridge in the process showed that prompt.
             HostCallOp.SECURE_STORAGE -> secureStorageExecutor.execute {
                 val job = { runJob(requestId, SecureStorageStatus.ERROR) { handleSecureStorage(requestId, argsJson) } }
                 val hold = held[secureStorageKeyOf(argsJson)]
@@ -1430,8 +1462,9 @@ class AndroidShellBridge(
      * prove no orphan blob survives a delete. Reads the prefs only. */
     internal fun hasBlobForTest(key: String): Boolean = loadBlob(key) != null
 
-    /** 18.3 (#506) test seam: whether [key] is held by a pending prompt. Reads [held] on the
-     * secure-storage executor, its only thread, through a latch, as [drainForTest] does. */
+    /** 18.3 (#506) test seam: whether [key] is held by a pending prompt, on any bridge since 18.4.
+     * Reads [held] on the secure-storage executor, its only thread, through a latch, as
+     * [drainForTest] does. */
     internal fun isKeyHeldForTest(key: String): Boolean {
         val result = java.util.concurrent.atomic.AtomicBoolean(false)
         val done = java.util.concurrent.CountDownLatch(1)
@@ -1443,6 +1476,14 @@ class AndroidShellBridge(
             "secure-storage executor did not answer"
         }
         return result.get()
+    }
+
+    /** 18.4 (#601) test seam: runs [releaseHold] for [key] and [requestId] on the secure-storage
+     * executor, as an answer on this bridge would, so a pin can release from one bridge with the
+     * request id another bridge's hold uses. Production never calls it. Returns at once; drain to
+     * wait for it. */
+    @VisibleForTesting internal fun releaseHoldForTest(key: String, requestId: Long) {
+        secureStorageExecutor.execute { releaseHold(key, PromptId(this, requestId)) }
     }
 
     // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
@@ -1816,6 +1857,21 @@ class AndroidShellBridge(
         private const val AES_GCM = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128
 
+        /** 18.4 (#601): ONE secure-storage executor, hold map and prompt map for every bridge in
+         * the process. A configuration change builds a new bridge while androidx keeps the old
+         * bridge's prompt up, so per-bridge maps let a same-key request on the new bridge run
+         * ahead of that prompt, #506's hazard across a recreation. [held] holds the held keys: a
+         * key in the map is held, even when nothing is parked behind it. [pendingPrompts] holds
+         * the prompts that are up: an entry is added with its key's hold and removed when the
+         * prompt's first answer reaches afterAuth, and onHostActivityDestroyed denies what it
+         * drops. Both are read and written ONLY on [secureStorageExecutor], so they need no lock.
+         * Its thread name is unchanged. */
+        private val secureStorageExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "BlazorNative-SecureStorage").apply { isDaemon = true }
+        }
+        private val held: MutableMap<String, Hold> = HashMap()
+        private val pendingPrompts: MutableMap<PromptId, PendingPrompt> = HashMap()
+
         // ── Camera (Phase 9.3) ───────────────────────────────────────────────
         /** The app-cache subdir the captures live in (mirrored in res/xml/file_paths.xml's
          * `<cache-path>`), the default long-edge cap + JPEG quality (the .NET CaptureOptions
@@ -2041,6 +2097,19 @@ class AndroidShellBridge(
             jobFaultForTest = null
             setAuthAllowsDeviceCredentialForTest = false
             biometricGateHook = null
+            // 18.4 (#601): the hold is process-wide, so a key one test leaves held would park the
+            // next test's requests on it. Fail by name after the test's drain; never clear the
+            // maps, which would hide the leak.
+            val left = AtomicBoolean(true)
+            val done = java.util.concurrent.CountDownLatch(1)
+            secureStorageExecutor.execute {
+                left.set(held.isNotEmpty() || pendingPrompts.isNotEmpty())
+                done.countDown()
+            }
+            check(done.await(5_000, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                "secure-storage executor did not answer"
+            }
+            check(!left.get()) { "secure storage: a test left a held key" }
         }
 
         /** Test seam (instrumented BnCameraAndroidTest / CameraCaptureAndroidTest): when non-null,

@@ -61,6 +61,8 @@ class AndroidHostCallContractTest {
     private data class Completion(val requestId: Long, val status: Int, val payload: Map<String, String>?, val thread: String)
 
     private lateinit var bridge: AndroidShellBridge
+    /** Every bridge a test builds, [bridge] first. [cleanup] destroys each of them. */
+    private val bridges: MutableList<AndroidShellBridge> = Collections.synchronizedList(mutableListOf())
     private val completions: MutableList<Completion> = Collections.synchronizedList(mutableListOf())
     private val callers: MutableList<Thread> = Collections.synchronizedList(mutableListOf())
 
@@ -77,7 +79,7 @@ class AndroidHostCallContractTest {
         AndroidShellBridge.completeHookForTest = { id, status, payload, thread ->
             completions.add(Completion(id, status, payload, thread))
         }
-        bridge = AndroidShellBridge(InstrumentationRegistry.getInstrumentation().targetContext) { _, _ -> }
+        bridge = newBridge()
         bridge.secureDeleteCore(key)
     }
 
@@ -85,10 +87,22 @@ class AndroidHostCallContractTest {
     fun cleanup() {
         AndroidShellBridge.workGateForTest?.countDown()
         synchronized(callers) { callers.toList() }.forEach { it.join(10_000) }
-        bridge.drainForTest()
+        // 18.4 (#601): a test that fails before it answers a prompt leaves that prompt's key held,
+        // and since 18.4 the hold is process-wide, so it would park the next test's requests on the
+        // same key. A final destroy of every bridge the test built denies what is still pending
+        // through the product's own path, which releases each key. Each denial hops through the
+        // executor, and a drained request can take the hold and be denied in turn, so this drains
+        // more than once.
+        for (each in synchronized(bridges) { bridges.toList() }) {
+            onMain { each.onHostActivityDestroyed(isChangingConfigurations = false) }
+        }
+        repeat(4) { bridge.drainForTest() }
         bridge.secureDeleteCore(key)
         AndroidShellBridge.resetHostCallContractForTest()
     }
+
+    private fun newBridge(): AndroidShellBridge =
+        AndroidShellBridge(InstrumentationRegistry.getInstrumentation().targetContext) { _, _ -> }.also { bridges.add(it) }
 
     private fun completionFor(id: Long, timeoutMs: Long = 10_000): Completion? {
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -259,9 +273,9 @@ class AndroidHostCallContractTest {
 
     private fun onMain(block: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync { block() }
 
-    private fun begin(args: String): Long {
+    private fun begin(args: String, on: AndroidShellBridge = bridge): Long {
         val id = ids.getAndIncrement()
-        bridge.hostCallBegin(id, HostCallOp.SECURE_STORAGE, args)
+        on.hostCallBegin(id, HostCallOp.SECURE_STORAGE, args)
         return id
     }
 
@@ -658,5 +672,124 @@ class AndroidHostCallContractTest {
         } finally {
             SecureHarness.clearPin()
         }
+    }
+
+    // ── 18.4 (#601): one secure-storage hold for every bridge in the process ─────────────────
+    //
+    // A configuration change gives the new Activity a new bridge, while androidx keeps the old
+    // Activity's prompt up and answers the OLD bridge's callback (18.3 record §1). A same-key
+    // request .NET begins after the recreation reaches the NEW bridge. Since 18.4 the executor,
+    // the held keys and the pending prompts are process-wide, so that request parks behind the old
+    // bridge's prompt. Holds and prompts are keyed by bridge and request id, because these tests
+    // make up their own ids and two bridges can share one. A final destroy denies its own bridge's
+    // prompts and the prompts a configuration change orphaned into its Activity, never a prompt
+    // whose bridge's Activity is still alive.
+    //
+    // Bridge `a` is the test's own [bridge]; `b` is a second bridge in the same process, as a
+    // recreated Activity's is. SecureHoldAcrossRecreationAndroidTest drives the orphan case
+    // through a real MainActivity.
+    //
+    // iOS is not affected: it never recreates its root view controller, so it has one bridge, and
+    // one BnSecureStorage hold, per process.
+
+    @Test
+    fun a_same_key_delete_on_another_bridge_waits_behind_a_pending_auth_set() = withPin {
+        val a = bridge
+        val b = newBridge()
+        val set = begin(authSet("v1"), on = a)
+        val gate = awaitGate("auth set on the first bridge")
+        val del = begin(deleteArgs, on = b)
+        b.drainForTest()
+        assertNull("anchor: the delete on the second bridge completed while the first bridge's prompt was up: #601",
+            completionNow(del))
+
+        onMain { gate.succeed() }
+        logStatus("cross_bridge_delete", "auth set", mustComplete("auth set on the first bridge", set))
+        mustComplete("delete on the second bridge", del)
+        assertTrue("the delete on the second bridge overtook the first bridge's after-auth work: " +
+            "set=${indexOf(set)} delete=${indexOf(del)}", indexOf(set) < indexOf(del))
+        assertFalse("an orphan blob survived the delete", a.hasBlobForTest(key))
+    }
+
+    @Test
+    fun another_key_on_another_bridge_is_not_blocked() = withPin {
+        val a = bridge
+        val b = newBridge()
+        val set = begin(authSet("v1"), on = a)
+        val gate = awaitGate("auth set on the first bridge")
+        val otherSet = begin("""{"action":"set","key":"$otherKey","value":"o1","auth":"0"}""", on = b)
+        val otherGet = begin("""{"action":"get","key":"$otherKey"}""", on = b)
+        assertEquals("a plain set on another key through the second bridge waited behind the first bridge's prompt",
+            SecureStorageStatus.OK, completionFor(otherSet)?.status)
+        val got = completionFor(otherGet)
+        assertEquals("a get on another key through the second bridge waited behind the first bridge's prompt",
+            SecureStorageStatus.OK, got?.status)
+        assertEquals("the get on another key through the second bridge returned the wrong value",
+            "o1", got?.payload?.get("value"))
+        assertTrue("anchor: the first bridge's prompt is still up", a.isKeyHeldForTest(key))
+
+        onMain { gate.deny(SecureStorageStatus.AUTH_FAILED) }
+        mustComplete("auth set on the first bridge", set)
+    }
+
+    @Test
+    fun the_same_request_id_on_another_bridge_does_not_release_a_hold() = withPin {
+        val a = bridge
+        val b = newBridge()
+        val set = begin(authSet("v1"), on = a)
+        val gate = awaitGate("auth set on the first bridge")
+        val del = begin(deleteArgs, on = a)
+        a.drainForTest()
+        assertNull("anchor: the delete completed while the auth set's prompt was up: #506", completionNow(del))
+
+        // The same request id N, released from the other bridge.
+        b.releaseHoldForTest(key, set)
+        b.drainForTest()
+        assertNull("anchor: bridge b's release freed bridge a's hold", completionNow(del))
+
+        onMain { gate.deny(SecureStorageStatus.AUTH_FAILED) }
+        mustComplete("auth set on the first bridge", set)
+        assertEquals("the parked delete must complete Ok once its own prompt answers",
+            SecureStorageStatus.OK, mustComplete("delete", del).status)
+    }
+
+    @Test
+    fun a_final_destroy_denies_only_its_own_bridges_prompts() = withPin {
+        val a = bridge
+        val b = newBridge()
+        val setA = begin(authSet("a"), on = a)
+        awaitGate("auth set on the first bridge")
+        val setB = begin("""{"action":"set","key":"$otherKey","value":"b","auth":"1"}""", on = b)
+        val gateB = awaitGate("auth set on the second bridge")
+
+        onMain { a.onHostActivityDestroyed(isChangingConfigurations = false) }
+        assertEquals("the first bridge's auth set must complete AuthFailed when its Activity is destroyed",
+            SecureStorageStatus.AUTH_FAILED, mustComplete("auth set on the destroyed bridge", setA).status)
+        b.drainForTest()
+        assertNull("anchor: a's destroy denied b's live prompt", completionNow(setB))
+
+        onMain { gateB.deny(SecureStorageStatus.AUTH_FAILED) }
+        mustComplete("auth set on the second bridge", setB)
+    }
+
+    @Test
+    fun a_final_destroy_denies_a_prompt_orphaned_by_a_configuration_change() = withPin {
+        val a = bridge
+        val b = newBridge()
+        val set = begin(authSet("v1"), on = a)
+        awaitGate("auth set on the first bridge")
+        val del = begin(deleteArgs, on = b)
+
+        // A rotation destroys a's Activity and keeps its prompt up; then the new Activity, b's,
+        // is finished, and androidx drops the prompt it now hosts.
+        onMain { a.onHostActivityDestroyed(isChangingConfigurations = true) }
+        onMain { b.onHostActivityDestroyed(isChangingConfigurations = false) }
+        assertEquals("the orphaned prompt was never denied: its key is held forever",
+            SecureStorageStatus.AUTH_FAILED, completionFor(set)?.status)
+        assertEquals("the delete parked behind the orphaned prompt must complete Ok",
+            SecureStorageStatus.OK, mustComplete("delete parked behind the orphaned prompt", del).status)
+        assertTrue("the delete on the second bridge overtook the orphaned prompt's denial: " +
+            "set=${indexOf(set)} delete=${indexOf(del)}", indexOf(set) < indexOf(del))
+        assertFalse("the key is still held after the orphaned prompt was denied", a.isKeyHeldForTest(key))
     }
 }

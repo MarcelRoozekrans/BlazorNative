@@ -30,6 +30,7 @@ import io.blazornative.jni.BnHostEvent
 import io.blazornative.jni.BnLogLevel
 import io.blazornative.jni.BnPlatformKind
 import io.blazornative.jni.BnPrivacy
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 /**
@@ -175,6 +176,25 @@ class MainActivity : FragmentActivity() {
          * against the shipping parser, not a re-implementation of it. */
         @JvmStatic
         internal fun parseDeepLinkRouteForTest(intent: Intent): String? = parseDeepLinkRoute(intent)
+
+        /**
+         * 18.4 (#511) test seam, `null` in production: invoked first on the boot thread, with
+         * the runtime that thread boots. RecreationDuringBootAndroidTest holds the first
+         * Activity's boot here, chosen by runtime identity, and releases it in its `@After`.
+         */
+        @VisibleForTesting @Volatile internal var bootEntryHookForTest: ((BlazorNativeRuntime) -> Unit)? = null
+
+        /** 18.4 (#511): one Activity's boot, its thread and the runtime that thread starts. */
+        private class Boot(val thread: Thread, val runtime: BlazorNativeRuntime)
+
+        /**
+         * 18.4 (#511): the newest Activity's boot, process-wide, because the native session the
+         * boots share is. [onCreate] swaps its own boot in on main before it starts the thread,
+         * and Activities are created on main in creation order, so the boot it gets back is the
+         * immediately older Activity's. Its boot thread joins that one and retires its runtime
+         * before its own start(): RecreationDuringBootAndroidTest pins both.
+         */
+        private val lastBoot = AtomicReference<Boot?>(null)
     }
 
     private val tag = "BlazorNative"
@@ -203,6 +223,11 @@ class MainActivity : FragmentActivity() {
     /** 17.7 test seam: this Activity's runtime. RecreationAndroidTest keeps the one it reads
      * before a rotation and checks that onDestroy retired it. */
     @VisibleForTesting internal val runtimeForTest: BlazorNativeRuntime get() = runtime
+
+    /** 18.4 (#601) test seam: this Activity's shell bridge. SecureHoldAcrossRecreationAndroidTest
+     * begins a request on it before a rotation, so the request's prompt belongs to the bridge whose
+     * Activity the rotation destroys. */
+    @VisibleForTesting internal val shellBridgeForTest: AndroidShellBridge? get() = shellBridge
 
     /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
      * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
@@ -406,7 +431,31 @@ class MainActivity : FragmentActivity() {
             ?: "BnStarterPage"
         val componentName = restoredRoute?.takeIf { it != launchRoute }?.let { routes[it] } ?: launchComponent
 
-        thread(name = "BlazorNative-Runtime-Boot") {
+        // 18.4 (#511): the older Activity's boot, read by the thread below. Assigned on main before
+        // the thread starts, and Thread.start orders that write before everything the thread does.
+        var previous: Boot? = null
+        val bootThread = thread(start = false, name = "BlazorNative-Runtime-Boot") {
+            // 18.4 test seam, null in production; see bootEntryHookForTest.
+            val entryHook = bootEntryHookForTest
+            if (entryHook != null) entryHook(runtime)
+            // 18.4 (#511): wait for the older Activity's boot to leave start(), then retire its
+            // runtime, so its frame callback, bridge registration and mount all land before this
+            // boot's, and its runtime drops any frame that still reaches it. The join waits for
+            // the older thread to end, not for it to succeed or set `booted`, so a failed older
+            // boot is joined and retired too. Unbounded on purpose
+            // (design 18.4 D2): a boot that hangs inside start() means a broken native session,
+            // and starting a second one beside it is concurrent entry. The warn names the hang.
+            val older = previous
+            if (older != null) {
+                older.thread.join(10_000)
+                if (older.thread.isAlive) {
+                    BnShellLog.warn(tag,
+                        "The previous Activity's boot is still running after 10 s; this boot waits for it",
+                        privacy = BnPrivacy.SAFE)
+                    older.thread.join()
+                }
+                older.runtime.retire()
+            }
             try {
                 val lines = runtime.start(
                     componentName = componentName,
@@ -446,6 +495,8 @@ class MainActivity : FragmentActivity() {
                 BnShellLog.error(tag, "Boot failed", t, BnPrivacy.SAFE)
             }
         }
+        previous = lastBoot.getAndSet(Boot(bootThread, runtime))
+        bootThread.start()
     }
 
     // ── Lifecycle → host events (Phase 5.1, M5 DoD #5) ───────────────────────
@@ -483,8 +534,9 @@ class MainActivity : FragmentActivity() {
         // recreated Activity's start() re-registers the callback, is dropped instead of
         // rendered into this Activity's views. retire() waits, bounded at 5 s, only for a
         // dispatch's synchronous part, since 16.1 returns at its first yield; the OnDestroy
-        // event above is queued ahead of it and still runs. NOT COVERED: a recreation during
-        // boot, while `booted` is false and the boot thread may still be inside start(): #511.
+        // event above is queued ahead of it and still runs. 18.4 (#511): a boot that is still
+        // running here, `booted` false, is not retired here: the next Activity's boot thread joins
+        // it and retires its runtime before it calls start(), RecreationDuringBootAndroidTest.
         if (booted) runtime.retire()
         // Phase 6.1: the view tree and the Yoga tree die with the Activity. The
         // mapper is reachable from the runtime's frame callback (process-global
@@ -496,9 +548,10 @@ class MainActivity : FragmentActivity() {
         if (::mapper.isInitialized) mapper.destroy()
         // 18.3 (#506): a destroy that is not a configuration change can drop a pending
         // secure-storage prompt's answer, which would hold its key forever; the bridge denies
-        // those prompts. A configuration change keeps the prompt up, so the bridge skips it.
-        // The per-key order holds within one bridge; a configuration change splits the hold
-        // across two bridges, #601.
+        // those prompts. A configuration change keeps the prompt up, so the bridge only marks
+        // itself. 18.4 (#601): the hold is process-wide, so the per-key order holds across a
+        // rotation, and this destroy also denies the prompts a rotation orphaned into this
+        // Activity. Pinned by SecureHoldAcrossRecreationAndroidTest.
         shellBridge?.onHostActivityDestroyed(isChangingConfigurations)
         super.onDestroy()
     }
