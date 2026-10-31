@@ -2,7 +2,7 @@
 
 **Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.4 — recreation during boot (#511), with #601 folded in. It is in design, and the design awaits the owner's approval. 18.1, 18.2 and 18.3 are complete and merged.
+**Phase:** 18.4 — recreation during boot (#511), with #601 folded in. The owner approved the design on 2026-10-31, and the plan is written: `docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`. 18.1, 18.2 and 18.3 are complete and merged.
 **Branch:** `feat/18.4-recreation-during-boot`.
 
 ## Current Position
@@ -51,7 +51,7 @@
 ## Recommended Next Step
 
 1. **#599 is merged** (`2eb3f22d`).
-2. **18.4, #511 and #601:** get the owner's approval of the design, then write the plan and execute it subagent-driven.
+2. **18.4, #511 and #601:** execute the plan subagent-driven, starting at Task 1.
 3. Lessons from 18.2 and 18.3 still apply:
    - Have every implementer tick its plan checkboxes.
    - Grep for hard-coded test counts early.

@@ -60,7 +60,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #564, #551, #453 and #407 fixed at cause; #444 open with instrumentation, SpringBoard stall captured (#584)
 2. Phase 18.2 — fault attribution for queued work (#500) [complete]
 3. Phase 18.3 — secure-storage per-key ordering (#506) [complete] — same-key requests queue behind a pending prompt on both shells (#599)
-4. Phase 18.4 — recreation during boot (#511) [pending]
+4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [active]
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [pending]
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [pending]
 7. Phase 18.7 — twin divergences (#401, #396) [pending]
