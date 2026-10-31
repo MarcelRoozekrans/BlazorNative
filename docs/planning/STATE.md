@@ -1,33 +1,28 @@
 # Session State
 
-**Last session:** 2026-10-30
+**Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.2 — Fault attribution for queued work (#500) `[status: pending]`. The design is approved; the plan is not written yet.
-**Branch:** `feat/18.2-queued-fault-attribution`, from `main` at `97217e63`.
+**Phase:** 18.2 — Fault attribution for queued work (#500) `[status: complete]` on branch `feat/18.2-queued-fault-attribution`, **PR #596**. Next is **18.3 — secure-storage per-key ordering (#506)** `[status: pending]`.
+**Branch:** `feat/18.2-queued-fault-attribution` → PR #596. 18.3 starts from `main` once #596 is merged.
 
 ## Current Position
 
-- **18.1 is complete on `main`.** #584 shipped it, and #591, merged 2026-10-30 as `97217e63`, recorded it. #591's one red was the iOS simulator lane: `xcodebuild` could not find the booted simulator, so no tests ran. That error appears once in the last 30 ios.yml runs, and the job passed on rerun.
-- **The 18.2 design is approved:** `docs/superpowers/specs/2026-10-30-phase-18.2-design.md`. The owner approved it on 2026-10-30, including its five "Calls made in this design".
-- **Baselines:** .NET 1387, JVM 206, Android 249, iOS 289.
+- **18.1 is complete on `main`:** #584 shipped it, and #591 recorded it.
+- **18.2 is complete, but only on its branch.** It lands when PR #596 merges, which says "Closes #500" on purpose. Until then `main` still shows 18.2 `active`; read state from `origin/main` after the merge.
+  - Design: `docs/superpowers/specs/2026-10-30-phase-18.2-design.md`, approved 2026-10-30 and amended 2026-10-31.
+  - Plan: `docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`.
+  - Record: `docs/plans/2026-10-30-phase-18.2-record.md`. Its §6 lists the deviations from the design.
+- **The owner should confirm R10 on #596.** A is held from its inline segment's entry until B's window closes, even when it dirtied nothing. The design's `AwaitWholeHandler` flush could not work, because that continuation runs on the thread pool.
+- **Filed in 18.2:** #593, a faulted batch never delivers its remove patches or its disposed handler ids. Its options need an owner decision. Also a comment on #568: the 17.1 cell lines name their commits now, and the 17.1 reds may be stale after the 18.1 and 18.2 harness changes. That is 18.9's audit question.
+- **Baselines:** .NET 1406, JVM 206, Android 249, iOS 289.
 - **The grading rule** for pins lives in `docs/pin-standard.md`, in the section "Grading a pin: sites and reds".
-- **Owner rule (2026-10-25):** no Claude signature anywhere, meaning no `Co-Authored-By` trailer and no "Generated with" line. When merging, strip any signature from the squash message.
-
-## Owner decisions for 18.2 (2026-10-30)
-
-- **Re-render tagging: flags plus the render log.**
-  - An `AsyncLocal` change callback on `s_flowingScope` marks when A's flow runs inside B's window.
-  - A diff of `ComponentBase._hasPendingQueuedRender` across that interval tags the components A dirtied.
-  - The renderer's own logger catches Blazor's Debug `RenderingComponent` call, so it knows which component is rendering.
-  - Reading Blazor's render queue through `UnsafeAccessorType` was rejected.
-- **Drift guard: throw at load.** `_hasPendingQueuedRender` joins `BlazorInterop.VerifyAccessors`, so a mismatch throws `BlazorVersionMismatchException`. It does not degrade.
-- **The key finding the plan must keep: the Done trap.** In the inline case, A's handler finishes before B's batch renders A's re-render. So `AwaitWholeHandler` must flush the diff explicitly, then await, never block on, A's outstanding tagged work. The settle is a `TaskCompletionSource` with `RunContinuationsAsynchronously`, released in B's `DispatchSyncPart` `finally`.
+- **Owner rule (2026-10-25):** no Claude signature anywhere, meaning no `Co-Authored-By` trailer and no "Generated with" line. When merging, strip any signature from the squash message. #596's commits were checked with `scripts/commit-parse-check`: all 35 parse, and none carries a signature.
 
 ## Owner decisions for M18 (2026-10-24)
 
 | Issue | Decision |
 |---|---|
-| #500 | Attribute a fault in a re-render or `RunAfterDispatch` action to the dispatch that queued it, using the flowing scope #464 used. |
+| #500 | Attribute a fault in a re-render or `RunAfterDispatch` action to the dispatch that queued it. Done in 18.2, PR #596. |
 | #506 | Per-key secure-storage queue on Android; check iOS too. |
 | #522 | Name the page plus the wrapper position, never a compiler lambda. |
 | #543 | Bounded wait plus a Gradle per-test timeout. |
@@ -36,6 +31,8 @@
 
 ## Open Decisions (owner)
 
+- #596: confirm deviation R10, the entry hold. See the PR body and the record's §6.
+- #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
 - #582: the allowlist for a second-Activity logcat check.
@@ -44,10 +41,13 @@
 
 ## Blockers
 
-- None.
+- None. 18.3 waits only for #596 to merge, so it starts from a `main` that has 18.2.
 
 ## Recommended Next Step
 
-1. On `feat/18.2-queued-fault-attribution`, run `start-next-phase`. 18.2 is pending, its spec exists and it has no plan, so the next step is `superpowers:writing-plans` from the approved spec. The plan sets the phase `active` and adds its `**Plan:**` line in ROADMAP.md.
-2. In the plan, mark the `NativeRenderer` tasks, the callback, settle and attribution, `**Model:** opus`, because they involve tricky concurrency. Include a mutation-record task under "Grading a pin: sites and reds", the register cell in `docs/pin-standard.md`, and the rewrite of `FaultNoticeTests`' 17.1 DOES NOT COVER block.
-3. Execute subagent-driven, the owner's standing preference, then `complete-phase` and a PR. Use no closing keywords unless the closure is intended; #500 is meant to close with this phase.
+1. Watch #596's CI. When it is green and CLEAN, and the owner has confirmed R10, squash-merge it. Strip any signature from the squash message, then verify the merge on `origin/main`.
+2. Run `start-next-phase` for **18.3, #506**: brainstorm the design per the owner decision. Android needs a per-key queue, so a same-key request waits behind a pending auth-bound one, and other keys keep flowing. Check iOS for the same hazard.
+3. Execute subagent-driven, the owner's standing preference. Lessons from 18.2:
+   - Have every implementer tick its plan checkboxes.
+   - Grep for the hard-coded .NET count in `ci.yml` early.
+   - Expect the staleness rule to force a full re-run of the reds after any late edit to a subject or test file.

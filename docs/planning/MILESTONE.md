@@ -27,7 +27,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
   - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
   - No fix raises a bound to hide a slow path.
   - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
-- [ ] **#500 is fixed as decided.** The owner decided on 2026-10-24 to attribute faults to the dispatch that queued the work.
+- [x] **#500 is fixed as decided.** The owner decided on 2026-10-24 to attribute faults to the dispatch that queued the work.
   - A re-render queued by dispatch A's continuation is tagged with A's scope, as is an action A queues through `RunAfterDispatch`.
   - A fault in that work is A's: a late FaultNotice under A's handler id. The window it runs in keeps its own rc.
   - Both outcomes are pinned and mutation-proven.
@@ -58,7 +58,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 ## Phases
 
 1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #564, #551, #453 and #407 fixed at cause; #444 open with instrumentation, SpringBoard stall captured (#584)
-2. Phase 18.2 — fault attribution for queued work (#500) [active]
+2. Phase 18.2 — fault attribution for queued work (#500) [complete]
 3. Phase 18.3 — secure-storage per-key ordering (#506) [pending]
 4. Phase 18.4 — recreation during boot (#511) [pending]
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [pending]
