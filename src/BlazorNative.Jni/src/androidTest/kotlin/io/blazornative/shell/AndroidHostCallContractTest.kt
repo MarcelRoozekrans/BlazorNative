@@ -8,6 +8,7 @@ import io.blazornative.jni.SecureStorageStatus
 import org.junit.After
 import android.util.Log
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -305,7 +306,7 @@ class AndroidHostCallContractTest {
         mustComplete("delete", del)
         logStatus("delete_waits", "auth set", setDone)
         assertTrue("the delete overtook the auth set's after-auth work", indexOf(set) < indexOf(del))
-        assertTrue("an orphan blob survived the delete", !bridge.hasBlobForTest(key))
+        assertFalse("an orphan blob survived the delete", bridge.hasBlobForTest(key))
     }
 
     @Test
@@ -357,7 +358,7 @@ class AndroidHostCallContractTest {
             SecureStorageStatus.OK, completionFor(otherSet)?.status)
         val got = completionFor(otherGet)
         assertEquals("a get on another key waited behind key A's prompt", SecureStorageStatus.OK, got?.status)
-        assertEquals("o1", got?.payload?.get("value"))
+        assertEquals("the get on another key returned the wrong value", "o1", got?.payload?.get("value"))
         assertNull("anchor: key A's prompt is still up", completionNow(set))
         assertTrue("anchor: key A's prompt is still up", bridge.isKeyHeldForTest(key))
 
@@ -446,5 +447,77 @@ class AndroidHostCallContractTest {
         assertEquals("the delete parked behind the throw must complete Ok",
             SecureStorageStatus.OK, mustComplete("delete parked behind the throw", del).status)
         assertTrue("the delete overtook the auth set that threw", indexOf(b) < indexOf(del))
+    }
+
+    // ── 18.3 (#506) Task 3: a destroyed Activity denies its pending prompts ──────────────────
+    //
+    // Record §1: when the Activity that hosts a prompt is destroyed by finish() or after going to
+    // the background, androidx can drop the prompt's answer, which would hold its key forever.
+    // On a configuration change androidx keeps the prompt up and later answers the ORIGINAL
+    // callback, so that destroy must deny nothing.
+    //
+    // The gate hook replaces the real prompt, so no Activity hosts it here. These pins drive the
+    // destroy through AndroidShellBridge.onHostActivityDestroyed, the entry point MainActivity's
+    // onDestroy calls, with a hook-held gate registered as pending. NOT COVERED: the
+    // MainActivity.onDestroy call site itself, and cancelAuthentication on a real prompt.
+
+    @Test
+    fun a_destroyed_activity_releases_the_held_key() = withPin {
+        val set = begin(authSet("v1"))
+        awaitGate("auth set")
+        val del = begin(deleteArgs)
+        bridge.drainForTest()
+        assertNull("anchor: the delete completed while the auth set's prompt was up: #506", completionNow(del))
+
+        onMain { bridge.onHostActivityDestroyed(isChangingConfigurations = false) }
+        assertEquals("anchor: the auth set whose Activity was destroyed must complete AuthFailed",
+            SecureStorageStatus.AUTH_FAILED, mustComplete("auth set whose Activity was destroyed", set).status)
+        assertEquals("anchor: the delete parked behind the lost prompt must complete Ok",
+            SecureStorageStatus.OK, mustComplete("delete parked behind the lost prompt", del).status)
+        assertTrue("the delete overtook the denied auth set", indexOf(set) < indexOf(del))
+        assertFalse("the key is still held after its Activity was destroyed", bridge.isKeyHeldForTest(key))
+    }
+
+    @Test
+    fun a_prompt_request_drained_after_the_destroy_is_denied_at_once() = withPin {
+        // A holds the key; auth set B and the delete park. The destroy denies A, and B is drained
+        // with no Activity left to prompt on: it must be denied at once, not wait for a prompt
+        // that can never show.
+        val a = begin(authSet("a"))
+        awaitGate("first auth set")
+        val b = begin(authSet("b"))
+        val del = begin(deleteArgs)
+        bridge.drainForTest()
+        assertNull("anchor: the delete completed while the first auth set's prompt was up: #506", completionNow(del))
+
+        onMain { bridge.onHostActivityDestroyed(isChangingConfigurations = false) }
+        assertEquals("the first auth set must complete AuthFailed",
+            SecureStorageStatus.AUTH_FAILED, mustComplete("first auth set", a).status)
+        assertEquals("anchor: the auth set drained after the destroy must complete AuthFailed",
+            SecureStorageStatus.AUTH_FAILED, mustComplete("auth set drained after the destroy", b).status)
+        assertNull("the auth set drained after the destroy reached a prompt", gates.poll())
+        assertEquals("the delete parked behind both must complete Ok",
+            SecureStorageStatus.OK, mustComplete("delete parked behind both", del).status)
+        assertTrue("the delete did not complete last: first=${indexOf(a)} second=${indexOf(b)} delete=${indexOf(del)}",
+            indexOf(a) < indexOf(del) && indexOf(b) < indexOf(del))
+    }
+
+    @Test
+    fun a_configuration_change_keeps_the_prompt_and_its_hold() = withPin {
+        // Record §1 (a): androidx keeps the prompt up across a recreation and answers the original
+        // callback, so the destroy of a configuration change denies nothing.
+        val set = begin(authSet("v1"))
+        val gate = awaitGate("auth set")
+        val del = begin(deleteArgs)
+        onMain { bridge.onHostActivityDestroyed(isChangingConfigurations = true) }
+        bridge.drainForTest()
+        assertNull("anchor: a configuration change denied the pending prompt", completionNow(set))
+        assertNull("anchor: a configuration change released the held key", completionNow(del))
+        assertTrue("anchor: a configuration change released the held key", bridge.isKeyHeldForTest(key))
+
+        onMain { gate.deny(SecureStorageStatus.AUTH_FAILED) }
+        mustComplete("auth set answered after the recreation", set)
+        assertEquals("the parked delete must complete Ok once the prompt answers",
+            SecureStorageStatus.OK, mustComplete("delete", del).status)
     }
 }

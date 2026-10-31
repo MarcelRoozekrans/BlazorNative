@@ -360,6 +360,10 @@ class AndroidShellBridge(
         }
     }
 
+    /** 18.3 (#506): called from MainActivity.onDestroy. Not implemented yet. */
+    internal fun onHostActivityDestroyed(isChangingConfigurations: Boolean) {
+    }
+
     /** 18.3 (#506): the key a secure-storage request names, parsed as [handleSecureStorage] does.
      * Malformed JSON or a missing key is "", a key like any other; the request then fails in
      * [handleSecureStorage] as it always has. */
