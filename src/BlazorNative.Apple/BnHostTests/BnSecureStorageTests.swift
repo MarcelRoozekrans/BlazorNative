@@ -473,12 +473,72 @@ final class BnSecureStorageTests: BnHostTestCase {
         bridge.secureStorage.drainForTest()
         XCTAssertNil(completion(64), "anchor: the delete ran while the second getWithAuth's gate was up")
 
+        // A second answer for the first request must not end the hold the second one now owns.
+        answerOffQueue(bridge) { gateA.authenticate() }
+        XCTAssertNil(completion(64), "A's second answer released the second request's hold")
+        XCTAssertTrue(bridge.secureStorage.isKeyHeldForTest(authKey), "A's second answer released the second request's hold")
+
         answerOffQueue(bridge) { gateB.authenticate() }
         XCTAssertEqual(completion(62)?.status, BnSecureStorageStatus.ok, "the first gated read must complete Ok")
         XCTAssertEqual(completion(63)?.status, BnSecureStorageStatus.ok, "the second gated read must complete Ok")
         XCTAssertEqual(completion(64)?.status, BnSecureStorageStatus.ok, "the parked delete must complete Ok")
         XCTAssertTrue(indexOf(62) < indexOf(64) && indexOf(63) < indexOf(64) && indexOf(62) >= 0 && indexOf(63) >= 0,
                       "the delete did not complete last: first=\(indexOf(62)) second=\(indexOf(63)) delete=\(indexOf(64))")
+    }
+
+    func testAnInlineAnswerReleasesItsKey() {
+        // The seam answers inside the hook, on workQueue, so the answer runs inline in the
+        // same queue task that took the hold. Phase 1: from a free key. Phase 2: from inside
+        // releaseHold's drain, where the drained getWithAuth takes the hold and its inline
+        // answer releases it before the drain loop resumes.
+        let bridge = AppleShellBridge()
+        let modeLock = NSLock()
+        var holdNextGate = false
+        BnSecureStorage.authGateHookForTest = { [weak self] gate in
+            modeLock.lock(); let hold = holdNextGate; holdNextGate = false; modeLock.unlock()
+            if hold {
+                guard let self = self else { return }
+                self.gatesLock.lock(); self.gates.append(gate); self.gatesLock.unlock()
+            } else {
+                gate.authenticate()
+            }
+        }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        installCapture()
+
+        beginSecure(bridge, 74, getWithAuthArgs(authKey))
+        beginSecure(bridge, 75, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertEqual(completion(74)?.status, BnSecureStorageStatus.ok, "the inline-answered read must complete Ok")
+        XCTAssertEqual(completion(74)?.payload, "{\"value\":\"hunter2\"}", "the inline-answered read must return the value")
+        XCTAssertEqual(completion(75)?.status, BnSecureStorageStatus.ok,
+                       "the delete after an inline-answered read must complete Ok")
+        XCTAssertTrue(indexOf(74) >= 0 && indexOf(74) < indexOf(75),
+                      "the delete overtook the inline-answered read: read=\(indexOf(74)) delete=\(indexOf(75))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey), "an inline answer left its key held")
+
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter3", requireAuth: true),
+                       BnSecureStorageStatus.ok)
+        modeLock.lock(); holdNextGate = true; modeLock.unlock()
+        beginSecure(bridge, 76, getWithAuthArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        guard let gate = takeGate("held getWithAuth") else { return }
+        beginSecure(bridge, 77, getWithAuthArgs(authKey))
+        beginSecure(bridge, 78, deleteArgs(authKey))
+        bridge.secureStorage.drainForTest()
+        XCTAssertNil(completion(77), "the parked getWithAuth ran while the first gate was up")
+
+        answerOffQueue(bridge) { gate.authenticate() }
+        XCTAssertEqual(completion(76)?.status, BnSecureStorageStatus.ok, "the held read must complete Ok")
+        XCTAssertEqual(completion(77)?.status, BnSecureStorageStatus.ok,
+                       "the drained, inline-answered read must complete Ok")
+        XCTAssertEqual(completion(78)?.status, BnSecureStorageStatus.ok,
+                       "the delete behind a drained inline-answered read must complete Ok")
+        XCTAssertTrue(indexOf(76) >= 0 && indexOf(76) < indexOf(77) && indexOf(77) < indexOf(78),
+                      "the drain lost begin order: held=\(indexOf(76)) drained=\(indexOf(77)) delete=\(indexOf(78))")
+        XCTAssertFalse(bridge.secureStorage.isKeyHeldForTest(authKey),
+                       "an inline answer inside the drain left its key held")
     }
 
     func testAnotherKeyIsNotBlockedByAPendingGetWithAuth() {
