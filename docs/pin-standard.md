@@ -501,6 +501,10 @@ reading. The re-render and `RunAfterDispatch` paths were listed there until 18.2
 
 Rule 3 conforms for all seven. Each cell names its contrast fact. Every fact's main assertion and
 anchor has a red that RS1 accepts: the strict-mode fact's anchor since 17.7, and since [the 17.9 record](plans/2026-10-22-phase-17.9-record.md) §2, the child-begin fact's order anchor and three anchors whose only red had been a fixture or seam edit. All four now have subject reds: the two geolocation begins B1, `SawNoFlow` B3, and the order anchor X1. No anchor in these seven rests on a fixture red, and that record's §4 maps the sites of the three facts it redded. Under [Grading a pin](#grading-a-pin-sites-and-reds), [the 17.10 re-audit](plans/2026-10-22-milestone-17-reaudit-2.md) §11 found three assertions that carry a clause of a fact's name with no red, and [the 17.11 record](plans/2026-10-22-phase-17.11-record.md) §2 N1 to N3 red them. That record's §4 found one more, the strict-mode fact's log assertion, `:1071`, which carries `IsLoggedInStrictModeToo`: its only reds were 17.1's red-first run on the unfixed tree, which is stale, and its §7 R1, recorded without its line. §4 X1071, R1 re-run on HEAD, reds it with its own message. No partial is left in these seven.
+The `FaultNoticeTests.cs` lines these seven cells cite are on the commit of the record each one
+cites, not on HEAD: `:809`, `:811`, `:814`, `:998` and `:1016` are on `f74c78ae`, the 17.9 record's;
+`:961`, `:963`, `:966`, `:979` and `:981` on `0f4892a5`, the 17.11 record's §2; and `:1071` on
+`2df4a84d`, its §4. Later phases moved them; their reds are not re-run here.
 
 **18.2 added 19 facts to `FaultNoticeTests`, with these cells.** Their reds before the fix are in [the 18.2 record](plans/2026-10-30-phase-18.2-record.md) §2.
 Every graded red is in its §3, all on `c18dfd5b`, and its §4 maps every site under [Grading a pin](#grading-a-pin-sites-and-reds),
