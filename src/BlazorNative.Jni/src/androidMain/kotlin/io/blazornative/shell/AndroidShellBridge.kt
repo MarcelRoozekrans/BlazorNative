@@ -276,7 +276,8 @@ class AndroidShellBridge(
      * as iOS's handlers own a serial queue since 16.4. Serial so a handler's requests START in
      * order, a plain set then a get of one key included, and so [drainForTest] is a barrier.
      * An auth-bound request frees its executor while its prompt is up. 18.3 (#506): requests on
-     * one key take effect in begin order. A storage request that shows a prompt holds its key
+     * one key take effect in begin order, within one bridge; a configuration change splits the
+     * hold across two bridges, #601. A storage request that shows a prompt holds its key
      * ([held]) until its after-auth work has run; a later request on that key parks behind it
      * and runs when the prompt answers, granted or denied. Requests on other keys keep flowing.
      * An auth-bound storage request completes on its executor whether the prompt is granted or
@@ -318,10 +319,15 @@ class AndroidShellBridge(
     @Volatile private var hostActivityDestroyed = false
 
     /** 18.3 (#506): [requestId] holds [key] from now until its after-auth work has run. Called
-     * on the executor immediately before the gate call, because the no-Activity path denies
-     * synchronously. The key is free here: a request reaches its prompt only when it started on
-     * a free key, or was drained by [releaseHold], which removes the hold before it drains. */
+     * on the executor immediately before the gate call. The order is not observable on Android,
+     * since afterAuth always posts (record §3 M2). The take comes first so that `pending` reaches
+     * the gate, which wires cancelAuthentication; that half needs a real prompt and is unpinned.
+     * iOS needs it.
+     * The key is free here: a request reaches its prompt only when it started on a free key, or
+     * was drained by [releaseHold], which removes the hold before it drains. The check enforces
+     * it: a throw here completes the request Error through runJob, never a hang. */
     private fun takeHold(key: String, requestId: Long) {
+        check(held[key] == null) { "secure storage: a request took a key that was already held" }
         held[key] = Hold(requestId)
     }
 
@@ -413,7 +419,10 @@ class AndroidShellBridge(
     }
 
     /** 18.3 (#506): [requestId] holds [key] and its prompt is pending, from now until its first
-     * answer reaches [afterAuth]. Called on the executor immediately before the gate call. */
+     * answer reaches [afterAuth]. Called on the executor immediately before the gate call. The
+     * order is not observable on Android, since afterAuth always posts (record §3 M2). The take
+     * comes first so that `pending` reaches the gate, which wires cancelAuthentication; that half
+     * needs a real prompt and is unpinned. iOS needs it. */
     private fun holdForPrompt(key: String, requestId: Long, onDenied: (Int) -> Unit): PendingPrompt {
         takeHold(key, requestId)
         val pending = PendingPrompt(requestId, key) { onDenied(SecureStorageStatus.AUTH_FAILED) }
@@ -421,7 +430,9 @@ class AndroidShellBridge(
         return pending
     }
 
-    /** 18.3 (#506): undoes [holdForPrompt] after a throw before the gate was armed. */
+    /** 18.3 (#506): undoes [holdForPrompt] after a throw before the gate was armed. It undoes the
+     * take; a request parked behind it is still in the draining loop that ran this one, and
+     * continues there. */
     private fun undoHoldForPrompt(key: String, requestId: Long) {
         pendingPrompts.remove(requestId)
         releaseHold(key, requestId)
@@ -981,8 +992,8 @@ class AndroidShellBridge(
             return
         }
         // 18.3 (#506): hold the key before the gate call; afterAuth releases it. A throw before
-        // the gate is armed undoes the take, drains the parked requests, and completes Error
-        // through runJob.
+        // the gate is armed undoes the take, and completes Error through runJob; a request parked
+        // behind it is still in the draining loop that ran this one, and continues there.
         val onDenied: (Int) -> Unit = {
             afterAuth(requestId, key, "secure set('$key', auth) denial failed to complete") {
                 completeHostCall(requestId, SecureStorageStatus.AUTH_FAILED, null)
@@ -1148,6 +1159,7 @@ class AndroidShellBridge(
                 return@runOnUiThread
             }
             try {
+                promptThrowForTest?.invoke()
                 val prompt = BiometricPrompt(
                     activity, ContextCompat.getMainExecutor(appContext),
                     object : BiometricPrompt.AuthenticationCallback() {
@@ -1427,7 +1439,9 @@ class AndroidShellBridge(
             result.set(held.containsKey(key))
             done.countDown()
         }
-        done.await(5_000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        check(done.await(5_000, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            "secure-storage executor did not answer"
+        }
         return result.get()
     }
 
@@ -2013,9 +2027,15 @@ class AndroidShellBridge(
          * production; reset by [resetHostCallContractForTest]. */
         @VisibleForTesting @Volatile @JvmStatic internal var gateThrowForTest: (() -> Unit)? = null
 
+        /** 18.3 (#506) test seam: invoked on main inside [runBiometricGate]'s try, before the real
+         * prompt is built, so a pin can make showing a prompt throw on a resumed Activity and prove
+         * the catch denies it. Null in production; reset by [resetHostCallContractForTest]. */
+        @VisibleForTesting @Volatile @JvmStatic internal var promptThrowForTest: (() -> Unit)? = null
+
         @VisibleForTesting @JvmStatic internal fun resetHostCallContractForTest() {
             completeHookForTest = null
             gateThrowForTest = null
+            promptThrowForTest = null
             workGateForTest = null
             gateReachedForTest = null
             jobFaultForTest = null
