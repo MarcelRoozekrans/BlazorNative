@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.blazornative.jni.BiometricStatus
@@ -20,6 +21,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase 17.2 (#440) — the host-call contract on Android: `hostCallBegin` records the request
@@ -46,6 +48,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *   - nothing of #506 any more: since 18.3 a request that shows a prompt holds its key, and the
  *     18.3 section below pins that a same-key request waits for the prompt's answer, while
  *     another key does not;
+ *   - 18.3 Task 3: MainActivity.onDestroy's call to onHostActivityDestroyed, and
+ *     cancelAuthentication on a real prompt. The destroy pins call the entry point directly with
+ *     a hook-held gate, because a real prompt needs a real Activity and the hook replaces it;
  *   - geolocation and notifications, whose begins #440 does not name;
  *   - the iOS twin: BnBiometricsTests and BnSecureStorageTests pin it since 16.4.
  */
@@ -519,5 +524,45 @@ class AndroidHostCallContractTest {
         mustComplete("auth set answered after the recreation", set)
         assertEquals("the parked delete must complete Ok once the prompt answers",
             SecureStorageStatus.OK, mustComplete("delete", del).status)
+    }
+
+    @Test
+    fun a_prompt_on_an_activity_destroyed_by_a_configuration_change_is_denied_at_once() {
+        // The REAL gate path, no hook: this bridge is built on a real MainActivity, which is then
+        // recreated. A configuration change denies nothing (the pin above), so this bridge's own
+        // destroy flag stays false, and only the destroyed Activity itself can tell the gate that
+        // no prompt will ever show. androidx would drop a prompt on it silently, so without a
+        // denial the auth set would hold its key forever and the delete behind it would hang.
+        SecureHarness.setPin()
+        try {
+            AndroidShellBridge.setAuthAllowsDeviceCredentialForTest = true
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.awaitBooted()
+                // Held strongly, so the bridge's WeakReference still yields the destroyed
+                // Activity and the gate does not take the no-Activity path instead.
+                val old = AtomicReference<MainActivity>()
+                val onOld = AtomicReference<AndroidShellBridge>()
+                scenario.onActivity { a ->
+                    old.set(a)
+                    onOld.set(AndroidShellBridge(a) { _, _ -> })
+                }
+                scenario.recreate()
+                assertTrue("anchor: the old Activity was not destroyed by the recreation", old.get().isDestroyed)
+
+                val dead = onOld.get()
+                val set = ids.getAndIncrement()
+                dead.hostCallBegin(set, HostCallOp.SECURE_STORAGE, authSet("v1"))
+                val del = ids.getAndIncrement()
+                dead.hostCallBegin(del, HostCallOp.SECURE_STORAGE, deleteArgs)
+                assertEquals("anchor: the auth set gated on a destroyed Activity must complete AuthFailed",
+                    SecureStorageStatus.AUTH_FAILED, mustComplete("auth set gated on a destroyed Activity", set).status)
+                assertEquals("anchor: the delete parked behind it must complete Ok",
+                    SecureStorageStatus.OK, mustComplete("delete parked behind the destroyed Activity's gate", del).status)
+                assertTrue("the delete overtook the auth set", indexOf(set) < indexOf(del))
+                dead.drainForTest()
+            }
+        } finally {
+            SecureHarness.clearPin()
+        }
     }
 }
