@@ -19,7 +19,8 @@ import java.util.concurrent.atomic.AtomicReference
  * The pin holds runtime A's start() inside the body through `insideStartHookForTest`, which runs
  * after init and before the frame-callback registration, and selects A by identity. Runtime B's
  * start() then begins on another thread. The probe `enteredStartForTest` counts entries into the
- * body, so B entering while A is held shows as 2.
+ * body, so B entering while A is held shows as 2. The pin waits until B has either entered or is
+ * BLOCKED, so "B did not get in" means B is blocked at the lock, not that it was slow to start.
  *
  * Anchor: the probe reads 1 once A is held, so A really is inside the body and the probe counts.
  *
@@ -65,7 +66,16 @@ class StartLockTest {
             tb = Thread({
                 try { bLines.set(b.start(platformOs = "test-host", apiLevel = 0)) } catch (t: Throwable) { bError.set(t) }
             }, "StartLockTest-B").apply { isDaemon = true; start() }
-            Thread.sleep(500)
+            // A positive gate, not a sleep: wait until B either got into the body or is BLOCKED,
+            // which with A holding the lock means blocked at it. A fixed sleep let a slow runner
+            // pass a no-lock mutant before B reached the body.
+            val gateDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (BlazorNativeRuntime.enteredStartForTest.get() != 2 && tb.state != Thread.State.BLOCKED) {
+                if (System.nanoTime() > gateDeadline) {
+                    fail<Unit>("B neither entered start() nor blocked within 10 s; its state is ${tb.state}, error: ${bError.get()}")
+                }
+                Thread.sleep(10)
+            }
             assertEquals(1, BlazorNativeRuntime.enteredStartForTest.get(),
                 "a second start() entered while the first was inside it: two threads in the .NET session")
 

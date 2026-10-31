@@ -490,9 +490,10 @@ class BlazorNativeRuntime(
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
     ): List<String> {
-        // 18.4 (#511): the native session is process-wide, so the lock is too. Nothing inside
-        // takes it again: the mount's frame callback only posts (WidgetMapper.apply), and retire()
-        // never takes it.
+        // 18.4 (#511): the native session is process-wide, so the lock is too. The invariant that
+        // keeps it deadlock-free: no frame or bridge callback reachable from start() takes
+        // startLock or waits on a thread that calls start(), and retire() never takes it.
+        // Checked for MainActivity's and PreviewHost's callbacks in the 18.4 record, section 6.
         synchronized(startLock) {
             enteredStartForTest.incrementAndGet() // 18.4 test probe, first line inside the lock
             val lines = mutableListOf<String>()
