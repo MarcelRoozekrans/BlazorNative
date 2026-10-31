@@ -339,7 +339,6 @@ class AndroidShellBridge(
                 privacy = BnPrivacy.SAFE)
             return
         }
-        held.remove(key)
         val rest = hold.parked
         while (rest.isNotEmpty()) {
             val next = rest.removeFirst()
