@@ -1134,9 +1134,11 @@ class AndroidShellBridge(
             // 18.3 (#506): this runs after the caller returned, so a throw here would otherwise go
             // uncaught on main and never answer: the request would hang, and a held key with it.
             // A prompt that cannot be shown is a denial, DATA.
-            // 18.3 (#506): so is a gate that reaches main after the destroy: androidx would
-            // drop the prompt silently on a destroyed Activity, and nothing would answer.
-            if (hostActivityDestroyed) {
+            // 18.3 (#506): so is a gate whose Activity is finishing or destroyed: androidx would
+            // drop the prompt silently there, nothing would answer, and the key would stay held.
+            // That covers a gate that reaches main after onHostActivityDestroyed, and a request
+            // drained after a configuration change, which leaves this bridge on the old Activity.
+            if (hostActivityDestroyed || activity.isDestroyed || activity.isFinishing) {
                 onDenied(if (crypto != null) SecureStorageStatus.AUTH_FAILED else BiometricStatus.ERROR)
                 return@runOnUiThread
             }
