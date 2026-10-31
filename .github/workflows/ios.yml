@@ -623,7 +623,7 @@ jobs:
             > ios-out/usernotifications.log 2>&1 || true
           echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
 
-      - name: Assert XCTest baseline (289 passed / 0 failed)
+      - name: Assert XCTest baseline (296 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1482,9 +1482,10 @@ jobs:
           # request's retained LAContext.
           # 288 -> 289 (18.1, +1): #453, BnBiometricsTests' ordering pin. Boot warms one
           # LAContext on the biometrics queue, off the boot path, before the first request.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 289 ]; then
+          # 289 -> 296 (18.3, +7, 2026-10-31): BnSecureStorageTests' per-key hold pins, #506
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 296 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 289 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 296 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
