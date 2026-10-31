@@ -3987,10 +3987,20 @@ the app's handler through a forwarding hook.
 - **Filed:** #574 with upstream coverlet#2058, #575, #580 and #582.
 - **Baselines:** .NET 1387, Android 249.
 
-#### Phase 18.2: Fault attribution for queued work (#500) [status: pending]
+#### Phase 18.2: Fault attribution for queued work (#500) [status: complete]
 **Goal:** A fault in a re-render or a `RunAfterDispatch` action is charged to the dispatch that queued it, by owner decision of 2026-10-24.
 **Surface:** Backend
 **HelpWanted:** no
+**Design:** [`docs/superpowers/specs/2026-10-30-phase-18.2-design.md`](../superpowers/specs/2026-10-30-phase-18.2-design.md)
+**Plan:** [`docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`](../superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md)
+**Record:** [`docs/plans/2026-10-30-phase-18.2-record.md`](../plans/2026-10-30-phase-18.2-record.md)
+**Completed:** 2026-10-31 · [PR #596](https://github.com/MarcelRoozekrans/BlazorNative/pull/596).
+- **Queued actions:** `RunAfterDispatch` records its queuer, and a queued action's fault is charged to it.
+- **Re-renders:** an inline segment is tagged by diffing Blazor's pending-render flag, and the renderer hears Blazor's `RenderingComponent` call, so a tagged render's fault is A's.
+- **The Done trap:** A is held from its segment's entry until the window closes. This is deviation R10 from the design, listed with the others in the record's §6.
+- **Faulted batches:** disposed components are pruned from the renderer's state.
+- **Filed:** #593, a faulted batch's undelivered removes. Commented on #568 for the 17.1 cells.
+- **Baselines:** .NET 1406, 19 new facts.
 
 #### Phase 18.3: Secure-storage per-key ordering (#506) [status: pending]
 **Goal:** On Android, same-key secure-storage requests queue behind a pending auth, and iOS is matched, by owner decision of 2026-10-24.
