@@ -224,6 +224,11 @@ class MainActivity : FragmentActivity() {
      * before a rotation and checks that onDestroy retired it. */
     @VisibleForTesting internal val runtimeForTest: BlazorNativeRuntime get() = runtime
 
+    /** 18.4 (#601) test seam: this Activity's shell bridge. SecureHoldAcrossRecreationAndroidTest
+     * begins a request on it before a rotation, so the request's prompt belongs to the bridge whose
+     * Activity the rotation destroys. */
+    @VisibleForTesting internal val shellBridgeForTest: AndroidShellBridge? get() = shellBridge
+
     /** Phase 14.2 (#338): the last safe-area report SENT (dp, post-conversion),
      * so [reportSafeAreaIfChanged] can dedup on the VALUE rather than on some
      * other signal — insets change independently of view size (a rotation, a

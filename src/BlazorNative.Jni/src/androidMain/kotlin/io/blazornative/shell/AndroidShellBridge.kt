@@ -1445,6 +1445,14 @@ class AndroidShellBridge(
         return result.get()
     }
 
+    /** 18.4 (#601) test seam: runs [releaseHold] for [key] and [requestId] on the secure-storage
+     * executor, as an answer on this bridge would, so a pin can release from one bridge with the
+     * request id another bridge's hold uses. Production never calls it. Returns at once; drain to
+     * wait for it. */
+    @VisibleForTesting internal fun releaseHoldForTest(key: String, requestId: Long) {
+        secureStorageExecutor.execute { releaseHold(key, requestId) }
+    }
+
     // ── Camera (Phase 9.3 — the THIRD reuse of the 9.0 ABI, the last M9 capability) ─
     //
     // op=Camera rides the SAME hostCallBegin slot geolocation opened; the action lives
