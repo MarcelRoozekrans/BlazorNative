@@ -79,16 +79,20 @@
 // `LAContext()`, whose first creation in a process is a cold cost of up to seconds.
 // Since 16.1 the caller is the .NET RENDER thread. Now `begin` parses and enqueues, and
 // the action STARTS on `workQueue`, a serial queue this handler owns, so a set and the
-// get that follows it keep their order. Every action runs to its end there except one:
-// a getWithAuth of an auth-bound item arms the gate on the queue, and its completion,
-// `finishAuthorizedRead` with its `SecItemCopyMatching` on a device, runs wherever the
-// gate answers. In production that is LocalAuthentication's reply queue, which is
-// also off the calling thread; under the test seam it is the thread that calls the
-// gate. So the contract holds on every path, but "all Keychain work on workQueue" does
-// not. The cores `secureSet`, `secureGet` and
-// `secureDelete` stay synchronous, because the keystore-half tests call them directly;
-// only the op entry moved. The pin is `testHostCallBeginReturnsWhileContextCreationIsBlocked`
-// and its getWithAuth twin in BnSecureStorageTests.
+// get that follows it keep their order. All Keychain work an action does runs on
+// `workQueue`. A getWithAuth of an auth-bound item arms the gate on the queue and frees
+// it; the gate answers on LocalAuthentication's reply queue in production, or on
+// whatever thread the test seam calls it from, and the answer hops back onto
+// `workQueue`, where `finishAuthorizedRead` or the denial runs. 18.3 (#506): requests on
+// one key take effect in begin order. The getWithAuth holds its key (`held`) from the
+// gate until its answer has run; a later request on that key parks and runs when the
+// gate answers, granted or denied. Requests on other keys keep flowing. An auth-bound
+// set holds nothing, because it does not prompt on iOS. The pins are the 18.3 section
+// of BnSecureStorageTests, `testTheGatesAnswerRunsOnTheWorkQueue` among them. The cores
+// `secureSet`, `secureGet` and `secureDelete` stay synchronous, because the
+// keystore-half tests call them directly; only the op entry moved. The begin pin is
+// `testHostCallBeginReturnsWhileContextCreationIsBlocked` and its getWithAuth twin in
+// BnSecureStorageTests.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Foundation
@@ -152,6 +156,19 @@ final class BnSecureStorage {
     /// Serial, owned by this handler: every action `begin` accepts runs here, never on
     /// the thread that called `hostCallBegin` (see THE BEGIN CONTRACT in the header).
     private let workQueue = DispatchQueue(label: "io.blazornative.secure-storage", qos: .userInitiated)
+
+    /// 18.3 (#506): set on `workQueue` only, so code can ask whether it is running there.
+    private let workQueueKey = DispatchSpecificKey<Bool>()
+
+    init() {
+        workQueue.setSpecific(key: workQueueKey, value: true)
+    }
+
+    /// 18.3 (#506): the held keys. A key is held by the getWithAuth `owner` whose gate is
+    /// up, and `parked` holds the requests begun on that key since, in begin order. A key
+    /// in the map is held even when nothing is parked behind it. Read and written ONLY on
+    /// `workQueue`, so it needs no lock.
+    private var held: [String: (owner: Int64, parked: [() -> Void])] = [:]
 
     /// STRONG. The `LAContext` under each getWithAuth evaluation, keyed by its request
     /// id — held for the call's duration so a deallocated context cannot cancel the
@@ -217,8 +234,8 @@ final class BnSecureStorage {
     /// live .NET continuation, 1 = unknown/already-completed id (benign). Int32.min
     /// before any completion.
     ///
-    /// Lock-guarded since 16.4: `complete` now runs on `workQueue`, or on the gate's
-    /// reply thread, while tests read this on main. It is stored AFTER the export
+    /// Lock-guarded since 16.4: `complete` runs on `workQueue`, since 18.3 the gate's
+    /// answer included, while tests read this on main. It is stored AFTER the export
     /// returns, so a test that saw the outcome must still poll for it, not read it once.
     static var lastHostCallCompleteRcForTest: Int32 {
         get { rcLock.lock(); defer { rcLock.unlock() }; return lastRc }
@@ -245,8 +262,22 @@ final class BnSecureStorage {
 
     /// Returns once everything already enqueued on `workQueue` has run. The queue is
     /// serial, so this is a barrier: a unit test calls it after `hostCallBegin` instead
-    /// of sleeping. Never call it from `workQueue` itself.
+    /// of sleeping. It is a barrier only for work that CAN run: 18.3 (#506), a request
+    /// parked behind a held key does not run until that key's gate answers, so a drain
+    /// does not wait for it. A gate answered off `workQueue` enqueues its answer there, so
+    /// a drain after the answering call has returned covers the answer too. Never call it
+    /// from `workQueue` itself.
     func drainForTest() { workQueue.sync {} }
+
+    /// 18.3 (#506) test seam: whether `key` is held by a getWithAuth whose gate is up.
+    /// Reads `held` on `workQueue`, its only thread. Never call it from `workQueue` itself.
+    func isKeyHeldForTest(_ key: String) -> Bool {
+        workQueue.sync { held[key] != nil }
+    }
+
+    /// 18.3 (#506) test seam: the key `workQueue` carries, so a test can read
+    /// `DispatchQueue.getSpecific(key:)` and learn whether code ran on `workQueue`.
+    func workQueueSpecificKeyForTest() -> DispatchSpecificKey<Bool> { workQueueKey }
 
     /// Whether the context of `requestId`'s getWithAuth is still retained (the retention
     /// pin as a property, the `BnBiometrics.contextIsRetainedForTest` twin).
@@ -267,9 +298,19 @@ final class BnSecureStorage {
         }
     }
 
-    /// On `workQueue`: the action itself.
+    /// On `workQueue`: the action itself, or, when its key is held, a park behind the
+    /// held key's gate (18.3, #506). A missing key is "", a key like any other.
     private func run(requestId: Int64, args: [String: String]) {
         let key = args["key"] ?? ""
+        if held[key] != nil {
+            held[key]?.parked.append { [weak self] in self?.perform(requestId: requestId, key: key, args: args) }
+            return
+        }
+        perform(requestId: requestId, key: key, args: args)
+    }
+
+    /// On `workQueue`: runs the action now, from `run` or from the drain in `releaseHold`.
+    private func perform(requestId: Int64, key: String, args: [String: String]) {
         switch args["action"] ?? "get" {
         case "set":
             complete(requestId, secureSet(key: key, value: args["value"] ?? "", requireAuth: args["auth"] == "1"), nil)
@@ -283,6 +324,48 @@ final class BnSecureStorage {
         default:
             // An unknown action is DATA (Error 4), never a crash (the Kotlin posture).
             complete(requestId, BnSecureStorageStatus.error, nil)
+        }
+    }
+
+    /// 18.3 (#506): `requestId` holds `key` from now until its gate's answer has run. Called
+    /// on `workQueue` immediately before the gate is handed out, because the test seam may
+    /// answer inline. The key is free here: a request reaches its gate only when it started
+    /// on a free key, or was drained by `releaseHold`, which removes the hold first.
+    private func takeHold(_ key: String, _ requestId: Int64) {
+        held[key] = (owner: requestId, parked: [])
+    }
+
+    /// 18.3 (#506): ends `requestId`'s hold on `key` and runs the requests parked behind it,
+    /// in order, inline on `workQueue`. A drained getWithAuth that takes the hold itself,
+    /// because its item is auth-bound, stops the drain, and the rest stay parked behind it.
+    /// When nothing takes the hold, the key leaves the map. A no-op unless `requestId` owns
+    /// the hold: a second or late answer must not release another request's hold.
+    private func releaseHold(_ key: String, _ requestId: Int64) {
+        guard let hold = held[key], hold.owner == requestId else {
+            BnLog.warn("BnSecureStorage", "ignored a release by a request that does not hold its key", privacy: .safe)
+            return
+        }
+        held[key] = nil
+        var rest = hold.parked
+        while !rest.isEmpty {
+            let next = rest.removeFirst()
+            next()
+            if held[key] != nil {
+                held[key]?.parked.append(contentsOf: rest)
+                return
+            }
+        }
+    }
+
+    /// 18.3 (#506): runs a gate's answer on `workQueue`. Inline when it already arrives
+    /// there, which is where the test seam's in-hook answers run; a `workQueue.sync` from
+    /// the queue itself would deadlock, and an `async` would land after the caller's
+    /// drain. Otherwise it is enqueued, so LocalAuthentication's reply queue never waits.
+    private func onWorkQueue(_ work: @escaping () -> Void) {
+        if DispatchQueue.getSpecific(key: workQueueKey) == true {
+            work()
+        } else {
+            workQueue.async(execute: work)
         }
     }
 
@@ -377,7 +460,8 @@ final class BnSecureStorage {
     /// gate — no prompt, the Android parity); an AUTH-bound item engages the biometric
     /// gate (the real Face ID sheet in production, the `authGateHookForTest` seam on CI).
     /// A seam/OS AUTHENTICATE returns the plaintext in {"value":…}; a DENY is AuthFailed —
-    /// DATA, never a hang.
+    /// DATA, never a hang. 18.3 (#506): only the auth-bound path holds its key; the other
+    /// paths complete at once and take nothing.
     private func secureGetWithAuth(requestId: Int64, key: String, reason: String) {
         switch probe(key) {
         case .notFound:
@@ -389,11 +473,29 @@ final class BnSecureStorage {
         case .authBound(let probedValue):
             let context = Self.makeContext()
             lock.lock(); inFlightContexts[requestId] = context; lock.unlock() // retained for the call
+            // 18.3 (#506): the answer hops onto workQueue, runs, and then, in a defer so no
+            // exit path skips it, releases this request's hold and drains the key's parked
+            // requests. The closure keeps the context strongly, as before; self stays weak.
             let gate = BnSecureAuthGate(
                 reason: reason,
                 hasAuthBoundItem: true,
-                authenticate: { [weak self] in self?.finishAuthorizedRead(requestId: requestId, key: key, context: context, probedValue: probedValue) },
-                deny: { [weak self] in self?.complete(requestId, BnSecureStorageStatus.authFailed, nil) })
+                authenticate: { [weak self] in
+                    guard let self = self else { return }
+                    self.onWorkQueue { [weak self] in
+                        guard let self = self else { return }
+                        defer { self.releaseHold(key, requestId) }
+                        self.finishAuthorizedRead(requestId: requestId, key: key, context: context, probedValue: probedValue)
+                    }
+                },
+                deny: { [weak self] in
+                    guard let self = self else { return }
+                    self.onWorkQueue { [weak self] in
+                        guard let self = self else { return }
+                        defer { self.releaseHold(key, requestId) }
+                        self.complete(requestId, BnSecureStorageStatus.authFailed, nil)
+                    }
+                })
+            takeHold(key, requestId)
             if let hook = Self.authGateHookForTest { hook(gate); return }
             // Production: the OS Face ID evaluation. On success the freshly-evaluated
             // context unlocks the `.biometryCurrentSet` item (finishAuthorizedRead reads

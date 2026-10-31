@@ -18,7 +18,7 @@
 #   emulator (ubuntu-latest, KVM) — downloads the .so, boots the API 34
 #     google_apis x86_64 Pixel 6 image (mirrors the local AVD
 #     blazornative-pixel6-x86_64), runs connectedAndroidTest with
-#     -PciSoDir pointing at the artifact → asserts 249 passed / 0 failed.
+#     -PciSoDir pointing at the artifact → asserts 262 passed / 0 failed.
 #
 # Baselines are asserted, not observed: count drift fails the job loudly.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1144,7 +1144,8 @@ jobs:
       # the image poll fails that poll naming the recreation, not as a bare 15 s timeout.
       # 248 -> 249 (18.1, +1, 2026-10-28): PollAndroidTest, #407 — pollUntilOnSameActivity on a
       # recreated activity fails naming the recreation, even when its predicate is true.
-      - name: Assert instrumented baseline (249 passed / 0 failed)
+      # 249 -> 262 (18.3, +13, 2026-10-31): AndroidHostCallContractTest's per-key hold pins, #506
+      - name: Assert instrumented baseline (262 passed / 0 failed)
         run: |
           shopt -s globstar nullglob
           xmls=(src/BlazorNative.Jni/build/outputs/androidTest-results/connected/**/*.xml)
@@ -1161,8 +1162,8 @@ jobs:
             s=$(attr skipped "$x");  skipped=$((skipped + ${s:-0}))
           done
           echo "Instrumented totals across ${#xmls[@]} suite(s): tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if [ "$tests" -ne 249 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
-            echo "Instrumented test baseline drift: expected 249 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
+          if [ "$tests" -ne 262 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ] || [ "$skipped" -ne 0 ]; then
+            echo "Instrumented test baseline drift: expected 262 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped" >&2
             exit 1
           fi
 

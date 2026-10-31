@@ -2,13 +2,13 @@
 
 **Last session:** 2026-10-31
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.2 — Fault attribution for queued work (#500) `[status: complete]` on branch `feat/18.2-queued-fault-attribution`, **PR #596**. Next is **18.3 — secure-storage per-key ordering (#506)** `[status: pending]`.
-**Branch:** `feat/18.2-queued-fault-attribution` → PR #596. 18.3 starts from `main` once #596 is merged.
+**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: active]`. The owner approved its design on 2026-10-31, and its plan is written. 18.2 is complete and merged.
+**Branch:** `feat/18.3-secure-storage-per-key`, from `main` at `d246778f`.
 
 ## Current Position
 
 - **18.1 is complete on `main`:** #584 shipped it, and #591 recorded it.
-- **18.2 is complete, but only on its branch.** It lands when PR #596 merges, which says "Closes #500" on purpose. Until then `main` still shows 18.2 `active`; read state from `origin/main` after the merge.
+- **18.2 is complete and merged.** PR #596 was squash-merged as `d246778f` and closed #500. It is in release PR #597.
   - Design: `docs/superpowers/specs/2026-10-30-phase-18.2-design.md`, approved 2026-10-30 and amended 2026-10-31.
   - Plan: `docs/superpowers/plans/2026-10-30-phase-18.2-queued-fault-attribution.md`.
   - Record: `docs/plans/2026-10-30-phase-18.2-record.md`. Its §6 lists the deviations from the design.
@@ -40,13 +40,14 @@
 
 ## Blockers
 
-- None. 18.3 waits only for #596 to merge, so it starts from a `main` that has 18.2.
+- None.
 
 ## Recommended Next Step
 
-1. Watch #596's CI. When it is green and CLEAN, squash-merge it. The owner confirmed R10 and approved the merge on 2026-10-31. Strip any signature from the squash message, then verify the merge on `origin/main`.
-2. Run `start-next-phase` for **18.3, #506**: brainstorm the design per the owner decision. Android needs a per-key queue, so a same-key request waits behind a pending auth-bound one, and other keys keep flowing. Check iOS for the same hazard.
-3. Execute subagent-driven, the owner's standing preference. Lessons from 18.2:
+1. ~~Merge #596.~~ **Done:** squash-merged as `d246778f`, now in release PR #597.
+2. **18.3, #506:** execute `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md` subagent-driven. The design is approved. The plan's first task measures whether an Android `BiometricPrompt` answers when its Activity is destroyed or recreated.
+3. Lessons from 18.2 still apply:
    - Have every implementer tick its plan checkboxes.
-   - Grep for the hard-coded .NET count in `ci.yml` early.
+   - Grep for hard-coded test counts early.
    - Expect the staleness rule to force a full re-run of the reds after any late edit to a subject or test file.
+4. Watch for a recurrence of #598, the one-off .NET secure-storage timeout on Windows. 18.3 does not touch .NET.
