@@ -535,9 +535,10 @@ class MainActivity : FragmentActivity() {
         if (::mapper.isInitialized) mapper.destroy()
         // 18.3 (#506): a destroy that is not a configuration change can drop a pending
         // secure-storage prompt's answer, which would hold its key forever; the bridge denies
-        // those prompts. A configuration change keeps the prompt up, so the bridge skips it.
-        // The per-key order holds within one bridge; a configuration change splits the hold
-        // across two bridges, #601.
+        // those prompts. A configuration change keeps the prompt up, so the bridge only marks
+        // itself. 18.4 (#601): the hold is process-wide, so the per-key order holds across a
+        // rotation, and this destroy also denies the prompts a rotation orphaned into this
+        // Activity. Pinned by SecureHoldAcrossRecreationAndroidTest.
         shellBridge?.onHostActivityDestroyed(isChangingConfigurations)
         super.onDestroy()
     }
