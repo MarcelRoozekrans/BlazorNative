@@ -102,15 +102,12 @@ class AndroidHostCallContractTest {
             bridge.drainForTest()
             rounds++
         }
-        val leaked = listOf(key, otherKey).filter { bridge.isKeyHeldForTest(it) }
         try {
             bridge.secureDeleteCore(key)
         } finally {
-            // Clear the hooks before naming a leak, so the next test's @Before is not the one to fail.
+            // The reset clears the hooks, then throws when a key is still held, so a leak fails
+            // here with "secure storage: a test left a held key" before the next test's @Before.
             AndroidShellBridge.resetHostCallContractForTest()
-        }
-        check(leaked.isEmpty()) {
-            "secure-storage hold leaked after $rounds drain rounds: $leaked still held; the next test would park behind it"
         }
     }
 
