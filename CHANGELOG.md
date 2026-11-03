@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.3...v0.21.0) (2026-10-31)
+
+
+### Features
+
+* **18.2:** charge queued work's faults to the dispatch that queued it ([#596](https://github.com/MarcelRoozekrans/BlazorNative/issues/596)) ([d246778](https://github.com/MarcelRoozekrans/BlazorNative/commit/d246778fc469df6d56a83457f95bf6c9032d5711)), closes [#500](https://github.com/MarcelRoozekrans/BlazorNative/issues/500)
+
+
+### Bug Fixes
+
+* **18.3:** queue same-key secure-storage requests behind a pending prompt ([#599](https://github.com/MarcelRoozekrans/BlazorNative/issues/599)) ([2eb3f22](https://github.com/MarcelRoozekrans/BlazorNative/commit/2eb3f22db57e6acfdba6b0c75f794f33174ba1b2))
+
 ## [0.20.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.2...v0.20.3) (2026-10-28)
 
 
