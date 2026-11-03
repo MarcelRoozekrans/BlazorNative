@@ -716,6 +716,10 @@ class AndroidHostCallContractTest {
         b.drainForTest()
         assertNull("anchor: the delete on the second bridge completed while the first bridge's prompt was up: #601",
             completionNow(del))
+        // The gate hook's succeed never writes a blob, so seed one through the test seam that does.
+        // Only the delete behind the set can remove it, which gives the last assertion a way to fail.
+        assertTrue("anchor: the seam could not seed a blob", a.writeAuthBoundSecretForTest(key))
+        assertTrue("anchor: the seeded blob is not there before the delete", a.hasBlobForTest(key))
 
         onMain { gate.succeed() }
         logStatus("cross_bridge_delete", "auth set", mustComplete("auth set on the first bridge", set))
