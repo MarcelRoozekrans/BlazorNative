@@ -1,22 +1,20 @@
 # Session State
 
-**Last session:** 2026-10-31
+**Last session:** 2026-11-03
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.3 — secure-storage per-key ordering (#506) `[status: complete]` on its branch. 18.2 is complete and merged.
-**Branch:** `feat/18.3-secure-storage-per-key`, PR #599, ready and awaiting the owner's merge OK.
+**Phase:** 18.4 — recreation during boot (#511), with #601 folded in. Complete, pending merge of PR #605. 18.1, 18.2 and 18.3 are complete and merged.
+**Branch:** `feat/18.4-recreation-during-boot`.
 
 ## Current Position
 
-- **18.3 is complete on `feat/18.3-secure-storage-per-key`.** PR #599 is ready. Its body says "Closes #506." on purpose. After the merge, read state from `origin/main`, not from this branch.
-  - Design: `docs/superpowers/specs/2026-10-31-phase-18.3-design.md`.
-  - Plan: `docs/superpowers/plans/2026-10-31-phase-18.3-secure-storage-per-key.md`.
-  - Record: `docs/plans/2026-10-31-phase-18.3-record.md`.
-- **What shipped:** a request that shows a biometric prompt holds its key on both shells, and same-key requests park until it answers. Android denies a pending prompt on a destroy that is not a configuration change, and on a destroyed or stopped Activity. iOS hops the gate's answer onto the work queue.
-- **Filed in 18.3:** #600, #601, #602, #603 and #604. #598 is out of scope.
-- **18.1 and 18.2 are complete on `main`:** #584 and #596, the latter in release PR #597.
-- **Baselines:** .NET 1406, JVM 206, Android 263, iOS 296.
-- **The grading rule** for pins lives in `docs/pin-standard.md`, in the section "Grading a pin: sites and reds".
-- **Owner rule (2026-10-25):** no Claude signature anywhere, meaning no `Co-Authored-By` trailer and no "Generated with" line. When merging, strip any signature from the squash message. #599's 28 commits were checked with `scripts/commit-parse-check`: all parse, and none carries a signature.
+- **18.4 is complete pending the merge of draft PR #605** on `feat/18.4-recreation-during-boot`. All six plan tasks are done, the whole-branch review and its fix wave are in, and the phase is marked complete in ROADMAP and MILESTONE.
+  - Spec: `docs/superpowers/specs/2026-10-31-phase-18.4-design.md`. Plan: `docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`. Record: `docs/plans/2026-10-31-phase-18.4-record.md`.
+  - Final lanes on code head `4b9c986c`, all attempt 1 with `headSha` compared: ci 41629060648, android-instrumented 41629060661, ios 41629060729, commitlint 41629060659.
+  - Commit parse check: 35 commits and the squash message all parse. No signature, session link or closing keyword.
+  - **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296.
+  - **Squash merge:** an earlier branch commit body says "closed #506". It is harmless because #506 is already closed, but strip it from the squash message.
+  - Filed from the review: #621, see Open Decisions.
+  - The controller marks the PR ready and merges; the plan's Task 6 Step 6 is ticked for the complete-phase gate only.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -31,7 +29,8 @@
 
 ## Open Decisions (owner)
 
-- #601: a configuration change splits the per-key hold across two bridges. It sits next to #511, so feed it into 18.4's brainstorm.
+- #601 was decided on 2026-10-31: a process-wide hold, in 18.4. Done.
+- #621: a second instance's final destroy denies another instance's orphaned secure-storage prompt. The fix needs per-Activity prompt ownership, a design decision.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
 - #575: the frame path's two thread-pool hops.
@@ -46,10 +45,11 @@
 
 ## Recommended Next Step
 
-1. **Merge #599** on the owner's OK. It is green and ready. Then read state from `origin/main`.
-2. **18.4, #511:** recreation during boot. Brainstorm it first. Take #601 as input, because the per-key hold crosses a recreation there.
-3. Lessons from 18.2 and 18.3 still apply:
-   - Have every implementer tick its plan checkboxes.
-   - Grep for hard-coded test counts early.
-   - Expect the staleness rule to force a full re-run of the reds after any late edit to a subject or test file.
-4. Watch for a recurrence of #598, the one-off .NET secure-storage timeout on Windows.
+1. Merge PR #605 once the controller marks it ready.
+2. Then start 18.5 (#522): name the page plus the wrapper position, never a compiler lambda. Surface Backend, no design spec yet, so brainstorm first.
+3. The rules still hold:
+   - No Claude signature anywhere.
+   - Implementers tick their plan boxes.
+   - Grade pins against `docs/pin-standard.md`, in "Grading a pin: sites and reds".
+   - Ask questions with AskUserQuestion.
+4. Watch, but do not work, the flakes #598, #602, #603 and #604. The M18 DoD needs attempt 1 green on every lane.

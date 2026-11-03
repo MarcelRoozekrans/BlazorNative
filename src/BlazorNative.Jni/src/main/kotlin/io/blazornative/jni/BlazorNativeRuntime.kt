@@ -279,7 +279,8 @@ class BlazorNativeRuntime(
      * an untimed get() waiting for a task queued behind its own current one.
      * Unreachable from today's callers (HTTP handler threads only) — pinned
      * here because this is public API. A throw from the dispatch core (not a
-     * non-zero rc) is rethrown to the caller unwrapped.
+     * non-zero rc) is rethrown to the caller unwrapped. A retired runtime throws
+     * RejectedExecutionException to the caller (unlike [dispatchEvent], which drops).
      */
     fun dispatchEventAndWait(handlerId: Int, eventName: String, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
@@ -329,7 +330,8 @@ class BlazorNativeRuntime(
      * is not reported a second time as an error; a back's rc 2 still is. Every
      * other event's rc 1, such as a navigate to an unknown route, still reaches
      * [onError]. [payload] is optional
-     * (omitted/NULL — most host events carry none).
+     * (omitted/NULL — most host events carry none). On a retired runtime the event is dropped,
+     * not thrown, see [dispatchHostEventUnchecked].
      */
     internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
         dispatchHostEventUnchecked(event.wireName, payload)
@@ -346,15 +348,23 @@ class BlazorNativeRuntime(
      * test is the mechanism, not the type.
      */
     internal fun dispatchHostEventUnchecked(name: String, payload: String? = null) {
-        dispatchLane.execute {
-            try {
-                val rc = hostEventCore(name, payload)
-                if (rc != 0 && !isNormalHostEventOutcome(name, rc)) {
-                    onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
+        try {
+            dispatchLane.execute {
+                try {
+                    val rc = hostEventCore(name, payload)
+                    if (rc != 0 && !isNormalHostEventOutcome(name, rc)) {
+                        onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
+                    }
+                } catch (t: Throwable) {
+                    onError("host_event('$name') threw on the dispatch lane", t)
                 }
-            } catch (t: Throwable) {
-                onError("host_event('$name') threw on the dispatch lane", t)
             }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Retired lane: since 18.4 a newer boot retires the previous runtime even while that
+            // runtime's Activity is still alive, and its lifecycle events, safe-area report and
+            // back then arrive here on the main thread. The event is dropped like any other
+            // post-retire dispatch, as in [dispatchEvent]; a throw here would end the process.
+            // Pinned by RetiredLaneDispatchTest.
         }
     }
 
@@ -385,7 +395,8 @@ class BlazorNativeRuntime(
      * → BackUnhandled is sent / 2 faulted). Safe from any thread EXCEPT the
      * dispatch lane itself (a call from the lane would self-deadlock, same as
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
-     * unwrapped.
+     * unwrapped. A retired runtime throws RejectedExecutionException to the caller (unlike
+     * [dispatchHostEvent], which drops).
      */
     internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
@@ -460,8 +471,11 @@ class BlazorNativeRuntime(
      * [shutdown] IS quiescent: it calls `blazornative_shutdown`, which closes
      * .NET's frame gate and waits out any callback in flight before it
      * returns, so no frame reaches this runtime afterwards
-     * (ShutdownQuiescenceTest). Concurrent start() calls (multiple threads) are
-     * unguarded — callers must serialize.
+     * (ShutdownQuiescenceTest). Since 18.4 a process-wide lock serializes
+     * concurrent start() calls, so two boots are never inside the session at
+     * once (StartLockTest). The lock does not order them: which Activity's boot
+     * goes last, and so owns the session, is the shell's job (MainActivity's
+     * boot record, #511).
      *
      * Returns human-readable status lines for a console pane.
      * Throws [IllegalStateException] on init/registration/mount failure.
@@ -487,61 +501,72 @@ class BlazorNativeRuntime(
         // BEFORE mount (components resolving IMobileBridge need a live host).
         bridge: ShellBridgeHandlers? = null,
     ): List<String> {
-        val lines = mutableListOf<String>()
-        val lib = NativeBindings.INSTANCE
+        // 18.4 (#511): the native session is process-wide, so the lock is too. The invariant that
+        // keeps it deadlock-free: no frame or bridge callback reachable from start() takes
+        // startLock or waits on a thread that calls start(), and retire() never takes it.
+        // Checked for MainActivity's and PreviewHost's callbacks in the 18.4 record, section 6.
+        synchronized(startLock) {
+            enteredStartForTest.incrementAndGet() // 18.4 test probe, first line inside the lock
+            val lines = mutableListOf<String>()
+            val lib = NativeBindings.INSTANCE
 
-        // Keep the Memory allocations referenced in locals until init returns —
-        // init copies the strings, it doesn't retain the pointers, but the
-        // buffers must stay alive across the call (mirrors BootSmokeNativeTest).
-        val osMem = utf8CString(platformOs)
-        val noteMem = utf8CString("android-shell")
-        val opts = BlazorNativeInitOptions.ByReference().apply {
-            platformInfoOs = osMem
-            platformInfoApiLevel = apiLevel
-            platformInfoNote = noteMem
-            platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
-            this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
-        }
-        // #213 item 3: pass our compiled struct size so the runtime size-negotiates.
-        // opts.size() is JNA's measured sizeof for THIS shell's struct — a runtime built
-        // against a newer header reads only what we sent and defaults the rest, rather
-        // than reading past the buffer.
-        val init = lib.blazornative_init(opts.size(), opts)
-        if (init.status != 0) {
-            val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
-            throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")
-        }
-        val version = init.versionString?.getString(0, "UTF-8") ?: "<null>"
-        lines += "[BOOT] native init ok — $version"
+            // Keep the Memory allocations referenced in locals until init returns —
+            // init copies the strings, it doesn't retain the pointers, but the
+            // buffers must stay alive across the call (mirrors BootSmokeNativeTest).
+            val osMem = utf8CString(platformOs)
+            val noteMem = utf8CString("android-shell")
+            val opts = BlazorNativeInitOptions.ByReference().apply {
+                platformInfoOs = osMem
+                platformInfoApiLevel = apiLevel
+                platformInfoNote = noteMem
+                platformInfoKind = platformKind // Phase 10.0 (#121): report the shell's real kind
+                this.logLevel = logLevel        // Phase 11.4 (#155): offset 28, size still 32
+            }
+            // #213 item 3: pass our compiled struct size so the runtime size-negotiates.
+            // opts.size() is JNA's measured sizeof for THIS shell's struct — a runtime built
+            // against a newer header reads only what we sent and defaults the rest, rather
+            // than reading past the buffer.
+            val init = lib.blazornative_init(opts.size(), opts)
+            if (init.status != 0) {
+                val err = init.errorMessage?.getString(0, "UTF-8") ?: "<no detail>"
+                throw IllegalStateException("blazornative_init failed (status=${init.status}): $err")
+            }
+            val version = init.versionString?.getString(0, "UTF-8") ?: "<null>"
+            lines += "[BOOT] native init ok — $version"
 
-        check(lib.blazornative_register_frame_callback(callback) == 0) {
-            "blazornative_register_frame_callback failed"
-        }
-        lines += "[BOOT] frame callback registered"
+            // 18.4 test seam, null in production: StartLockTest holds one start() here.
+            val hook = insideStartHookForTest
+            if (hook != null) hook(this)
 
-        if (bridge != null) {
-            // Registered BEFORE mount. register() throws on non-zero status;
-            // the registrar keeps the callback trampolines alive (field here
-            // + the process-lifetime park list inside BridgeRegistrar).
-            bridgeRegistrar = BridgeRegistrar(
-                bridge,
-                onBackState = onBackState,
-                onBackUnhandled = onBackUnhandled,
-                onError = onError,
-            ).also { it.register() }
-            lines += "[BOOT] shell bridge registered"
-        }
+            check(lib.blazornative_register_frame_callback(callback) == 0) {
+                "blazornative_register_frame_callback failed"
+            }
+            lines += "[BOOT] frame callback registered"
 
-        when (val rc = lib.blazornative_mount(componentName.toByteArray(Charsets.UTF_8) + 0)) {
-            0 -> lines += "[BOOT] mounted $componentName"
-            1 -> throw IllegalStateException("unknown component '$componentName'")
-            else -> throw IllegalStateException(
-                "mount($componentName) failed with status $rc — detail went to " +
-                    "the runtime's stderr; on Android the shell's stderr pump " +
-                    "forwards it to logcat (`adb logcat -s BlazorNative/…`)"
-            )
+            if (bridge != null) {
+                // Registered BEFORE mount. register() throws on non-zero status;
+                // the registrar keeps the callback trampolines alive (field here
+                // + the process-lifetime park list inside BridgeRegistrar).
+                bridgeRegistrar = BridgeRegistrar(
+                    bridge,
+                    onBackState = onBackState,
+                    onBackUnhandled = onBackUnhandled,
+                    onError = onError,
+                ).also { it.register() }
+                lines += "[BOOT] shell bridge registered"
+            }
+
+            when (val rc = lib.blazornative_mount(componentName.toByteArray(Charsets.UTF_8) + 0)) {
+                0 -> lines += "[BOOT] mounted $componentName"
+                1 -> throw IllegalStateException("unknown component '$componentName'")
+                else -> throw IllegalStateException(
+                    "mount($componentName) failed with status $rc — detail went to " +
+                        "the runtime's stderr; on Android the shell's stderr pump " +
+                        "forwards it to logcat (`adb logcat -s BlazorNative/…`)"
+                )
+            }
+            return lines
         }
-        return lines
     }
 
     /**
@@ -599,6 +624,19 @@ class BlazorNativeRuntime(
     internal companion object {
         /** The JVM name of .NET's render thread while it delivers frames (see the init block). */
         const val RENDER_THREAD_NAME = "BlazorNative-Render"
+
+        /** 18.4 (#511): serializes [start] process-wide; see its KDoc. */
+        private val startLock = Any()
+
+        /**
+         * 18.4 test seam, `null` in production: invoked inside [start] with the runtime that is
+         * starting, after `blazornative_init` succeeds and before the frame callback is
+         * registered. StartLockTest holds one start() there.
+         */
+        @VisibleForTesting @Volatile internal var insideStartHookForTest: ((BlazorNativeRuntime) -> Unit)? = null
+
+        /** 18.4 test probe: how many [start] calls have entered the body. StartLockTest reads it. */
+        @VisibleForTesting internal val enteredStartForTest = java.util.concurrent.atomic.AtomicInteger(0)
     }
 
     /** Caller-allocated NUL-terminated UTF-8 cstring for input pointers. */
