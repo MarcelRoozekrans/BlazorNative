@@ -92,11 +92,20 @@ class AndroidHostCallContractTest {
         // same key. A final destroy of every bridge the test built denies what is still pending
         // through the product's own path, which releases each key. Each denial hops through the
         // executor, and a drained request can take the hold and be denied in turn, so this drains
-        // more than once.
+        // until the hold is empty.
         for (each in synchronized(bridges) { bridges.toList() }) {
             onMain { each.onHostActivityDestroyed(isChangingConfigurations = false) }
         }
-        repeat(4) { bridge.drainForTest() }
+        // Drain until no key is held: a drained request can take the hold and be denied in turn.
+        var rounds = 0
+        while (rounds < 10 && listOf(key, otherKey).any { bridge.isKeyHeldForTest(it) }) {
+            bridge.drainForTest()
+            rounds++
+        }
+        val leaked = listOf(key, otherKey).filter { bridge.isKeyHeldForTest(it) }
+        check(leaked.isEmpty()) {
+            "secure-storage hold leaked after $rounds drain rounds: $leaked still held; the next test would park behind it"
+        }
         bridge.secureDeleteCore(key)
         AndroidShellBridge.resetHostCallContractForTest()
     }
@@ -320,6 +329,10 @@ class AndroidHostCallContractTest {
         val del = begin(deleteArgs)
         bridge.drainForTest()
         assertNull("anchor: the delete completed while the auth set's prompt was up: #506", completionNow(del))
+        // The gate hook's succeed never writes a blob, so seed one through the test seam that does.
+        // Only the delete behind the set can remove it, which gives the last assertion a way to fail.
+        assertTrue("anchor: the seam could not seed a blob", bridge.writeAuthBoundSecretForTest(key))
+        assertTrue("anchor: the seeded blob is not there before the delete", bridge.hasBlobForTest(key))
 
         onMain { gate.succeed() }
         val setDone = mustComplete("auth set", set)
