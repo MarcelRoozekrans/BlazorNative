@@ -38,8 +38,10 @@ import java.util.concurrent.atomic.AtomicReference
  *  - the iOS shell, which is not affected: it never recreates its root view controller and boots
  *    its runtime once per process;
  *  - a second live singleTop instance, from a deep link in another task, whose boot retires the
- *    first, still live, instance's runtime. Design 18.4 D1 accepts that with no pin: since 17.3
- *    the second mount already replaced the first instance's root, so its UI is dead either way.
+ *    first, still live, instance's runtime. Its UI is dead either way, as since 17.3 the second
+ *    mount replaced the first instance's root. Since the final review's C1 its lifecycle events
+ *    are dropped on the retired lane instead of crashing the process; that is pinned on the JVM
+ *    by RetiredLaneDispatchTest, and has no device twin.
  */
 @RunWith(AndroidJUnit4::class)
 class RecreationDuringBootAndroidTest {
@@ -79,9 +81,12 @@ class RecreationDuringBootAndroidTest {
 
             scenario.recreate()
             val newActivity = scenario.currentActivity()
-            Thread.sleep(2_000) // an unjoined boot of BnDemo completes well within this
-            assertFalse("anchor: the recreated Activity booted while the first boot was held: no join",
-                newActivity.bootedForTest)
+            // 13 s, past the boot's 10 s warn: the second join is unbounded, so an Activity still
+            // unbooted here has not given up waiting. An unjoined boot of BnDemo completes well
+            // within 2 s, so a join dropped, or bounded at the warn, shows as booted by now.
+            Thread.sleep(13_000)
+            assertFalse("anchor: the recreated Activity booted while the first boot was held past the " +
+                "10 s warn: no join, or the join gave up at the warn", newActivity.bootedForTest)
 
             releaseFirst.countDown()
             scenario.awaitBooted()
@@ -93,8 +98,7 @@ class RecreationDuringBootAndroidTest {
             assertTrue("the recreated Activity's page is dead: the first boot mounted over it",
                 pollUntil(scenario, 10_000) { echoText(it)?.text?.toString() == typed })
 
-            assertTrue("the first boot's runtime was not retired before the new boot started",
-                first.get()!!.retiredForTest)
+            assertTrue("the first boot's runtime was not retired", first.get()!!.retiredForTest)
             val newRuntime = AtomicReference<BlazorNativeRuntime?>(null)
             scenario.onActivity { newRuntime.set(it.runtimeForTest) }
             assertFalse("the recreated Activity's own runtime is retired: the retire hit the new boot's " +
@@ -123,8 +127,8 @@ class RecreationDuringBootAndroidTest {
             releaseFirst.countDown()
             scenario.awaitBooted()
             assertFalse("anchor: the first boot did not fail: its Activity booted", firstActivity.bootedForTest)
-            assertTrue("the failed first boot's runtime was not retired before the new boot started: " +
-                "a boot that threw was skipped", first.get()!!.retiredForTest)
+            assertTrue("the failed first boot's runtime was not retired: a boot that threw was skipped",
+                first.get()!!.retiredForTest)
         }
     }
 
