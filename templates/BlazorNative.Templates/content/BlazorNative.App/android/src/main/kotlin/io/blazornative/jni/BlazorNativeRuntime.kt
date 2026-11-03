@@ -495,7 +495,6 @@ class BlazorNativeRuntime(
         // startLock or waits on a thread that calls start(), and retire() never takes it.
         // Checked for MainActivity's and PreviewHost's callbacks in the 18.4 record, section 6.
         synchronized(startLock) {
-            enteredStartForTest.incrementAndGet() // 18.4 test probe, first line inside the lock
             val lines = mutableListOf<String>()
             val lib = NativeBindings.INSTANCE
 
@@ -526,6 +525,7 @@ class BlazorNativeRuntime(
             // 18.4 test seam, null in production: StartLockTest holds one start() here.
             val hook = insideStartHookForTest
             if (hook != null) hook(this)
+            enteredStartForTest.incrementAndGet()
 
             check(lib.blazornative_register_frame_callback(callback) == 0) {
                 "blazornative_register_frame_callback failed"
