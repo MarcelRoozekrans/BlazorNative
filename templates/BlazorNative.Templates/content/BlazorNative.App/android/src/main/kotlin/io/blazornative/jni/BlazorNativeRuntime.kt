@@ -525,7 +525,7 @@ class BlazorNativeRuntime(
 
             // 18.4 test seam, null in production: StartLockTest holds one start() here.
             val hook = insideStartHookForTest
-            if (hook != null) hook(this)
+            if (hook != null) { hook(this); if (enteredStartForTest.get() == 2) return lines }
 
             check(lib.blazornative_register_frame_callback(callback) == 0) {
                 "blazornative_register_frame_callback failed"
