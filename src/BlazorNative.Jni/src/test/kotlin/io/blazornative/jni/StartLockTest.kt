@@ -67,7 +67,9 @@ class StartLockTest {
                 try { bLines.set(b.start(platformOs = "test-host", apiLevel = 0)) } catch (t: Throwable) { bError.set(t) }
             }, "StartLockTest-B").apply { isDaemon = true; start() }
             // A positive gate, not a sleep: wait until B either got into the body or is BLOCKED,
-            // which with A holding the lock means blocked at it. A fixed sleep let a slow runner
+            // which with A holding the lock means blocked at it. That holds because the lock is B's
+            // first action in start(); work moved before it would make any other monitor pass this
+            // gate. A fixed sleep let a slow runner
             // pass a no-lock mutant before B reached the body.
             val gateDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
             while (BlazorNativeRuntime.enteredStartForTest.get() != 2 && tb.state != Thread.State.BLOCKED) {

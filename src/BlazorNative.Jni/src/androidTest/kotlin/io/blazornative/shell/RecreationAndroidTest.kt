@@ -28,8 +28,9 @@ import java.util.concurrent.atomic.AtomicReference
  * and the old Activity's runtime is retired in onDestroy, so a frame that still reaches it is
  * dropped. RecreationTests pins the .NET half; RetireLateContinuationTest the retired runtime.
  *
- * DOES NOT COVER: a recreation during boot, while the old boot thread may still be inside start(), #511;
- * and the iOS shell, which mounts once per app and has no Activity recreation.
+ * DOES NOT COVER: the iOS shell, which mounts once per app and has no Activity recreation. A
+ * recreation during boot, while the old boot thread may still be inside start() (#511), is pinned
+ * since 18.4 by RecreationDuringBootAndroidTest; this class's own pins predate that change.
  */
 @RunWith(AndroidJUnit4::class)
 class RecreationAndroidTest {

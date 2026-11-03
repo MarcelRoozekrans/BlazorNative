@@ -430,6 +430,10 @@ class AndroidShellBridge(
      * a_final_destroy_denies_only_its_own_bridges_prompts and
      * a_final_destroy_denies_a_prompt_orphaned_by_a_configuration_change, and on a real
      * MainActivity by SecureHoldAcrossRecreationAndroidTest.
+     * Known over-denial, with two live instances in different tasks: after instance A rotates and
+     * its prompt moved into A', an unrelated instance X's final destroy also denies that orphan,
+     * as its new owner's A' is alive. The caller gets AuthFailed, not a hang, and its key is
+     * released. Rare, fails safe, not pinned; record §6.
      * Biometrics' authenticate prompt holds no key and is not denied here; see record §6. */
     internal fun onHostActivityDestroyed(isChangingConfigurations: Boolean) {
         if (isChangingConfigurations) {
