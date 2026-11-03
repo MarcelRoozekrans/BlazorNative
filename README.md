@@ -187,8 +187,8 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
 | .NET | `dotnet test` | 1406 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
-| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 206 | `ci.yml` → `build-test` — **required, gates the PR** |
-| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 263 | `android-instrumented.yml` — advisory (nightly/dispatch) |
+| JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 207 | `ci.yml` → `build-test` — **required, gates the PR** |
+| Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 271 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 296 | `ios.yml` — advisory (on-merge/dispatch) |
 
 ## Prerequisites

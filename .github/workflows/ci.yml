@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (206 passed / 0 failed — the assertion is the step near the end of this
+#     (207 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2816,7 +2816,9 @@ jobs:
       #    JVM code reaches the shell as WARN, and an ERROR one as ERROR.
       # 205 -> 206 (17.4, +1, 2026-10-16): SlowHandlerProbeTest — a slow BnCheckbox callback in the
       #    published NativeAOT dll warns naming the app's method, so the hook's [UnsafeAccessor] binds.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 206 passed / 0 failed)
+      # 206 -> 207 (18.4, +1, 2026-11-03): StartLockTest, #511 — concurrent runtime starts
+      #    serialize behind one lock.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 207 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2830,8 +2832,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 206 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 206 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 207 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 207 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
