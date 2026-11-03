@@ -279,7 +279,8 @@ class BlazorNativeRuntime(
      * an untimed get() waiting for a task queued behind its own current one.
      * Unreachable from today's callers (HTTP handler threads only) — pinned
      * here because this is public API. A throw from the dispatch core (not a
-     * non-zero rc) is rethrown to the caller unwrapped.
+     * non-zero rc) is rethrown to the caller unwrapped. A retired runtime throws
+     * RejectedExecutionException to the caller (unlike [dispatchEvent], which drops).
      */
     fun dispatchEventAndWait(handlerId: Int, eventName: String, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
@@ -329,7 +330,8 @@ class BlazorNativeRuntime(
      * is not reported a second time as an error; a back's rc 2 still is. Every
      * other event's rc 1, such as a navigate to an unknown route, still reaches
      * [onError]. [payload] is optional
-     * (omitted/NULL — most host events carry none).
+     * (omitted/NULL — most host events carry none). On a retired runtime the event is dropped,
+     * not thrown, see [dispatchHostEventUnchecked].
      */
     internal fun dispatchHostEvent(event: BnHostEvent, payload: String? = null) =
         dispatchHostEventUnchecked(event.wireName, payload)
@@ -346,15 +348,23 @@ class BlazorNativeRuntime(
      * test is the mechanism, not the type.
      */
     internal fun dispatchHostEventUnchecked(name: String, payload: String? = null) {
-        dispatchLane.execute {
-            try {
-                val rc = hostEventCore(name, payload)
-                if (rc != 0 && !isNormalHostEventOutcome(name, rc)) {
-                    onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
+        try {
+            dispatchLane.execute {
+                try {
+                    val rc = hostEventCore(name, payload)
+                    if (rc != 0 && !isNormalHostEventOutcome(name, rc)) {
+                        onError(describeHostEventFailure(rc, name), IllegalStateException("host_event rc=$rc"))
+                    }
+                } catch (t: Throwable) {
+                    onError("host_event('$name') threw on the dispatch lane", t)
                 }
-            } catch (t: Throwable) {
-                onError("host_event('$name') threw on the dispatch lane", t)
             }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Retired lane: since 18.4 a newer boot retires the previous runtime even while that
+            // runtime's Activity is still alive, and its lifecycle events, safe-area report and
+            // back then arrive here on the main thread. The event is dropped like any other
+            // post-retire dispatch, as in [dispatchEvent]; a throw here would end the process.
+            // Pinned by RetiredLaneDispatchTest.
         }
     }
 
@@ -385,7 +395,8 @@ class BlazorNativeRuntime(
      * → BackUnhandled is sent / 2 faulted). Safe from any thread EXCEPT the
      * dispatch lane itself (a call from the lane would self-deadlock, same as
      * [dispatchEventAndWait]). A throw from the dispatch core is rethrown
-     * unwrapped.
+     * unwrapped. A retired runtime throws RejectedExecutionException to the caller (unlike
+     * [dispatchHostEvent], which drops).
      */
     internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
