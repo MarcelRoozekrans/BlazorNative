@@ -505,7 +505,7 @@ class BlazorNativeRuntime(
         // keeps it deadlock-free: no frame or bridge callback reachable from start() takes
         // startLock or waits on a thread that calls start(), and retire() never takes it.
         // Checked for MainActivity's and PreviewHost's callbacks in the 18.4 record, section 6.
-        synchronized(startLock) {
+        synchronized(this) {
             enteredStartForTest.incrementAndGet() // 18.4 test probe, first line inside the lock
             val lines = mutableListOf<String>()
             val lib = NativeBindings.INSTANCE
