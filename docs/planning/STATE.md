@@ -1,20 +1,15 @@
 # Session State
 
-**Last session:** 2026-11-03
+**Last session:** 2026-11-04
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.4 — recreation during boot (#511), with #601 folded in. Complete, pending merge of PR #605. 18.1, 18.2 and 18.3 are complete and merged.
-**Branch:** `feat/18.4-recreation-during-boot`.
+**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), design drafted, awaiting owner approval. 18.1 to 18.4 are complete and merged; #605 merged as `0b430432` on 2026-11-03 and closed #511 and #601.
+**Branch:** `feat/18.5-bind-handler-naming`.
 
 ## Current Position
 
-- **18.4 is complete pending the merge of draft PR #605** on `feat/18.4-recreation-during-boot`. All six plan tasks are done, the whole-branch review and its fix wave are in, and the phase is marked complete in ROADMAP and MILESTONE.
-  - Spec: `docs/superpowers/specs/2026-10-31-phase-18.4-design.md`. Plan: `docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`. Record: `docs/plans/2026-10-31-phase-18.4-record.md`.
-  - Final lanes on code head `4b9c986c`, all attempt 1 with `headSha` compared: ci 41629060648, android-instrumented 41629060661, ios 41629060729, commitlint 41629060659.
-  - Commit parse check: 35 commits and the squash message all parse. No signature, session link or closing keyword.
-  - **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296.
-  - **Squash merge:** an earlier branch commit body says "closed #506". It is harmless because #506 is already closed, but strip it from the squash message.
-  - Filed from the review: #621, see Open Decisions.
-  - The controller marks the PR ready and merges; the plan's Task 6 Step 6 is ticked for the complete-phase gate only.
+- **18.5 design drafted:** `docs/superpowers/specs/2026-11-04-phase-18.5-design.md`, builder check done and folded in. It needs owner approval before the plan.
+- Owner decisions of 2026-11-04: the position is the control type plus its Razor frame sequence (not an ordinal), and the rule covers every compiler lambda, explicit ones included, not only bound inputs.
+- **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -29,7 +24,6 @@
 
 ## Open Decisions (owner)
 
-- #601 was decided on 2026-10-31: a process-wide hold, in 18.4. Done.
 - #621: a second instance's final destroy denies another instance's orphaned secure-storage prompt. The fix needs per-Activity prompt ownership, a design decision.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
@@ -45,11 +39,10 @@
 
 ## Recommended Next Step
 
-1. Merge PR #605 once the controller marks it ready.
-2. Then start 18.5 (#522): name the page plus the wrapper position, never a compiler lambda. Surface Backend, no design spec yet, so brainstorm first.
-3. The rules still hold:
+1. Get owner approval of the 18.5 design, then write the plan with writing-plans and execute it subagent-driven.
+2. The rules still hold:
    - No Claude signature anywhere.
    - Implementers tick their plan boxes.
    - Grade pins against `docs/pin-standard.md`, in "Grading a pin: sites and reds".
    - Ask questions with AskUserQuestion.
-4. Watch, but do not work, the flakes #598, #602, #603 and #604. The M18 DoD needs attempt 1 green on every lane.
+3. Watch, but do not work, the flakes #598, #602, #603 and #604. The M18 DoD needs attempt 1 green on every lane.
