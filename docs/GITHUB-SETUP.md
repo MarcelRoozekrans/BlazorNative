@@ -193,6 +193,21 @@ public, before the phase closes.)
     meant, only stronger: it used to say "the simulator slice compiled" and now
     says "**both** slices compiled". *Which* slices those are is not claimed by the
     aggregator — it is pinned by `IosSliceMatrixDriftTests` inside `build-test`.
+  - **`coverage`** (ubuntu-latest, **`needs: [build-test]`**) — ci-baseline's
+    coverage gate. It downloads `build-test`'s Cobertura reports, fails below the
+    line-coverage floor or when `codecov.yml` would let a coverage drop pass
+    quietly, and uploads the reports to Codecov. It runs on Linux because the gate
+    supports Linux runners only in v1. Like `ios-build` it carries
+    `if: ${{ always() }}` and fails on any `build-test` result that is not
+    `success`, including a skip.
+
+  From `.github/workflows/baseline-checks.yml`, which calls ci-baseline's
+  `baseline.yml@v1`:
+  - **`baseline / gitleaks`**, **`baseline / codeql (csharp)`** and
+    **`baseline / nuget-audit`**. Not `baseline / prepare` or `baseline / trivy`.
+
+  From Codecov: **`codecov/project`**, which fails a pull request that lowers
+  project coverage by more than 1 percentage point.
 
   From `.github/workflows/commitlint.yml`:
   - **`pr-title`** (ubuntu-latest) — lints the PR **title** as a conventional-commit
@@ -207,19 +222,21 @@ public, before the phase closes.)
 - Require conversation resolution before merging
 - No force pushes
 
-> **`ci.yml`'s three required contexts run in parallel, and each does its own
+> **`ci.yml`'s three compiling contexts run in parallel, and each does its own
 > checkout and its own publish** — `pr-title` and `footer-check`, from
 > `commitlint.yml`, run in parallel with them too, but read the PR's title and
 > commit list rather than checking out and publishing anything. `ci.yml` has
-> exactly **one** `needs:` edge, added in Phase
+> **two** `needs:` edges. The first, added in Phase
 > 14.4: the `ios-build` aggregator on the `ios-build-slice` matrix. It is not an
 > artifact hand-off — the aggregator reads a *result*, not a file — and it is safe
 > as a required check only because it carries `if: ${{ always() }}` plus an explicit
 > result assertion, so it always runs and always reports. (A `needs:`-gated required
 > check **without** both of those is a trap: if its dependency fails or is skipped it
 > never reports, and the PR wedges forever on "Expected". The `android-build` header
-> in `ci.yml` states both halves of that rule.) Nothing in `ci.yml` downloads an
-> artifact: `build-test`'s `.so`
+> in `ci.yml` states both halves of that rule.) The second is `coverage` on
+> `build-test`, with the same two halves. It is `ci.yml`'s one artifact hand-off:
+> it downloads the `coverage-reports` artifact, the Cobertura files `build-test`'s
+> .NET tests write. Nothing else in `ci.yml` downloads an artifact: `build-test`'s `.so`
 > uploads are there to be downloaded by a *person*, not by a job. The repo's one
 > long-standing cross-job artifact hand-off is in `android-instrumented.yml`
 > (`publish-so` → `emulator`, the **advisory nightly** lane); `release-please.yml`'s

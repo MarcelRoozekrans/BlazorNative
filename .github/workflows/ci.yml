@@ -71,7 +71,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      id-token: write   # Codecov upload via OIDC, no token secret
     defaults:
       run:
         shell: pwsh
@@ -2410,14 +2409,17 @@ jobs:
             throw ".NET test baseline drift: expected 1406 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
-      - name: Upload coverage to Codecov
+      # The coverage job below gates these reports and uploads them to Codecov. It
+      # runs on Linux because ci-baseline's coverage gate supports Linux runners only
+      # in v1, and the .NET suite runs here on Windows.
+      - name: Upload the coverage reports for the coverage job
         if: '!cancelled()'
-        uses: codecov/codecov-action@v7
+        uses: actions/upload-artifact@v7
         with:
-          use_oidc: true
-          files: "TestResults/**/coverage.cobertura.xml"
-          disable_search: true   # only the files above, not every *.xml the search finds
-          fail_ci_if_error: false
+          name: coverage-reports
+          path: TestResults/**/coverage.cobertura.xml
+          if-no-files-found: error
+          retention-days: 7
 
       # 15.5 (#291): every docs sample a consumer might copy is compiled. The fence
       # parser is tools/BlazorNative.DocSamples — the same one DocsSamplesDriftTests
@@ -2939,6 +2941,66 @@ jobs:
           if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # coverage — ci-baseline's coverage gate over build-test's Cobertura reports.
+  #
+  # The gate merges the reports, fails below the line-coverage floor, and fails
+  # when codecov.yml would let a coverage drop pass quietly. It runs on Linux
+  # runners only in v1, and the .NET suite runs on Windows in build-test, so the
+  # reports come over as an artifact. The Codecov upload sits here too, after
+  # the gate.
+  #
+  # It is `needs`-gated, so it follows the rule the android-build header below
+  # spells out for ios-build: `if: always()` plus an explicit assertion on the
+  # dependency's result, so a failed or skipped build-test reds this check
+  # instead of leaving it waiting forever.
+  # ═══════════════════════════════════════════════════════════════════════════
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build-test]
+    if: ${{ always() }}
+    permissions:
+      contents: read
+      id-token: write   # Codecov upload via OIDC, no token secret
+    steps:
+      - name: Assert build-test succeeded
+        shell: bash
+        env:
+          BUILD_TEST_RESULT: ${{ needs.build-test.result }}
+        run: |
+          if [ "$BUILD_TEST_RESULT" != "success" ]; then
+            echo "::error::build-test finished as '$BUILD_TEST_RESULT', so its coverage reports cannot be trusted or are missing. This check fails on a skip too, on purpose."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET SDK (global.json, for ReportGenerator)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Download the coverage reports from build-test
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-reports
+          path: TestResults
+
+      - name: Coverage gate
+        uses: MarcelRoozekrans/ci-baseline/actions/coverage-gate@v1
+        with:
+          reports: TestResults/**/coverage.cobertura.xml
+
+      - name: Upload coverage to Codecov
+        if: '!cancelled()'
+        uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
+          files: "TestResults/**/coverage.cobertura.xml"
+          disable_search: true   # only the files above, not every *.xml the search finds
+          fail_ci_if_error: false
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # android-build — THE ANDROID SHELL MUST COMPILE, AND A REQUIRED CHECK MUST
   # NAME IT.
   #
@@ -3023,7 +3085,7 @@ jobs:
   # `.so` artifacts for the android-instrumented emulator lane". It does not, and
   # never did — download-artifact cannot read another WORKFLOW's run, so that lane
   # publishes its own `.so` in its own `publish-so` job and hands it to `emulator`
-  # via `needs:`. Nothing consumes build-test's uploads; they are diagnostics. The
+  # via `needs:`. Nothing consumes build-test's .so uploads; they are diagnostics. The
   # same false belief appeared in three other places and was corrected with it —
   # it is the mental model that nearly underwrote release.yml's artifact hand-off
   # with a precedent that does not exist.)
