@@ -2,12 +2,12 @@
 
 **Last session:** 2026-11-04
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), design drafted, awaiting owner approval. 18.1 to 18.4 are complete and merged; #605 merged as `0b430432` on 2026-11-03 and closed #511 and #601.
+**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), design approved by the owner on 2026-11-04; plan next. 18.1 to 18.4 are complete and merged; #605 merged as `0b430432` on 2026-11-03 and closed #511 and #601.
 **Branch:** `feat/18.5-bind-handler-naming`.
 
 ## Current Position
 
-- **18.5 design drafted:** `docs/superpowers/specs/2026-11-04-phase-18.5-design.md`, builder check done and folded in. It needs owner approval before the plan.
+- **18.5 design drafted:** `docs/superpowers/specs/2026-11-04-phase-18.5-design.md`, builder check folded in, approved by the owner on 2026-11-04.
 - Owner decisions of 2026-11-04: the position is the control type plus its Razor frame sequence (not an ordinal), and the rule covers every compiler lambda, explicit ones included, not only bound inputs.
 - **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296.
 
@@ -24,6 +24,7 @@
 
 ## Open Decisions (owner)
 
+- **After M18 (decided 2026-11-04):** a short milestone, 1.0 readiness plus performance. Add a perf baseline: cold boot, dispatch-lane latency and frame-apply time on both shells, compared against an older release. Re-check every 1.0 criterion in `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` against current code. Then cut 1.0 or list what blocks it. The repo has no benchmark today.
 - #621: a second instance's final destroy denies another instance's orphaned secure-storage prompt. The fix needs per-Activity prompt ownership, a design decision.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
 - #593: deliver a faulted batch's remove patches, or document that its diffs are dropped.
@@ -39,7 +40,7 @@
 
 ## Recommended Next Step
 
-1. Get owner approval of the 18.5 design, then write the plan with writing-plans and execute it subagent-driven.
+1. Write the 18.5 plan with writing-plans and execute it subagent-driven.
 2. The rules still hold:
    - No Claude signature anywhere.
    - Implementers tick their plan boxes.
