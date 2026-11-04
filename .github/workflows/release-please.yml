@@ -377,6 +377,40 @@ jobs:
           retention-days: 90
 
   # ───────────────────────────────────────────────────────────────────────────
+  # sbom — a CycloneDX SBOM of the solution, attached to the GitHub release.
+  # ci-baseline's sbom action. It runs on Linux because the action is a bash
+  # composite, builds the release tag in Release first, and attaches to the
+  # release release-please created in its own job, named by its tag_name output:
+  # this workflow runs on main, so github.ref_name is not the tag. It never sees
+  # the nuget.org key.
+  # ───────────────────────────────────────────────────────────────────────────
+  sbom:
+    needs: [release-please, validate]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write   # gh release upload
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Setup .NET SDK (global.json)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build the release tag (Release)
+        run: dotnet build BlazorNative.sln -c Release
+
+      - name: Attach the SBOM to the GitHub release
+        uses: MarcelRoozekrans/ci-baseline/actions/sbom@v1
+        with:
+          solution: BlazorNative.sln
+          tag: ${{ needs.release-please.outputs.tag_name }}
+
+  # ───────────────────────────────────────────────────────────────────────────
   # push — the only job that has ever heard of the key.
   # ───────────────────────────────────────────────────────────────────────────
   push:
