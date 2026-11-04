@@ -1,5 +1,10 @@
 <Project>
 
+  <!-- MSBuild imports only the nearest Directory.Build.props, so this file opts
+       back in to the root one, which holds the NuGetAudit settings. Same
+       mechanism as src/Directory.Build.props; the root file always exists. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Directory.Build.props" />
+
   <!-- Links BnRepo into EVERY project under tests/, so a future test project
        cannot forget it. That matters beyond convenience:
        PinPopulationTests enumerates the pin population by finding callers of

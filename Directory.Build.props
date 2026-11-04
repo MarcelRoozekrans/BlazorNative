@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- NuGetAudit as ci-baseline's nuget-audit job runs it, so a local restore shows the same advisories.
+       src/ and tests/ have their own Directory.Build.props, and each imports this file first. -->
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+  </PropertyGroup>
+
+</Project>
