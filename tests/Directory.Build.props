@@ -20,8 +20,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Shared\CommentStrippedSource.cs" Link="Shared\CommentStrippedSource.cs" />
   </ItemGroup>
 
-  <!-- Code coverage: CI passes coverage.runsettings to dotnet test and uploads the
-       Cobertura report to Codecov. -->
+  <!-- Code coverage: CI runs dotnet test with collect "XPlat Code Coverage" and
+       coverage.runsettings, and uploads the Cobertura report to Codecov. -->
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="10.1.0">
       <PrivateAssets>all</PrivateAssets>

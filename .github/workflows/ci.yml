@@ -2387,10 +2387,16 @@ jobs:
       # drains at blazornative_shutdown, at ProcessExit and on an unhandled exception, each bounded.
       # 1387 -> 1406 (18.2, +19, 2026-10-31): Runtime 1213 -> 1232. FaultNoticeTests, #500 — a queued re-render or
       # RunAfterDispatch fault is charged to the dispatch that queued it, and the late-notice tap sees every send.
+      # --collect "XPlat Code Coverage" is what makes vstest load coverlet's in-proc
+      # collector, which writes every module's hits when the test session ends. The
+      # runsettings file alone configures the out-of-proc collector only, so hits were
+      # written by ProcessExit handlers, and vstest kills a test host that has not
+      # exited 100 ms after the run. Modules whose handlers had not run yet then read
+      # as 0 hits, at random, on Windows (#626).
       - name: .NET tests (assert 1406 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
-          dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
+          dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw "dotnet test failed (exit $LASTEXITCODE)" }
           # -AllMatches + iterating every match, not just $_.Matches[0]: `dotnet test`
           # runs projects in parallel and their summary lines can land on ONE physical
