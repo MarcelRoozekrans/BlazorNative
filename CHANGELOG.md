@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.0...v0.21.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **18.4:** own the session and the secure-storage hold across a recreation ([#605](https://github.com/MarcelRoozekrans/BlazorNative/issues/605)) ([0b43043](https://github.com/MarcelRoozekrans/BlazorNative/commit/0b430432cfe397f8e34517be66a2c032b14d108d))
+* **deps:** override tinypool and serialize-javascript in the docs site ([#625](https://github.com/MarcelRoozekrans/BlazorNative/issues/625)) ([9066fc6](https://github.com/MarcelRoozekrans/BlazorNative/commit/9066fc68c7a0c3e1a84c6cfddf442f22941da636))
+
 ## [0.21.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.20.3...v0.21.0) (2026-10-31)
 
 
