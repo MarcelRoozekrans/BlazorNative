@@ -27,8 +27,9 @@ namespace BlazorNative.Runtime.Tests;
 // rules fail SILENTLY and EXPENSIVELY:
 //
 //   1. SECRET CONTAINMENT — nothing publishes except the merge of a release PR,
-//      and the mechanism of that rule is that `secrets.NUGET_API_KEY` is
-//      reachable from EXACTLY ONE job in EXACTLY ONE workflow. A second
+//      and the mechanism of that rule is that the NuGet trusted publishing login
+//      (the `NuGet/login` action, which swaps the job's OIDC token for a short
+//      lived API key) is reachable from EXACTLY ONE job in EXACTLY ONE workflow. A second
 //      reference — a push step bolted into ci.yml, a "convenience" key in a
 //      validate job, a stale one left behind in release.yml — would move the
 //      door without moving the sign on it, and no lane would notice. There is no
@@ -76,37 +77,37 @@ public sealed class ReleaseWorkflowPinTests
 {
     private const string WorkflowDir = ".github/workflows";
 
-    /// <summary>The workflow that publishes — where the single NUGET_API_KEY
-    /// reference and the `dotnet nuget push` now live. The Phase 9.x auto-publish
-    /// re-cut moved them out of release.yml (now the keyless PR-time validation
-    /// lane) and into release-please.yml's `push` job, gated on the action's
-    /// `release_created` output.</summary>
+    /// <summary>The workflow that publishes — where the single NuGet login and
+    /// the `dotnet nuget push` live. The Phase 9.x auto-publish re-cut moved them
+    /// out of release.yml (now the keyless PR-time validation lane) and into
+    /// release-please.yml's `push` job, gated on the action's `release_created`
+    /// output. nuget.org's trusted publishing policy names this file, so the
+    /// login cannot move to another workflow without a new policy.</summary>
     private const string PublishWorkflow = ".github/workflows/release-please.yml";
 
-    /// <summary>The key's expression — whitespace-tolerant inside the braces,
-    /// because a pin that only sees one spelling of the same reference is a pin
-    /// with a hole.
+    /// <summary>The stored-secret expression for the old long-lived key —
+    /// whitespace-tolerant inside the braces. Trusted publishing replaced it, so
+    /// the pin demands ZERO of these, in every workflow.
     ///
-    /// IT COUNTS COMMENTS TOO, DELIBERATELY — and this is the one judgment call
-    /// in this file, so it is recorded rather than left to be rediscovered. A
-    /// YAML comment is inert and cannot leak a secret, so counting it is
-    /// technically a false positive; the pin reds anyway, for two reasons.
-    /// (1) It makes the claim GREPPABLE: `grep -r "secrets.NUGET_API_KEY"
-    /// .github/` returns exactly one hit, and that hit is the door — an owner
-    /// auditing "what can reach my key?" gets a complete answer from one
-    /// command, with no "…except the comments" footnote. (2) The alternative is
-    /// a comment-stripping parser, and stripping `#`-to-EOL from YAML is wrong
-    /// in the presence of block scalars (the publish workflow's `run: |` steps
-    /// contain literal `#` characters that are CONTENT, not comments) — so the
-    /// parser would either be fooled or, worse, eat its own subject and go
-    /// green. A pin that occasionally reds on prose fails LOUD and takes ten
-    /// seconds to fix; a pin with a parser that can blind itself fails SILENT.
-    ///
-    /// This is not theoretical: the pin's first run reddened on release.yml's
-    /// own `env:` comment, which quoted the expression it was describing. Every
-    /// comment that names the secret spells it without its braces.</summary>
-    private static readonly Regex NugetApiKeyReference =
+    /// IT COUNTS COMMENTS TOO, DELIBERATELY. A YAML comment is inert, so counting
+    /// it is technically a false positive; the pin reds anyway, because it keeps
+    /// the claim greppable (`grep -r "secrets.NUGET_API_KEY" .github/` returns
+    /// nothing) and because stripping `#`-to-EOL from YAML is wrong in the
+    /// presence of block scalars, so a comment-stripping parser could blind
+    /// itself. Every comment that names the old key spells it without its braces.</summary>
+    private static readonly Regex StoredNugetKeyReference =
         new(@"\$\{\{\s*secrets\.NUGET_API_KEY\s*\}\}", RegexOptions.CultureInvariant);
+
+    /// <summary>The trusted publishing login step: `uses: NuGet/login@v1`.
+    /// The trailing `@` keeps prose that names the action (comments say
+    /// `NuGet/login` without a version) from counting as a use.</summary>
+    private static readonly Regex NugetLoginUse =
+        new(@"uses:\s*NuGet/login@", RegexOptions.CultureInvariant);
+
+    /// <summary>A read of the login step's output, which is the API key:
+    /// `steps.&lt;id&gt;.outputs.NUGET_API_KEY` inside an expression.</summary>
+    private static readonly Regex LoginKeyOutputReference =
+        new(@"\$\{\{\s*steps\.[A-Za-z0-9_-]+\.outputs\.NUGET_API_KEY\s*\}\}", RegexOptions.CultureInvariant);
 
     /// <summary>The version-override shapes, in every spelling MSBuild accepts
     /// on a CLI: `-p:` and `/p:`, `Version` and `PackageVersion`, any casing
@@ -114,42 +115,57 @@ public sealed class ReleaseWorkflowPinTests
     private static readonly Regex VersionOverride =
         new(@"[-/]p:(Version|PackageVersion)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    /// <summary>THE CONTAINMENT PIN (8.2 normative rule 1). The key is
-    /// referenced exactly once, across every workflow, and that once is in
-    /// release-please.yml. Mutation: add the reference to ci.yml — or leave a
-    /// stale one in release.yml — -> red NAMING the file.</summary>
+    /// <summary>THE CONTAINMENT PIN (8.2 normative rule 1, re-cut for trusted
+    /// publishing). No workflow references the old stored key, the NuGet login
+    /// step appears exactly once and only in release-please.yml, and the key it
+    /// yields is read only there. Mutations: put the stored-secret expression
+    /// back in any workflow, add a `NuGet/login@v1` step to ci.yml, or read the
+    /// login output in release.yml -> red NAMING the file.</summary>
     [Fact]
-    public void TheNugetApiKey_IsReferencedExactlyOnce_AndOnlyInReleasePleaseYml()
+    public void TheNugetCredential_IsLoginOnly_AndContainedInReleasePleaseYml()
     {
         var workflows = WorkflowFiles();
+        string[] texts = [.. workflows.Select(f => File.ReadAllText(f))];
 
-        var referencesByFile = workflows
-            .Select(f => (
-                File: Relative(f),
-                Count: NugetApiKeyReference.Matches(File.ReadAllText(f)).Count))
-            .Where(x => x.Count > 0)
-            .OrderBy(x => x.File, StringComparer.Ordinal)
-            .ToList();
+        List<(string File, int Count)> Count(Regex r) =>
+            [.. workflows.Select((f, i) => (File: Relative(f), Count: r.Matches(texts[i]).Count))
+                .Where(x => x.Count > 0)
+                .OrderBy(x => x.File, StringComparer.Ordinal)];
 
-        int total = referencesByFile.Sum(x => x.Count);
+        string Show(List<(string File, int Count)> l) =>
+            l.Count == 0 ? "(none)" : string.Join(", ", l.Select(x => $"{x.File} x{x.Count}"));
+
+        var stored = Count(StoredNugetKeyReference);
+        var logins = Count(NugetLoginUse);
+        var outputs = Count(LoginKeyOutputReference);
+
+        Assert.True(stored.Count == 0,
+            "THE LONG-LIVED NUGET KEY IS GONE (trusted publishing). A stored-secret expression for "
+            + "NUGET_API_KEY reappeared, which resurrects the credential this repository stopped "
+            + "keeping — the one that expires on a Release and leaks with a repo secret dump.\n"
+            + $"  found: {Show(stored)}\n"
+            + "  Use the NuGet/login step in the push job instead. Comments name the old key "
+            + "without its expression braces.");
 
         Assert.True(
-            total == 1 && referencesByFile.Count == 1 && referencesByFile[0].File == PublishWorkflow,
+            logins.Count == 1 && logins[0].File == PublishWorkflow && logins[0].Count == 1,
             "NOTHING PUBLISHES EXCEPT THE MERGE OF A RELEASE PR (8.2 normative rule 1), and the "
-            + "mechanism of that rule is that ${{ secrets.NUGET_API_KEY }} is reachable from "
+            + "mechanism of that rule is that the NuGet trusted publishing login is reachable from "
             + $"EXACTLY ONE job in EXACTLY ONE workflow — `{PublishWorkflow}`'s `push` job, which "
-            + "is guarded on `needs.release-please.outputs.release_created == 'true'`.\n"
-            + $"  expected: 1 reference, in {PublishWorkflow}\n"
-            + $"  found:    {total} reference(s) across {referencesByFile.Count} file(s): "
-            + (referencesByFile.Count == 0
-                ? "(none — see below)"
-                : string.Join(", ", referencesByFile.Select(x => $"{x.File} ×{x.Count}")))
-            + $"\n  (scanned {workflows.Count} workflow file(s) under {WorkflowDir})\n"
-            + "A SECOND reference moves the door without moving the sign on it: a push step in "
-            + "ci.yml would publish from a MERGE that is not a release-PR merge, which is verbatim "
-            + "what DoD #3 forbids; a stale reference left in release.yml would resurrect the old "
-            + "door. ZERO references means the push job can no longer authenticate — or that this "
-            + "pin has gone blind. Neither is a thing to green by editing this test.");
+            + "is guarded on `needs.release-please.outputs.release_created == 'true'`. nuget.org's "
+            + "policy names that file, so a login anywhere else would fail anyway, but a push "
+            + "step in ci.yml must not even be attempted.\n"
+            + $"  expected: 1 `uses: NuGet/login@` in {PublishWorkflow}\n"
+            + $"  found:    {Show(logins)}\n"
+            + $"  (scanned {workflows.Count} workflow file(s) under {WorkflowDir})\n"
+            + "ZERO means the push job can no longer authenticate — or that this pin has gone "
+            + "blind. Neither is a thing to green by editing this test.");
+
+        Assert.True(
+            outputs.Count == 1 && outputs[0].File == PublishWorkflow && outputs[0].Count >= 1,
+            "The login step's API key output may be read only by the push job's own steps in "
+            + $"{PublishWorkflow}, and at least once (a login nothing reads is a push without a key).\n"
+            + $"  found: {Show(outputs)}");
     }
 
     /// <summary>THE NO-OVERRIDE PIN (8.2 normative rule 3 / decision 2). The

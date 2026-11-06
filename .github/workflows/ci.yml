@@ -950,8 +950,8 @@ jobs:
       # RELEASE DOOR lands (M8 DoD #3). `.github/workflows/release.yml` — two
       # jobs: `validate` (no key, ever; triggers on `release: published` plus
       # PRs/main-pushes paths-filtered to the release machinery) and `push`
-      # (needs: validate, if: event_name == 'release', the sole NUGET_API_KEY
-      # reference, artifact download, `dotnet nuget push --skip-duplicate` over
+      # (needs: validate, if: event_name == 'release', the sole
+      # NuGet publish credential, artifact download, `dotnet nuget push --skip-duplicate` over
       # the ENUMERATED feed — it re-packs nothing, and has no checkout at all,
       # so "pushes only validated bytes" is structural). Every DECISION lives in
       # `scripts/release-preflight.ps1` (classifier + tag<->props assertion +
