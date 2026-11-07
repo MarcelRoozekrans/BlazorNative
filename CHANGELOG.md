@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.1...v0.21.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.facebook.soloader:soloader to v0.13.0 ([#632](https://github.com/MarcelRoozekrans/BlazorNative/issues/632)) ([26d69fe](https://github.com/MarcelRoozekrans/BlazorNative/commit/26d69fe17d053c48e9323f9e63f1eaec2fd311f0))
+
 ## [0.21.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.0...v0.21.1) (2026-11-04)
 
 
