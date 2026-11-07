@@ -61,7 +61,7 @@ dependencies {
     // SoLoader.init(context) before the first YogaNode (YogaLayout / MainActivity),
     // so it needs it on the MAIN compile classpath too — pinned to the version yoga
     // 3.2.1 resolves, so compile and runtime agree.
-    implementation("com.facebook.soloader:soloader:0.12.1")
+    implementation("com.facebook.soloader:soloader:0.13.0")
 
     // Coil — the image loader behind BnImage (fetch, decode, downsampling,
     // cancellation, caching). Coil 2.x, not 3.x: 3.x is the coil3/multiplatform
