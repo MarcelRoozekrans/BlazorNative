@@ -404,134 +404,58 @@ text:
   `ci.yml`'s own `YOGA_VERSION` (which is what `ios-build-slice` compiles, once
   per leg, against that leg's SDK) and the template's `build.gradle.kts`.
 
-### Secrets — `NUGET_API_KEY`, the one secret
+### NuGet trusted publishing — no stored secret
 
-**This repository needs exactly one secret, and it is the only thing standing
-between the packages and nuget.org.** Everything else the release does is
-computed from the tree.
+**This repository keeps no NuGet API key.** The `push` job in
+`release-please.yml` logs in to nuget.org with its own GitHub OIDC token, using
+the `NuGet/login@v1` action, and gets an API key that lasts about an hour. There
+is nothing long-lived to mint, rotate or leak, and an expired key can no longer
+surface as a 401 on a Release.
 
-**Minting it** (nuget.org → your avatar → **API Keys** → **Create**):
+**One-time setup, on nuget.org** (avatar → **Trusted Publishing** → **Create**):
 
 | Field | Value | Why |
 |---|---|---|
-| Key name | `BlazorNative CI` | anything; it is for your own audit trail |
-| Scopes | **Push new packages and package versions** only | not *Unlist*; the workflow never unlists |
-| Glob pattern | `BlazorNative.*` | the key cannot touch a package outside this project even if it leaks |
-| Expiration | 365 days (max) | put the renewal in a calendar; an expired key surfaces as a 401 on a Release |
+| Repository owner | `MarcelRoozekrans` | the policy matches the OIDC token's repository |
+| Repository | `BlazorNative` | |
+| Workflow file | `release-please.yml` | the only workflow that pushes; add a second policy for any workflow that ever pushes |
+| Environment | (empty) | the workflow uses no GitHub environment |
 
-**Where it goes:** repo → **Settings** → **Secrets and variables** → **Actions**
-→ **New repository secret** → name it **exactly** `NUGET_API_KEY` (the workflow
-reads that name and nothing else).
+**One-time setup, on GitHub:** repo → **Settings** → **Secrets and variables** →
+**Actions** → **Variables** → add `NUGET_USER`, your nuget.org **profile name**
+(not your email address). It is a variable, not a secret: it is not sensitive.
+The `push` job also declares `permissions: id-token: write`, which is what lets it
+request the OIDC token.
 
-**The standing law, and it is a test rather than a promise:** the key is
+**The standing law, and it is a test rather than a promise:** the login step is
 referenced by **exactly one job in exactly one workflow** — `release-please.yml`'s
 `push` job, guarded on `needs.release-please.outputs.release_created == 'true'`.
-`ReleaseWorkflowPinTests` reds the **required** `build-test` lane if a second
-reference ever appears anywhere under `.github/workflows/`. So this is a complete
-answer — grep for the **expression**, not the bare name (`release-please.yml`'s
-own comments discuss the secret by name; only the `${{ … }}` form can actually
-read it, and only that form is what the pin counts):
+`ReleaseWorkflowPinTests` reds the **required** `build-test` lane if the login
+appears in any other workflow, or if a stored-secret reference to the old
+`NUGET_API_KEY` ever comes back anywhere under `.github/workflows/`. The audit is
+two greps:
 
 ```bash
-grep -rF '${{ secrets.NUGET_API_KEY }}' .github/   # exactly one hit — that hit is the door
+grep -rF 'NuGet/login@' .github/workflows/   # exactly one hit — that hit is the door
+grep -rF 'secrets.NUGET_API_KEY' .github/    # no hits — the stored key is gone
 ```
 
-> **Scoping, and the residual we accept.** A repo-level secret is readable by
-> any workflow run on a branch by an actor with write access. A GitHub
-> *environment* with a branch restriction would narrow that — it is deliberately
-> **not** used, because the owner's law is *one secret, and the release-PR merge is
-> the go*, and an environment gate is a **second** manual approval on an action
-> that is already a deliberate merge. The mitigations that cost nothing are taken:
-> one reference, one job, `if:`-guarded on `release_created`, pinned by a test.
+> **Scoping.** The policy is tied to the repository and the workflow file, with
+> no environment, so any run of `release-please.yml` that reaches the `push`
+> step can log in. The `push` job is `if:`-guarded on `release_created`, so only
+> the release-PR merge gets there. That keeps the owner's law: *the release-PR
+> merge is the go*, with no second approval gate.
 
----
-
-### GitHub Pages — enabling the docs site
-
-**This repository needs exactly one click, and it is the only thing standing
-between `website/` and a live docs site.** There is no secret, no token, no
-branch, and nothing to mint: `docs.yml` authenticates to Pages with an OIDC
-`id-token` the workflow already requests. The `github-pages` environment is
-created **automatically** on the first deploy.
-
-**Where it goes:** repo → **Settings** → **Pages** → **Build and deployment** →
-**Source** → select **`GitHub Actions`**.
-
-That is the whole list. Verify it took:
-
-```bash
-gh api repos/MarcelRoozekrans/BlazorNative/pages --jq .build_type   # → workflow
-```
-
-Before the click that endpoint is a **404** (`has_pages: false`), which is itself
-the check — a 404 means the setting has not been made. The target state is what
-`AdoNet.Async` already shows: `build_type: "workflow"`.
-
-**What happens after.** `docs.yml` `build` → `deploy` runs on every push to
-`main`, and the site lands at
-**<https://marcelroozekrans.github.io/BlazorNative/>**.
-
-**Its paths filter is deliberately wider than `website/**`, and that is the part
-to understand rather than to memorize.** The component reference is *generated*
-from `src/BlazorNative.Components`' XML doc comments at build time — so a PR that
-improves a `<summary>`, or that changes whether those doc comments exist at all,
-changes the site without touching `website/`. Under a `website/**`-only filter
-main would take that commit and never redeploy, serving a stale reference with
-nothing red anywhere, for exactly as long as nobody looked. So the filter names
-every input the reference is a function of: the components, the two props/targets
-files that decide whether the XML is generated and whether CS1591 is an error,
-the generator script, its tool manifest, and the workflow itself.
-
-**The executable truth is `.github/workflows/docs.yml`, job `build` — read the
-`paths:` lists there rather than a copy here.** There are two of them (the `push`
-filter and the `pull_request` filter): GitHub Actions supports no YAML anchors, so
-they are duplicated by construction and must be edited together. A transcription
-on this page would be a third copy that rots the day either list moves.
-
-`docs.yml` also builds on `pull_request` (a broken docs build is caught before it
-lands), with `deploy` gated off `pull_request` so a PR never touches Pages, never
-takes the `pages` concurrency group, and never needs `id-token`. It is
-**advisory** — it is not a required check, and `build-test` / `android-build` /
-`ios-build` keep their names and contexts.
-
-**Until the click, `deploy` fails** — loudly, on `main`, with a legible Pages
-error. Everything already re-pointed at the site 404s in that interval: the six
-packages' READMEs, `PackageProjectUrl`, and the analyzers' `helpLinkUri` values.
-That is bounded and it is strictly better than the alternative — nothing
-publishes without your Release (so no consumer can reach those URLs first), and
-the old targets are a 404 *forever*.
-
-**The one link that argument does not cover is the root `README.md`'s
-Documentation link**, because this repo is public: it 404s for anyone browsing
-GitHub between the merge and the click. That is the honest cost of shipping the
-site's inbound link with the site, and it is the shortest-lived item on this
-page — but it is the reason to click sooner rather than later.
-
-> ⚠ **The first check after clicking is a LOOK, not a red.** This is the quiet
-> arrow, and it is the one thing on this page that CI cannot catch for you. The
-> site's `baseUrl` (`'/BlazorNative/'` in `website/docusaurus.config.js`) is only
-> correct relative to where Pages actually serves it. **A wrong `baseUrl` builds
-> green, deploys green, and reports success** — and produces a page with dead CSS
-> and 404 links. No local build and no workflow can see it; only a real fetch of
-> the real URL can. So after the first deploy goes green, **open
-> <https://marcelroozekrans.github.io/BlazorNative/> and confirm it has
-> styling.** Green is not the evidence here; your eyes are.
-
----
-
-### Publishing a release (auto-publish on merge)
-
-**Merging the release PR is the go, and it is the only one.** That single merge
-cuts the tag, publishes the GitHub Release, AND pushes the packages to nuget.org
-— all in one `release-please.yml` workflow run. An ordinary merge that is *not* a
-release-PR merge publishes nothing; a bare tag publishes nothing.
+> **If you are migrating from the old key:** after the first release publishes
+> through trusted publishing, delete the `NUGET_API_KEY` repository secret and
+> revoke the matching key on nuget.org.
 
 **Phase 8.6 automated everything up to a manual Publish click; the Phase 9.x
 re-cut removed that last click too — "auto release of everything".** `release-please`
 computes the version, writes `CHANGELOG.md`, and opens a release PR. When you
 merge it, release-please cuts the tag and Release, and — in the **same run** — its
 `validate` job packs and proves the packages with no key present, then its `push`
-job (the one place `NUGET_API_KEY` lives) pushes them to nuget.org.
+job (the one place the NuGet trusted publishing login lives) pushes them to nuget.org.
 
 > **Why the publish had to move into `release-please.yml`.** It used to live in
 > `release.yml`, gated on `release: types: [published]`. That never fired:
@@ -607,12 +531,12 @@ version, the tag and the changelog, and the merge does the rest:**
    > **If you never click, nothing breaks — it stalls.** A required check that
    > never ran cannot be satisfied, so the PR cannot merge: no tag, no Release, no
    > publish. **The failure direction is safe.** This is the deliberate price of
-   > keeping *one* secret in this repo; a PAT would start the checks
-   > automatically and was rejected for being a second secret that expires.
+   > keeping no stored secret in this repo; a PAT would start the checks
+   > automatically and was rejected for being a secret that expires.
 4. **Merge the release PR** once it is green. **That merge is the go.** In the
    same `release-please.yml` run it cuts the tag, publishes the Release, and then
    — gated on `release_created` — `validate` packs and proves the seven packages
-   with **no key in the run at all**, and only then does `push` see the secret and
+   with **no key in the run at all**, and only then does `push` log in to nuget.org and
    send them to nuget.org. Watch that run: the check is *"did `push` run?"*, since
    the one quiet failure mode (U8 below) skips `push` rather than reddening it.
 
@@ -711,7 +635,7 @@ standing there having just merged the release PR.**
 | # | Unproven until your first Release | If it is wrong, you see |
 |---|---|---|
 | U1 | release-please's `release_created` output actually gates the publish jobs to fire on a real release-PR merge | **Nothing happens** — the `validate` / `push` jobs skip. Safe: it cannot mis-publish. (`actionlint` proves the `if:`/`needs` expression chain is real; that the merge run actually emits `release_created == 'true'` and starts the jobs is what the first release proves.) |
-| U2 | `NUGET_API_KEY` resolves — present and correctly named | A named RED: *"NUGET_API_KEY is unset or misnamed — see docs/GITHUB-SETUP.md"*, instead of a bare 401 from a CLI |
+| U2 | The trusted publishing login works — the `NUGET_USER` variable holds your profile name and the nuget.org policy names this repository and `release-please.yml` | The *Log in to NuGet* step reds with the action's own error, before anything is pushed |
 | U3 | nuget.org **accepts** these nupkgs — no reserved-prefix 403 | A 403 or an async validation failure on first push. All six ids are unregistered today, so nothing is reserved — but a reserved-prefix answer cannot be obtained without a key |
 | U4 | The adjacent `.snupkg` reaches the symbol server | Packages publish, symbols silently do not. **Recoverable** — symbols can be pushed later |
 | U5 | `--skip-duplicate` no-ops a real 409 | A re-run reds instead of skipping. Recoverable by hand |

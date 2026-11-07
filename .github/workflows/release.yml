@@ -8,10 +8,11 @@
 # GitHub does not fire `release: published` for a GITHUB_TOKEN-created Release, so
 # a workflow waiting on that event NEVER auto-fired and nothing ever reached
 # nuget.org). The push now runs in the SAME workflow run that cuts the tag, gated
-# on release-please's own `release_created` output. The single `NUGET_API_KEY`
-# reference lives there, in that workflow's `push` job, and NOWHERE else —
-# ReleaseWorkflowPinTests reds the required build-test lane if a second reference
-# appears in ANY workflow (comments counted too).
+# on release-please's own `release_created` output, using NuGet trusted
+# publishing. The NuGet login step lives there, in that workflow's `push` job, and
+# NOWHERE else — ReleaseWorkflowPinTests reds the required build-test lane if it
+# appears in another workflow, or if a stored NuGet key is referenced in ANY
+# workflow (comments counted too).
 #
 # WHAT THIS FILE IS NOW: the release machinery's PR-time validation lane, and
 # nothing more. It runs on PRs — and on main pushes — that touch the release
