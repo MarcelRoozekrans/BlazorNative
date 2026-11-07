@@ -77,7 +77,7 @@
        that release-please is now editing.
 
        The house has met this shape one file over: release.yml's comments must
-       name secrets.NUGET_API_KEY without its expression braces, or
+       not spell a stored NuGet key's expression form, or
        ReleaseWorkflowPinTests counts the prose as a real reference and reds.
        Documentation that quotes its own subject breaks its subject. Three times
        now, the fix is the same: name the thing, do not spell it.

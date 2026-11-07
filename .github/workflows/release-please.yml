@@ -30,15 +30,18 @@
 #   uses: a publish job in release-please.yml, gated on the action's own
 #   `release_created` output, packing and pushing in the same run the tag was cut.
 #
-# ⚠⚠ THE KEY MOVED, IT DID NOT MULTIPLY. `secrets.NUGET_API_KEY` is referenced
-#    EXACTLY ONCE in the whole repository — the `push` job's job-level `env:`
-#    below — and ReleaseWorkflowPinTests reds the required build-test lane if a
-#    second reference ever appears in ANY workflow (comments counted too). The
-#    single-secret law is unchanged; only its address is. release.yml no longer
-#    mentions the key at all: it is now the PR-time validation lane and nothing
-#    more. (This block spells the secret by NAME, never in its `${{ … }}`
-#    expression form, precisely because the pin counts prose too — the same
-#    discipline release.yml kept.)
+# ⚠⚠ NO STORED SECRET. THE PUBLISH USES NUGET TRUSTED PUBLISHING. nuget.org
+#    holds a trusted publishing policy for this repository and THIS workflow
+#    file, and the `push` job swaps its own OIDC token for a short-lived API key
+#    with the NuGet/login action (the key lasts about an hour). There is no
+#    long-lived key in the repository settings to leak or to expire on a
+#    Release. ReleaseWorkflowPinTests reds the required build-test lane if a
+#    stored-secret reference to the old key reappears in ANY workflow, or if
+#    the login step shows up in any workflow other than this one (comments
+#    counted too, so this block spells the old key by name only, never in its
+#    expression form). release.yml does not publish: it is the PR-time
+#    validation lane and nothing more. The only repository setting the login
+#    reads is the NUGET_USER variable, which holds the nuget.org profile name.
 #
 #    The reference's per-pack version override (the MSBuild Version /
 #    PackageVersion properties, set on the CLI) is still forbidden here and still
@@ -50,7 +53,7 @@
 #
 # ⚠ THE VALIDATE / PUSH SPLIT IS THE OLD release.yml DESIGN, RELOCATED WHOLE.
 #   Everything provable happens in `validate`, with NO KEY in the run; only
-#   `push` — which packs nothing and has no source tree — ever sees the secret.
+#   `push` — which packs nothing and has no source tree — ever logs in to nuget.org.
 #   THE SEVEN-PACKAGE PUSH IS NOT ATOMIC, CANNOT BE MADE ATOMIC, AND HAS NO UNDO:
 #   nuget.org has no hard delete, only unlist. So front-loading every check
 #   before the key is the only mitigation there is, and the push step stays the
@@ -253,8 +256,8 @@ jobs:
           # APPROVAL-REQUIRED (a human clicks "Approve workflows to run" before
           # build-test / android-build / ios-build start). release-please-action's
           # README names the remedy — a PAT — and it is REJECTED ON PURPOSE: a PAT
-          # is a SECOND repo-scoped secret that expires and needs rotation, sitting
-          # next to the one NUGET secret this repo's whole law is built around. The
+          # is a repo-scoped secret that expires and needs rotation, and this repo
+          # now keeps no stored secret at all (NuGet trusted publishing). The
           # approve-click costs one click and expires never.
           #
           # This token also does NOT contradict the auto-publish design. The
@@ -424,28 +427,14 @@ jobs:
       run:
         shell: pwsh
 
-    # THE ONE REFERENCE. The `secrets.NUGET_API_KEY` expression on the next line
-    # is the ONLY one across .github/workflows/*.yml, and ReleaseWorkflowPinTests
-    # reds the required build-test lane if a second ever appears (in ci.yml, in
-    # release.yml, in the validate job above — anywhere). It is job-level rather
-    # than step-level so the presence check and the push can both read it while
-    # the reference stays singular.
-    #
-    # That pin counts COMMENTS too — which is why every comment in this file
-    # spells the secret by NAME and never in its `${{ … }}` form. The strictness
-    # buys a greppable one-line audit ("what can reach my key?"), written out in
-    # docs/GITHUB-SETUP.md, which is not a workflow file and can quote the
-    # expression safely.
-    #
-    # ⚠ RESIDUAL, stated rather than papered over (owner call): a repo-level
-    # secret is readable by any workflow run on a branch by an actor with write
-    # access. A GitHub environment with a branch restriction would scope it —
-    # rejected because the owner's law is "one secret, and the release-PR merge is
-    # the go", and an environment gate is a SECOND go on an action that is already
-    # a deliberate merge. The mitigations that cost nothing are taken: exactly one
-    # reference, one job, gated on release_created, pinned by a test.
-    env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    # TRUSTED PUBLISHING needs the OIDC token, so `id-token: write` is granted
+    # here, to this job only. Declaring `permissions:` on a job replaces the
+    # workflow-level block, so the two permissions the workflow already grants
+    # are restated: nothing else in this job changes.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
 
     steps:
       # NO CHECKOUT, DELIBERATELY. This job has no source tree — so "push
@@ -473,15 +462,19 @@ jobs:
           name: templates
           path: artifacts/templates
 
-      # A NAMED presence check. An absent or mistyped secret otherwise surfaces
-      # as a bare 401 from a CLI, at the one moment the owner is least able to
-      # debug it. The key is never echoed — only its presence and length.
-      - name: Assert NUGET_API_KEY is present
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
-            throw "NUGET_API_KEY is unset or misnamed — the one secret this repository needs. Add it at Settings -> Secrets and variables -> Actions, named EXACTLY 'NUGET_API_KEY'. See docs/GITHUB-SETUP.md -> 'Secrets — NUGET_API_KEY, the one secret'. Nothing was published."
-          }
-          Write-Host "NUGET_API_KEY is present ($($env:NUGET_API_KEY.Length) chars) — not echoed."
+      # TRUSTED PUBLISHING LOGIN. NuGet/login exchanges this job's OIDC token for
+      # a short-lived API key (about an hour), under the policy a nuget.org owner
+      # created for this repository and this workflow file. The user input is the
+      # nuget.org PROFILE NAME, not an email, and lives in the NUGET_USER repo
+      # variable. A missing variable or a missing policy fails here, by name,
+      # before anything is pushed. Both pushes below finish well inside the hour
+      # (the job has a 20 minute timeout), so one login covers them; a push stage
+      # that could run later than that would need its own login directly before it.
+      - name: Log in to NuGet (trusted publishing)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
 
       # ── The push ─────────────────────────────────────────────────────────
       # ENUMERATED FROM THE FEED, not from a name list (which would be the
@@ -500,6 +493,8 @@ jobs:
       # owns "you forgot to bump" — the failure --skip-duplicate would otherwise
       # MASK by pushing nothing and going green. Neither is sound alone.
       - name: dotnet nuget push (the enumerated feed — --skip-duplicate; the preflight already proved the version is free)
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           $feed = "artifacts/packages"
           $nupkgs = @(Get-ChildItem $feed -Filter *.nupkg -File)
@@ -518,20 +513,19 @@ jobs:
             throw "dotnet nuget push failed (exit $LASTEXITCODE). PARTIAL FAILURE IS RECOVERABLE: re-run THIS JOB from the Actions UI — --skip-duplicate makes the packages that already landed no-ops. See docs/GITHUB-SETUP.md."
           }
 
-      # ── The template push — SAME key, OTHER feed ─────────────────────────
-      # A SECOND `dotnet nuget push`, reusing the job-level $env:NUGET_API_KEY
-      # shell variable the packages push above reads — NOT a second reference to
-      # the secret in its `${{ … }}` expression form (there stays EXACTLY ONE of
-      # those across the repo, pinned by ReleaseWorkflowPinTests, which counts
-      # comments too — so this comment names the secret WITHOUT its expression
-      # form, exactly as the job-level env: block above does). The glob is
+      # ── The template push — SAME login, OTHER feed ───────────────────────
+      # A SECOND `dotnet nuget push`, reading the same login step's key as the
+      # packages push above (ReleaseWorkflowPinTests pins that the login lives
+      # in this workflow only and that no stored secret is referenced). The glob is
       # artifacts/templates/*.nupkg — a DIFFERENT directory, ONE file — so
       # artifacts/packages is never touched and its 7+6 count is untouched. The
       # content-only pack carries no .snupkg, so nothing rides adjacent here.
       # --skip-duplicate owns recovery: nuget.org is append-only, so a re-run of
       # a partially-failed push is a no-op on what already landed, and the
       # preflight (which now covers this id) owns "you forgot to bump".
-      - name: dotnet nuget push the template (artifacts/templates — same job-level key, its own feed; --skip-duplicate)
+      - name: dotnet nuget push the template (artifacts/templates — same login, its own feed; --skip-duplicate)
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           $feed = "artifacts/templates"
           $nupkgs = @(Get-ChildItem $feed -Filter *.nupkg -File)
