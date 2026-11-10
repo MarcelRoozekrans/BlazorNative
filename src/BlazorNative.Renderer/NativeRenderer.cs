@@ -2111,7 +2111,7 @@ public sealed class NativeRenderer : BlazorRenderer
             {
                 try
                 {
-                    if (OwnerOf(Handler) is { } owner)
+                    if (OwnerOf(Handler) is { } owner && Handler is null)
                     {
                         if (!owner.Framework)
                             return AppSite(owner);
