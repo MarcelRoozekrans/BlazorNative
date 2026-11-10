@@ -229,8 +229,11 @@ internal static class BlazorInterop
 
     /// <summary>Phase 18.2 (#500): the failure text when <paramref name="componentBase"/> has no
     /// instance bool field <c>_hasPendingQueuedRender</c>, else null. Takes the type so a fact can
-    /// plant one without the field; VerifyAccessors passes <c>typeof(ComponentBase)</c>.</summary>
-    internal static string? PendingQueuedRenderFieldProblem(Type componentBase)
+    /// plant one without the field; VerifyAccessors passes <c>typeof(ComponentBase)</c>. The
+    /// parameter's annotation tells the trimmer to keep the non-public fields of every type passed
+    /// in, so the lookup sees the real field in the NativeAOT build and ILC reports no IL2070.</summary>
+    internal static string? PendingQueuedRenderFieldProblem(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicFields)] Type componentBase)
         => componentBase.GetField("_hasPendingQueuedRender", BindingFlags.Instance | BindingFlags.NonPublic)?.FieldType == typeof(bool)
             ? null
             : "ComponentBase._hasPendingQueuedRender (bool) field not found; " +

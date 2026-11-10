@@ -2320,6 +2320,10 @@ public sealed class NativeRenderer : BlazorRenderer
     /// it to a BnButton is held by all three trees, and the page's is the call site its source
     /// wrote. A ChildContent's frames sit in the child's tree with the page's sequences, so the
     /// page's own tree, holding only the fragment, does not override that match.
+    /// <para>Known limit: when one compiler method sits at several call sites on the walk, such as
+    /// a shared static helper's lambda used both in a nested component and in an ancestor, the
+    /// ancestor's site wins, because the outermost match wins. The items of one loop share one
+    /// sequence, so they are unaffected.</para>
     /// <para>Runs on the render thread, only once a dispatch is over budget. Any failure, such
     /// as a component disposed during the dispatch whose frames can no longer be read, returns
     /// null, never a partial result: an inner match whose ancestor threw may not be the
