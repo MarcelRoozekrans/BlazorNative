@@ -2118,7 +2118,10 @@ public sealed class NativeRenderer : BlazorRenderer
                         if (Handler.Target is IForwardsUiEvent wrapper
                             && wrapper.ForwardedHandler(EventName, Handler) is { } forwarded
                             && OwnerOf(forwarded) is { Framework: false } app)
-                            return AppSite(app);
+                        {
+                            var r = AppSite(app);
+                            return (r.Key, r.Owner + " via " + Component.FullName, r.Lambda);
+                        }
                         // A FRAMEWORK method is shared by every call site that uses it: each
                         // element @bind of one value type runs Blazor's own binder lambda, and a
                         // BlazorNative.Components wrapper runs its own handler for every
