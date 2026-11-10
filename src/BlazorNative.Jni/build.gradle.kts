@@ -266,8 +266,9 @@ tasks.withType<Test>().configureEach {
     }
     // #543, design D2: a test stuck on a lost host-call completion held the CI step to the job's
     // 45-minute limit with no results. SEPARATE_THREAD is chosen because a thread stuck in a JNA
-    // call may not answer an interrupt, and the same-thread mode can only interrupt; the red that
-    // proves it is recorded in the phase record section 3 (Task 5, R1 and R2). The task timeout is
+    // call may not answer an interrupt, and the same-thread mode can only interrupt; the reds that
+    // prove it are R5a and R5b in the phase record section 3 (R1 and R2 do not separate the mode,
+    // their stuck thread is interruptible). The task timeout is
     // the backstop for a wedged render thread, where later tests time out one by one. Both bounds
     // come from measurement, see docs/plans/2026-11-10-phase-18.6-record.md.
     systemProperty("junit.jupiter.execution.timeout.default", "120 s")
