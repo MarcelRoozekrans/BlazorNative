@@ -77,7 +77,9 @@ internal static class BlazorInterop
     /// <para>The <c>EventCallback&lt;T&gt;</c> field is read by reflection on the boxed value's
     /// type, because the walk meets arbitrary <c>T</c> and an <c>[UnsafeAccessor]</c> needs the
     /// <c>T</c> at compile time. <c>[DynamicDependency]</c> keeps the field in the NativeAOT
-    /// build; the JVM <c>SlowHandlerProbeTest</c> pins that it resolves in the published dll.</para></summary>
+    /// build; the JVM <c>SlowHandlerProbeTest</c> pins that it resolves in the published dll for
+    /// <c>EventCallback&lt;MouseEventArgs&gt;</c> and <c>EventCallback&lt;bool&gt;</c>. Other
+    /// instantiations are unpinned.</para></summary>
     [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicFields, typeof(EventCallback<>))]
     internal static Delegate? CallbackDelegate(object? value)
     {
@@ -96,11 +98,13 @@ internal static class BlazorInterop
         // CallbackDelegate keeps EventCallback<>'s non-public fields, Delegate among them. The
         // analyzer cannot see that link, so ILC reports IL2075 on a NativeAOT publish (measured
         // in Phase 18.5, record section 5). The JVM SlowHandlerProbeTest pins that the read
-        // resolves in the published dll; if the field were trimmed the read returns null and
+        // resolves in the published dll for EventCallback<MouseEventArgs> and EventCallback<bool>;
+        // other instantiations are unpinned. If the field were trimmed the read returns null and
         // the warning falls back to the page alone, never a fault.
         [UnconditionalSuppressMessage("Trimming", "IL2075",
             Justification = "EventCallback<>'s non-public fields are kept by [DynamicDependency] on " +
-                            "CallbackDelegate. The JVM SlowHandlerProbeTest pins the read in the published dll.")]
+                            "CallbackDelegate. The JVM SlowHandlerProbeTest pins the read in the published dll " +
+                            "for EventCallback<MouseEventArgs> and EventCallback<bool>; other instantiations are unpinned.")]
         static Delegate? ReadDelegateField(object callback) =>
             callback.GetType().GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(callback) as Delegate;
     }

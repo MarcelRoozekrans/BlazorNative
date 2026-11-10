@@ -2093,7 +2093,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// event and this recorded delegate, that delegate is resolved instead, by the same
     /// rule: an app method keys by and names itself, unless the compiler generated it
     /// (<see cref="IsCompilerGenerated"/>), when the warning names the page that declares
-    /// it and, from Task 2 of Phase 18.5, the position on that page, never the generated
+    /// it and the call site's position on that page, never the generated
     /// name. A component <c>@bind-Value</c> forwards a lambda the Razor compiler declares
     /// on the page, so it names the page; <c>:get</c>/<c>:set</c> forwards the app's
     /// <c>:set</c> method, which is named as written. Otherwise a
@@ -2326,8 +2326,9 @@ public sealed class NativeRenderer : BlazorRenderer
     /// page's own tree, holding only the fragment, does not override that match.
     /// <para>Known limit: when one compiler method sits at several call sites on the walk, such as
     /// a shared static helper's lambda used both in a nested component and in an ancestor, the
-    /// ancestor's site wins, because the outermost match wins. The items of one loop share one
-    /// sequence, so they are unaffected.</para>
+    /// ancestor's site wins, because the outermost match wins. Within one tree that holds the same
+    /// method twice, the first match is used. The items of one loop share one sequence, so they
+    /// are unaffected.</para>
     /// <para>Runs on the render thread, only once a dispatch is over budget. Any failure, such
     /// as a component disposed during the dispatch whose frames can no longer be read, returns
     /// null, never a partial result: an inner match whose ancestor threw may not be the
