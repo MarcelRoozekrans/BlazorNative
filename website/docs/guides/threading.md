@@ -161,7 +161,8 @@ inline, names its **page** and the call site's position, for example
 is the number in `OpenComponent<…>(N)` or `OpenElement(N, …)` in the generated `.razor.g.cs`, which
 `EmitCompilerGeneratedFiles` writes to disk. With `@bind-Value:get` and `:set`, the warning names your
 `:set` method. With `:after`, the slow work is the `:after` method, so that is the one named. Two
-bound inputs on one page each get their own warning. When the call site is gone by the time the
+bound inputs on one page each get their own warning. When one lambda method sits at several call
+sites on the way up, the outermost one is named. When the call site is gone by the time the
 warning is named, the page alone is named.
 
 ## Back on Android, briefly

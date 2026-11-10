@@ -49,7 +49,7 @@ heavily, and they are the procedure:
 
 | Step | What it does |
 |---|---|
-| `Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)` | your app → a static archive |
+| `Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072 and no other IL warning)` | your app → a static archive |
 | `Stage the link inputs (runtime .a + bootstrapperdll.o + support archive)` | the `vendor/` recipe |
 | `Yoga: build libyoga.a (…) for ${{ matrix.rid }}` | the flexbox engine, from source |
 | `Generate BnHost.xcodeproj` / `xcodebuild build-for-testing (${{ matrix.rid }} …)` | the Xcode side |

@@ -2447,11 +2447,12 @@ jobs:
       # output is canonicalized to the frozen BlazorNative.Runtime.* names by
       # the sample csproj's AfterTargets=Publish target — every path below
       # re-points a DIRECTORY, never a file name.
-      # Phase 18.5 (2026-11-10): the three publish gates below also fail on ANY trim or AOT warning
+      # Phase 18.5 (2026-11-10): every NativeAOT publish gate (these three, the iOS one below, ios.yml and
+      # android-instrumented.yml) also fails on ANY trim or AOT warning
       # (IL2xxx or IL3xxx) other than the 4 accepted IL2072s. They counted IL2072 only, so an IL2070 from
       # Phase 18.2 went unseen until 18.5, and a regression of 18.5's IL2075 suppression would hide the same
       # way. A real publish log holds exactly the 4 IL2072s per RID and nothing else (measured, record 5).
-      - name: Publish win-x64 (assert exactly 4 IL2072 warnings)
+      - name: Publish win-x64 (assert exactly 4 IL2072 and no other IL warning)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-win-x64.log"
           dotnet publish samples/BlazorNative.SampleApp -c Release -r win-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
@@ -2506,7 +2507,7 @@ jobs:
           }
           Write-Host "Page-presence probe: BnDemo, BnImagePolishDemo, BnFormDemo, BnGeolocationDemo all present in the native image."
 
-      - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
+      - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 and no other IL warning)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-x64.log"
           dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
@@ -2545,7 +2546,7 @@ jobs:
             throw "linux-bionic-x64 export surface drift: expected exactly the 10 blazornative_* exports"
           }
 
-      - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 warnings)
+      - name: Publish linux-bionic-arm64 (assert exactly 4 IL2072 and no other IL warning)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-arm64.log"
           dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-arm64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
@@ -3452,7 +3453,7 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Apple/Package.resolved') }}
 
       # ── Publish the static NativeAOT archive ────────────────────────────────
-      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)
+      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072 and no other IL warning)
         run: |
           set -o pipefail
           # PublishAot is NOT passed on the CLI (the Phase 5.2 rule): it lives in the
@@ -3469,6 +3470,13 @@ jobs:
           if [ "$il2072" -ne 4 ]; then
             grep 'warning IL2072' ios-build-out/publish.log || true
             echo "$RID publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            exit 1
+          fi
+          # Phase 18.5 (2026-11-10): also fail on any trim or AOT warning other than the 4 accepted IL2072s.
+          other=$(grep -E 'warning IL[23][0-9]{3}' ios-build-out/publish.log | grep -v 'warning IL2072' || true)
+          if [ -n "$other" ]; then
+            echo "$other"
+            echo "$RID publish: trim or AOT warning(s) other than the 4 accepted IL2072s" >&2
             exit 1
           fi
 

@@ -121,7 +121,7 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 warnings)
+      - name: Publish linux-bionic-x64 (assert exactly 4 IL2072 and no other IL warning)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-bionic-x64.log"
           dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo 2>&1 | Tee-Object -FilePath $log
@@ -131,6 +131,13 @@ jobs:
           if ($il2072.Count -ne 4) {
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "linux-bionic-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+          # Phase 18.5 (2026-11-10): also fail on any trim or AOT warning other than the 4 accepted IL2072s.
+          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
+          if ($otherIl.Count -ne 0) {
+            $otherIl | ForEach-Object { Write-Host $_.Line }
+            throw "linux-bionic-x64 publish: $($otherIl.Count) trim or AOT warning(s) other than the 4 accepted IL2072s"
           }
 
       - name: Verify linux-bionic-x64 exports (llvm-readelf from pinned NDK)
