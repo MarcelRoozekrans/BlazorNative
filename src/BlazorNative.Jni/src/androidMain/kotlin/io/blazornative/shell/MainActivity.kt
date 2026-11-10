@@ -738,6 +738,7 @@ class MainActivity : FragmentActivity() {
             return
         }
         runtime.dispatchHostEvent(BnHostEvent.Back)
+        finish() // SCRATCH S4
     }
 
     /** Phase 16.2 (#346): .NET's BackUnhandled, on main. Nothing to do once the activity is
