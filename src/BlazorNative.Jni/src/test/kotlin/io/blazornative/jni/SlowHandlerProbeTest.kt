@@ -37,8 +37,8 @@ import java.util.Collections
  * <n>", which exists only if the reflective read of the boxed EventCallback's non-public
  * Delegate field succeeds in the published dll. The BnButton assertion covers
  * EventCallback of MouseEventArgs, a reference T; the third test covers EventCallback of
- * bool, a value T, a separate ILC instantiation. A null read gives BnCheckbox the page alone
- * and BnButton a different position, and both assertions then red. The IL2075 suppression on that read cites these pins.
+ * bool, a value T, a separate ILC instantiation. A null read gives both the page alone, and
+ * both assertions then red. The IL2075 suppression on that read cites these pins.
  *
  * DOES NOT COVER: the reflective EventCallback.Delegate read, pinned in the AOT dll only for
  * T = MouseEventArgs and bool; other instantiations, such as string, int and float (BnInput,
@@ -95,7 +95,7 @@ class SlowHandlerProbeTest {
             assertEquals(1, warnings.count { it.contains("in BlazorNative.SampleApp.SlowHandlerProbe, BnButton at sequence 25") },
                 "no single warning named the capturing lambda's page and position. The method did not " +
                     "resolve in the NativeAOT dll, or the reflective read of EventCallback.Delegate " +
-                    "returned null, leaving a different position or the page alone. Got: $warnings")
+                    "returned null, leaving the page alone. Got: $warnings")
             assertTrue(warnings.none { it.contains("<") }, "a warning carried a compiler-generated name: $warnings")
             assertTrue(warnings.none { it.contains("BlazorNative.Components.BnButton") },
                 "a warning named the BnButton type as its owner: $warnings")

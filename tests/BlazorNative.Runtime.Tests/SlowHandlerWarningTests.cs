@@ -908,6 +908,23 @@ public sealed class SlowHandlerWarningTests
         Assert.DoesNotContain("<", line);
     }
 
+    /// <summary>A method group over an iterator's enumerator, <c>_enumerator.Dispose</c>: the
+    /// delegate's method is the explicit <c>IDisposable.Dispose</c> of the compiler's
+    /// <c>&lt;Items&gt;d__N</c> class, whose own name has no <c>&lt;</c> but whose declaring type
+    /// does. The warning names the page that holds the iterator, never the generated class (#522).</summary>
+    [Fact]
+    public void AMethodGroupOnAnIteratorsDispose_NamesThePage_NeverTheGeneratedClass()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("iter-dispose"), Click));
+
+        Assert.True(SlowProbe.RunsOf("iter-dispose") == 1, "anchor: the iterator's slow finally must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenElement(0, "button") in SlowIteratorPage.BuildRenderTree.
+        Assert.Contains($"in {typeof(SlowIteratorPage).FullName}, element button at sequence 0", line);
+        Assert.DoesNotContain("<", line);
+    }
+
     [Fact]
     public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
     {
@@ -1155,6 +1172,10 @@ public sealed class SlowHandlerWarningTests
             b.AddAttribute(90, "onclick", SlowHelpers.Make(this));
             b.AddContent(91, "helper");
             b.CloseElement();
+            // A method group over an iterator's enumerator, whose method sits on a generated type.
+            b.OpenComponent<SlowIteratorPage>(92);
+            b.AddComponentParameter(93, nameof(SlowIteratorPage.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
         }
 
         public void Dispose() => Bridge.NativeEvents -= OnNativeEvent;
@@ -1170,6 +1191,36 @@ public sealed class SlowHandlerWarningTests
     {
         public static EventCallback Make(object receiver)
             => EventCallback.Factory.Create(receiver, () => SlowProbe.RunSlow("helper"));
+    }
+
+    /// <summary>A page whose button is the method group <c>_enumerator.Dispose</c> on an iterator's
+    /// enumerator started in OnInitialized. Disposing it runs the iterator's <c>finally</c>, which
+    /// is the slow part. The delegate's method is on the compiler's <c>&lt;Items&gt;d__N</c> class.</summary>
+    private sealed class SlowIteratorPage : ComponentBase
+    {
+        private IEnumerator<int>? _enumerator;
+
+        [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+        private IEnumerable<int> Items()
+        {
+            try { yield return 1; }
+            finally { Slow("iter-dispose"); }
+        }
+
+        protected override void OnInitialized()
+        {
+            _enumerator = Items().GetEnumerator();
+            _enumerator.MoveNext();
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create(this, (Action)_enumerator!.Dispose));
+            b.AddContent(2, "iter-dispose");
+            b.CloseElement();
+        }
     }
 
     /// <summary>A BnCheckbox whose hook throws <see cref="MissingFieldException"/>, the

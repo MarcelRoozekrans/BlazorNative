@@ -14,7 +14,7 @@
   - An IL2075 suppression is allowed only if the trim analyzer fires, paired with the `[DynamicDependency]`, in the style of `BlazorInterop.cs:87-95`. Record it in record §5; the final review checks it.
   - CONVENTIONS.md now records Build and Test: `dotnet build` / `dotnet test` on `BlazorNative.sln -c Release`.
 - **Worktree:** the work happens in `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L`, which holds this branch. The main checkout is on `feat/16.7-classify-fault`.
-- **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296. The plan moves .NET to 1410 and JVM to 209.
+- **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296. The plan moves .NET to 1411 and JVM to 209.
 
 ## Owner decisions for M18 (2026-10-24)
 

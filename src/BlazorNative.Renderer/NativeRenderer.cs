@@ -2169,8 +2169,12 @@ public sealed class NativeRenderer : BlazorRenderer
     }
 
     /// <summary>Whether the compiler generated <paramref name="method"/>: its name starts
-    /// with <c>&lt;</c>, or its declaring type, or any type enclosing that, does, such as
-    /// <c>&lt;&gt;c__DisplayClass0_0</c>. Names only, never
+    /// with <c>&lt;</c>, or its declaring type, or any type enclosing that, does. A lambda's
+    /// method always has a <c>&lt;</c> name; the type chain catches a method with a plain name on
+    /// a generated type, such as the explicit <c>IDisposable.Dispose</c> of an iterator's
+    /// <c>&lt;Items&gt;d__N</c> when a page's handler is the method group
+    /// <c>_enumerator.Dispose</c>. Pinned by
+    /// <c>SlowHandlerWarningTests.AMethodGroupOnAnIteratorsDispose_…</c>. Names only, never
     /// <c>CompilerGeneratedAttribute</c>: the NativeAOT probe proves names resolve in the
     /// published dll, and attribute metadata is not guaranteed there.</summary>
     private static bool IsCompilerGenerated(System.Reflection.MethodInfo method)
