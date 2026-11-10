@@ -176,6 +176,9 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
             }));
         b.CloseComponent();
 
+        b.OpenComponent<BnCheckbox>(36);
+        b.CloseComponent();
+
         b.OpenComponent<BnText>(40);
         b.AddComponentParameter(41, nameof(BnText.Text), echo);
         b.CloseComponent();
