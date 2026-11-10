@@ -155,12 +155,14 @@ control invokes it, the warning names **your** handler, not the control. This ho
 events these controls forward: the change handler of `BnInput`, `BnCheckbox`, `BnPicker`,
 `BnSlider` and `BnSwitch`, and the dismiss click of `BnModal`.
 
-A **bound** input names its **page** and a compiler-generated lambda, for example
-`Page.<BuildRenderTree>b__0_0`, because the Razor compiler turns `@bind-Value` into a lambda
-on the page. That covers plain `@bind-Value` too. With `@bind-Value:get` and `:set`, the warning names your
-`:set` method. Two bound inputs on one page each get their
-own warning. A friendlier name is tracked as
-[#522](https://github.com/MarcelRoozekrans/BlazorNative/issues/522).
+A **compiler lambda**, whether the Razor compiler generated it for a bound input or you wrote it
+inline, names its **page** and the call site's position, for example
+`in MyApp.Pages.Settings, BnInput at sequence 12`. That covers plain `@bind-Value` too. The sequence
+is the number in `OpenComponent<…>(N)` or `OpenElement(N, …)` in the generated `.razor.g.cs`, which
+`EmitCompilerGeneratedFiles` writes to disk. With `@bind-Value:get` and `:set`, the warning names your
+`:set` method. With `:after`, the slow work is the `:after` method, so that is the one named. Two
+bound inputs on one page each get their own warning. When the call site is gone by the time the
+warning is named, the page alone is named.
 
 ## Back on Android, briefly
 

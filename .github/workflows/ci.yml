@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1406 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (1410 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -13,7 +13,7 @@
 #     each publish must show exactly the 4 accepted IL2072 trim warnings) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (208 passed / 0 failed — the assertion is the step near the end of this
+#     (209 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2393,7 +2393,9 @@ jobs:
       # written by ProcessExit handlers, and vstest kills a test host that has not
       # exited 100 ms after the run. Modules whose handlers had not run yet then read
       # as 0 hits, at random, on Windows (#626).
-      - name: .NET tests (assert 1406 passed / 0 skipped)
+      # 1406 -> 1410 (18.5, +4, 2026-11-10): Runtime 1232 -> 1236. A compiler lambda's slow-handler warning
+      # names its page and the call site's position, falling back to the page alone.
+      - name: .NET tests (assert 1410 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2411,8 +2413,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1406 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1406 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 1410 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 1410 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It
@@ -2445,6 +2447,10 @@ jobs:
       # output is canonicalized to the frozen BlazorNative.Runtime.* names by
       # the sample csproj's AfterTargets=Publish target — every path below
       # re-points a DIRECTORY, never a file name.
+      # Phase 18.5 (2026-11-10): the three publish gates below also fail on ANY trim or AOT warning
+      # (IL2xxx or IL3xxx) other than the 4 accepted IL2072s. They counted IL2072 only, so an IL2070 from
+      # Phase 18.2 went unseen until 18.5, and a regression of 18.5's IL2075 suppression would hide the same
+      # way. A real publish log holds exactly the 4 IL2072s per RID and nothing else (measured, record 5).
       - name: Publish win-x64 (assert exactly 4 IL2072 warnings)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "publish-win-x64.log"
@@ -2455,6 +2461,12 @@ jobs:
           if ($il2072.Count -ne 4) {
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "win-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
+          if ($otherIl.Count -ne 0) {
+            $otherIl | ForEach-Object { Write-Host $_.Line }
+            throw "win-x64 publish: $($otherIl.Count) trim or AOT warning(s) other than the 4 accepted IL2072s"
           }
 
       - name: Verify win-x64 exports (dumpbin via vswhere)
@@ -2505,6 +2517,12 @@ jobs:
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "linux-bionic-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
           }
+          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
+          if ($otherIl.Count -ne 0) {
+            $otherIl | ForEach-Object { Write-Host $_.Line }
+            throw "linux-bionic-x64 publish: $($otherIl.Count) trim or AOT warning(s) other than the 4 accepted IL2072s"
+          }
 
       - name: Verify linux-bionic-x64 exports (llvm-readelf from pinned NDK)
         run: |
@@ -2537,6 +2555,12 @@ jobs:
           if ($il2072.Count -ne 4) {
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "linux-bionic-arm64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
+          }
+          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
+          if ($otherIl.Count -ne 0) {
+            $otherIl | ForEach-Object { Write-Host $_.Line }
+            throw "linux-bionic-arm64 publish: $($otherIl.Count) trim or AOT warning(s) other than the 4 accepted IL2072s"
           }
 
       - name: Verify linux-bionic-arm64 exports (llvm-readelf from pinned NDK)
@@ -2828,7 +2852,8 @@ jobs:
       #    serialize behind one lock.
       # 207 -> 208 (18.4 final review, +1, 2026-11-03): RetiredLaneDispatchTest — a host event on a
       #    retired runtime's lane is dropped, not thrown to a live older Activity.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 208 passed / 0 failed)
+      # 208 -> 209 (18.5, +1, 2026-11-10): the JVM host test for the lambda call-site naming.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 209 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           .\gradlew.bat --no-daemon testDebugUnitTest
@@ -2842,8 +2867,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 208 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 208 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 209 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 209 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
