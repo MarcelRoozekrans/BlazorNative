@@ -133,7 +133,7 @@ jobs:
             throw "linux-bionic-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
           }
           # Phase 18.5 (2026-11-10): also fail on any trim or AOT warning other than the 4 accepted IL2072s.
-          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          $otherIl = @(Select-String -Path $log -Pattern 'warning (IL[23]\d{3})' -AllMatches | Where-Object { @($_.Matches | Where-Object { $_.Groups[1].Value -ne 'IL2072' }).Count -gt 0 })
           Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
           if ($otherIl.Count -ne 0) {
             $otherIl | ForEach-Object { Write-Host $_.Line }

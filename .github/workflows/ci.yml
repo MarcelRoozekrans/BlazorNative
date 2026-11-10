@@ -2464,7 +2464,7 @@ jobs:
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "win-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
           }
-          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          $otherIl = @(Select-String -Path $log -Pattern 'warning (IL[23]\d{3})' -AllMatches | Where-Object { @($_.Matches | Where-Object { $_.Groups[1].Value -ne 'IL2072' }).Count -gt 0 })
           Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
           if ($otherIl.Count -ne 0) {
             $otherIl | ForEach-Object { Write-Host $_.Line }
@@ -2519,7 +2519,7 @@ jobs:
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "linux-bionic-x64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
           }
-          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          $otherIl = @(Select-String -Path $log -Pattern 'warning (IL[23]\d{3})' -AllMatches | Where-Object { @($_.Matches | Where-Object { $_.Groups[1].Value -ne 'IL2072' }).Count -gt 0 })
           Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
           if ($otherIl.Count -ne 0) {
             $otherIl | ForEach-Object { Write-Host $_.Line }
@@ -2558,7 +2558,7 @@ jobs:
             $il2072 | ForEach-Object { Write-Host $_.Line }
             throw "linux-bionic-arm64 publish IL2072 drift: expected exactly 4 accepted trim warnings, got $($il2072.Count)"
           }
-          $otherIl = @(Select-String -Path $log -Pattern 'warning IL[23]\d{3}' | Where-Object { $_.Line -notmatch 'warning IL2072' })
+          $otherIl = @(Select-String -Path $log -Pattern 'warning (IL[23]\d{3})' -AllMatches | Where-Object { @($_.Matches | Where-Object { $_.Groups[1].Value -ne 'IL2072' }).Count -gt 0 })
           Write-Host "Other IL2xxx/IL3xxx warning count: $($otherIl.Count)"
           if ($otherIl.Count -ne 0) {
             $otherIl | ForEach-Object { Write-Host $_.Line }
@@ -3474,7 +3474,7 @@ jobs:
             exit 1
           fi
           # Phase 18.5 (2026-11-10): also fail on any trim or AOT warning other than the 4 accepted IL2072s.
-          other=$(grep -E 'warning IL[23][0-9]{3}' ios-build-out/publish.log | grep -v 'warning IL2072' || true)
+          other=$(awk '{ s = $0; while (match(s, /warning IL[23][0-9][0-9][0-9]/)) { if (substr(s, RSTART + 8, 6) != "IL2072") { print; next }; s = substr(s, RSTART + RLENGTH) } }' ios-build-out/publish.log)
           if [ -n "$other" ]; then
             echo "$other"
             echo "$RID publish: trim or AOT warning(s) other than the 4 accepted IL2072s" >&2
