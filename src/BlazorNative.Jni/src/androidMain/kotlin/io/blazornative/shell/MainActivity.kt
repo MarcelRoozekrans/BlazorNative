@@ -732,7 +732,7 @@ class MainActivity : FragmentActivity() {
         // after that callback was disabled mid-gesture. Disabled means the shell no longer
         // intercepts back, so do nothing rather than act on a stale enabled state.
         if (!backCallback.isEnabled) return
-        if (mapper.requestTopmostModalDismissal()) return
+        if (mapper.requestTopmostModalDismissal()) { finish(); return } // SCRATCH S5
         if (!booted) {
             passBackToPlatform()
             return
