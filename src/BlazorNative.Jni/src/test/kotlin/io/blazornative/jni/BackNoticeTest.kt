@@ -304,6 +304,11 @@ class BackNoticeTest {
      * if this probe ever stopped holding, the old code would pass it too. It also proves the
      * probe does not deadlock: after the release, the held handler finishes and the back lands.
      *
+     * The blocking back runs on a helper thread joined with a 10 s bound. The releaser fires at
+     * 1.5 s, so a back that is still blocked at 10 s means the held call's completion was lost
+     * (#543), and the test fails with that cause instead of hanging until the per-test timeout.
+     * An exception on the helper is rethrown on the test thread.
+     *
      * DOES NOT COVER: the new, fire-and-forget back itself, which returns at once by
      * construction here; the device pin times it from Android's main thread.
      */
@@ -338,8 +343,29 @@ class BackNoticeTest {
                 BridgeHostCallCompleter.complete(host.heldRequestId, CameraStatus.CANCELLED, null)
             }, "releaser").apply { isDaemon = true; start() }
 
-            val rc = runtime.dispatchHostEventAndWait(BnHostEvent.Back)
-            val returnedAt = System.nanoTime()
+            // The blocking back runs on a daemon thread and is joined with a bound, as
+            // HostEventTest does: dispatchHostEventAndWait is untimed, so a lost completion
+            // would otherwise hang this test forever (#543).
+            val backRc = AtomicInteger(Int.MIN_VALUE)
+            val backReturnedAt = java.util.concurrent.atomic.AtomicLong(0)
+            val backThrew = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            val backThread = Thread({
+                try {
+                    backRc.set(runtime.dispatchHostEventAndWait(BnHostEvent.Back))
+                    backReturnedAt.set(System.nanoTime())
+                } catch (t: Throwable) {
+                    backThrew.set(t)
+                }
+            }, "blocking-back").apply { isDaemon = true; start() }
+            backThread.join(10_000) // BOUNDED, never join() with no timeout
+
+            assertFalse(backThread.isAlive,
+                "the blocking back did not return within 10 s of the hold: the held camera call's " +
+                    "completion never reached .NET, so the render thread is still inside Hold(). " +
+                    "That is #543's lost completion.")
+            backThrew.get()?.let { throw AssertionError("the blocking back threw", it) }
+            val rc = backRc.get()
+            val returnedAt = backReturnedAt.get()
 
             assertTrue(releasedAt.get() != 0L && returnedAt >= releasedAt.get(),
                 "the blocking back returned BEFORE the held camera call was released, so the probe " +
