@@ -2188,6 +2188,8 @@ public sealed class NativeRenderer : BlazorRenderer
     /// compiler-generated; the outermost type when every one is.</summary>
     private static Type PageOf(Type declaring)
     {
+        // All-compiler case: the outermost name can itself contain '<', such as top-level
+        // statements' <Program>$; Razor pages never reach it, and the type is the only name left.
         Type page = declaring;
         for (Type? t = declaring; t is not null; t = t.DeclaringType)
         {

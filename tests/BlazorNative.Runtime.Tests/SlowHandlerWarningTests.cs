@@ -809,7 +809,7 @@ public sealed class SlowHandlerWarningTests
         int rc = Dispatch(s.HandlerByPlaceholder("bind-hides", "change"), Change("x"));
 
         Assert.True(rc == 0, "anchor: the dispatch must complete");
-        Assert.Equal(1, SlowProbe.RunsOf("bind-hides")); // anchor: the :after method ran
+        Assert.True(SlowProbe.RunsOf("bind-hides") == 1, "anchor: the slow :after must run exactly once");
         int after = s.Renderer.ComponentIdsOfTypeForTests(typeof(BnInput)).Length;
         Assert.True(after == before - 1,
             "anchor: the slow :after must remove its own input, or this pin never reaches the fallback");
