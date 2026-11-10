@@ -737,7 +737,7 @@ class MainActivity : FragmentActivity() {
             passBackToPlatform()
             return
         }
-        runtime.dispatchHostEvent(BnHostEvent.Back)
+        runtime.dispatchHostEventAndWait(BnHostEvent.Back) // SCRATCH D10r
     }
 
     /** Phase 16.2 (#346): .NET's BackUnhandled, on main. Nothing to do once the activity is
