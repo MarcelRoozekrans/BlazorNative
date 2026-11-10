@@ -1,0 +1,21 @@
+@* Phase 18.5 (#522): a page whose slow :after method hides its own BnInput, so the call site
+   is gone by the time the slow-handler warning is named and the warning has to fall back to the
+   page alone. A real .razor file, so the binder is the one the Razor compiler emits. *@
+@if (!_hidden)
+{
+    <BnInput Placeholder="bind-hides" @bind-Value="_text" @bind-Value:after="After" />
+}
+
+@code {
+    private string _text = "";
+    private bool _hidden;
+
+    /// <summary>Runs the slow part, tagged with this page's input.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+    private void After()
+    {
+        _hidden = true;
+        Slow("bind-hides");
+    }
+}

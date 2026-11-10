@@ -484,6 +484,8 @@ public sealed class SlowHandlerWarningTests
         var line = Assert.Single(s.SlowLines());
         Assert.Contains($"handler {ids[0]} 'click'", line);
         Assert.Contains(nameof(SlowProbe), line);
+        Assert.DoesNotContain("<", line); // #522: never the compiler's generated name
+        Assert.Contains($"in {typeof(SlowProbe).FullName}", line);
     }
 
     [Fact]
@@ -743,10 +745,11 @@ public sealed class SlowHandlerWarningTests
             $"two @bind-Value BnInputs on two pages gave {lines.Length} warnings, not 2. BnInput forwards "
             + $"both from one line, so a key that does not ask it for the page's delegate merges them:"
             + $"\n{string.Join("\n", lines)}");
-        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageA).FullName}.")) == 1
-                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageB).FullName}.")) == 1,
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageA).FullName}")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageB).FullName}")) == 1,
             $"the two warnings must name {nameof(SlowBindPageA)} and {nameof(SlowBindPageB)}, one each:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
     }
 
     /// <summary>Two bound wrappers on ONE page stay apart. The Razor compiler declares one
@@ -767,8 +770,9 @@ public sealed class SlowHandlerWarningTests
         Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
             $"two @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones. "
             + $"Each call site's page lambda is its own key:\n{string.Join("\n", lines)}");
-        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageTwo).FullName}.", l));
+        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageTwo).FullName}", l));
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
     }
 
     /// <summary>Plain <c>@bind-Value</c>: the Razor compiler passes BnInput a lambda it
@@ -787,8 +791,31 @@ public sealed class SlowHandlerWarningTests
         Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
             $"two plain @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones:"
             + $"\n{string.Join("\n", lines)}");
-        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.", l));
+        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageForms).FullName}", l));
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
+    }
+
+    /// <summary>The call site can be gone by the time the warning is named: a slow
+    /// <c>:after</c> hides its own input, so the BnInput is disposed during the dispatch.
+    /// Nothing is left to look up, and the warning names the page alone, never the
+    /// compiler's generated name (#522).</summary>
+    [Fact]
+    public void ASlowHandlerThatHidesItsInput_NamesThePageAlone()
+    {
+        using var s = new Session();
+        int before = s.Renderer.ComponentIdsOfTypeForTests(typeof(BnInput)).Length;
+
+        int rc = Dispatch(s.HandlerByPlaceholder("bind-hides", "change"), Change("x"));
+
+        Assert.True(rc == 0, "anchor: the dispatch must complete");
+        Assert.Equal(1, SlowProbe.RunsOf("bind-hides")); // anchor: the :after method ran
+        int after = s.Renderer.ComponentIdsOfTypeForTests(typeof(BnInput)).Length;
+        Assert.True(after == before - 1,
+            "anchor: the slow :after must remove its own input, or this pin never reaches the fallback");
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(SlowBindPageHides).FullName} held", line);
+        Assert.DoesNotContain("<", line);
     }
 
     /// <summary><c>@bind-Value:get/:set</c>: the Razor compiler passes BnInput the app's
@@ -1035,6 +1062,10 @@ public sealed class SlowHandlerWarningTests
             // Plain @bind-Value and @bind-Value:get/:set, on one page.
             b.OpenComponent<SlowBindPageForms>(79);
             b.AddComponentParameter(80, nameof(SlowBindPageForms.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // A slow :after that hides its own input (#522 fallback).
+            b.OpenComponent<SlowBindPageHides>(83);
+            b.AddComponentParameter(84, nameof(SlowBindPageHides.Slow), (Action<string>)RunSlow);
             b.CloseComponent();
         }
 
