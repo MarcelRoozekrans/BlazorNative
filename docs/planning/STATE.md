@@ -2,16 +2,19 @@
 
 **Last session:** 2026-11-10
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.6 — test-suite honesty, part two (#543, #544), `[status: pending]`, no design yet. 18.1 to 18.5 are complete.
-**Branch:** `feat/18.6-test-suite-honesty`, from `main` at `2cc6801d`.
+**Phase:** 18.6 — test-suite honesty, part two (#543, #544), `[status: complete]`, PR #659 awaiting merge. 18.1 to 18.6 are complete. Next: 18.7, twin divergences (#401, #396), no design yet.
+**Branch:** `feat/18.6-test-suite-honesty`, PR #659, against `main`.
 
 ## Current Position
 
-- **18.5 is merged.** PR #634 was squash-merged on 2026-11-10 as `2cc6801d` and closed #522. All lanes were green on attempt 1 on the final head `89f2634a`, ios included. Release PR #658 (0.21.3) lists the fix; merging it is the owner's call.
-- **18.5's review round:** CodeRabbit found that the non-IL2072 publish gates dropped a whole line once it held `warning IL2072`. All six gates now judge each IL code on a line. See the 18.5 record, §5.
-- **Next phase:** 18.6, #543 (a JVM test waiting on a lost host-call completion hangs the step for 45 minutes) and #544 (an Android back that also finishes the Activity is caught only when its destruction wins a poll). Owner decision for #543: a bounded wait plus a Gradle per-test timeout. #544 has no decision yet.
-- **Worktree:** `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L` now holds the 18.6 branch. The main checkout is on `feat/16.7-classify-fault`.
-- **Baselines:** .NET 1412, JVM 209, Android 271, iOS 296.
+- **18.6 is done and PR #659 is ready for review.** All six plan tasks are complete, the whole-branch review's fix wave is in, and every lane is green on attempt 1 on the head. The phase record is `docs/plans/2026-11-10-phase-18.6-record.md`.
+  - **#543:** the hold-probe test bounds its blocking back with a 10 s join. The JVM test task has a 120 s per-test timeout in `SEPARATE_THREAD` mode and a 25 min backstop, measured against a 2 s slowest test and a ~90 s step. `ci.yml` prints the five slowest JVM tests.
+  - **#544:** `pressHandledBack` in `Poll.kt` checks `isFinishing` in the press's own turn, and every handled-back press after boot uses it. One press inside a poll predicate stays inline with the same check.
+  - **Reds:** 18.6-R1 to R7, R2b, S4 to S7 and D10r, each on attempt 1 except where the record says otherwise. Stale reds are named in the register and on #568.
+- **A dependency break was fixed on main on the way, owner decision 2026-11-10.** The floating `10.0.1*` on Components picked up a partly published 10.0.15 and split the family (NU1605). PR #660, `dbca4940`, pins the whole dotnet 10 family exactly at 10.0.14, so Renovate's dotnet monorepo group moves it together.
+- **Release PR #658 (0.21.3)** still awaits the owner.
+- **Worktree:** `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L` holds the 18.6 branch.
+- **Baselines:** .NET 1412, JVM 209, Android 271, iOS 296. Unchanged by 18.6.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -20,7 +23,8 @@
 | #500 | Attribute a fault in a re-render or `RunAfterDispatch` action to the dispatch that queued it. Done in 18.2, PR #596. |
 | #506 | Per-key secure-storage queue on Android; check iOS too. Done in 18.3, PR #599. |
 | #522 | Name the page plus the wrapper position, never a compiler lambda. Done in 18.5, PR #634. |
-| #543 | Bounded wait plus a Gradle per-test timeout. |
+| #543 | Bounded wait plus a Gradle per-test timeout. Done in 18.6, PR #659. |
+| #544 | A shared press helper with an in-turn `isFinishing` check, decided 2026-11-10. Done in 18.6, PR #659. |
 
 #562, the broad per-statement coverage, is deferred to a later testing milestone.
 
@@ -43,10 +47,11 @@
 
 ## Recommended Next Step
 
-1. Brainstorm 18.6 (#543 and #544) via `start-next-phase`: there is no design yet. Read both issues first.
-2. The rules still hold:
+1. The owner merges PR #659. Before merging, check that its body still closes #543 and #544 and that the lanes are green on the head.
+2. Then brainstorm 18.7 (#401, #396) via `start-next-phase`: there is no design yet. Read both issues first. The 18.7 design proposes one canonical twin behaviour.
+3. The rules still hold:
    - No Claude signature anywhere.
-   - Implementers tick their plan boxes.
-   - Grade pins against `docs/pin-standard.md`, in "Grading a pin: sites and reds".
+   - Implementers tick only their own plan boxes, line by line. A broad sed over-ticked other tasks' boxes in 18.6.
+   - Grade pins against `docs/pin-standard.md`, in "Grading a pin: sites and reds". Edit every file before mutating, and give this phase's reds a `18.x-` prefix.
    - Ask questions with AskUserQuestion.
-3. Watch, but do not work, the flakes #598, #602, #603 and #604. The M18 DoD needs attempt 1 green on every lane.
+4. Watch, but do not work, the flakes #598, #602, #603, #604 and the new #676 (`NotificationBridgeTests.Completion_KeyedByRequestId_ResolvesTheRightCall`). The M18 DoD needs attempt 1 green on every lane.
