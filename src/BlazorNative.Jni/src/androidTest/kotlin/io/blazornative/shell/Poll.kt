@@ -92,7 +92,9 @@ internal const val PRESS_FINISHED_THE_ACTIVITY =
  * completes first and the poll then only sees a DESTROYED activity (#544). The only legitimate
  * finish after a handled back is `BackUnhandled`, which arrives on a later main-thread turn.
  *
- * Do not use it for a back that is meant to finish the activity, such as back at the root.
+ * Use it only after boot: `MainActivity.handleBack` passes a pre-boot back to the platform in the
+ * same turn, which legitimately finishes. Do not use it for a back that is meant to finish the
+ * activity, such as back at the root.
  */
 internal fun pressHandledBack(scenario: ActivityScenario<MainActivity>): Long {
     val elapsedMs = AtomicLong(-1)

@@ -222,9 +222,9 @@ class BackAndroidTest {
 
             tapButton(scenario, "Settings →")
             // Press back in the SAME main-thread turn that first sees the settings page. The press
-            // stays raw: pressHandledBack opens its own onActivity turn, and nesting it inside this
-            // predicate would split the press from the page check this test exists to race. So the
-            // in-turn isFinishing check is written inline, with the helper's message.
+            // stays inline, with the shared PRESS_FINISHED_THE_ACTIVITY check, so it provably sits
+            // in the same turn as the page check; the helper's own onActivity call is not relied
+            // on when nested inside a predicate.
             val pressed = AtomicBoolean(false)
             assertTrue("the swap to settings never completed within 10s",
                 pollUntil(scenario, 10_000, sleepMs = 5) { act ->
