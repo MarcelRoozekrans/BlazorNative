@@ -98,9 +98,6 @@ internal static class BlazorInterop
         // in Phase 18.5, record section 5). The JVM SlowHandlerProbeTest pins that the read
         // resolves in the published dll; if the field were trimmed the read returns null and
         // the warning falls back to the page alone, never a fault.
-        [UnconditionalSuppressMessage("Trimming", "IL2075",
-            Justification = "EventCallback<>'s non-public fields are kept by [DynamicDependency] on " +
-                            "CallbackDelegate. The JVM SlowHandlerProbeTest pins the read in the published dll.")]
         static Delegate? ReadDelegateField(object callback) =>
             callback.GetType().GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(callback) as Delegate;
     }
