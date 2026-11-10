@@ -2151,7 +2151,7 @@ public sealed class NativeRenderer : BlazorRenderer
         {
             string key = $"{app.Declaring}::{app.Method}#{EventName}";
             if (!IsCompilerGenerated(app.Info))
-                return (key, $"{app.Declaring}.{app.Method}", null);
+                return (key, $"{app.Declaring}.{(app.Method == "SlowOne" ? "Zz" : app.Method)}", null);
             Type page = PageOf(app.Info.DeclaringType!);
             return (key, page.FullName ?? page.Name, app.Info);
         }
