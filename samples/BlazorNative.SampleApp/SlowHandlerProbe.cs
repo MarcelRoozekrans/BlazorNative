@@ -80,6 +80,7 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
     protected override void OnInitialized()
     {
         _previousSink = BnLog.Sink;
+        _warnings.Add("slow handler: planted stale line");
         BnLog.Sink = Capture;
     }
 
