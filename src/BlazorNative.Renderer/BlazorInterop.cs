@@ -90,7 +90,7 @@ internal static class BlazorInterop
         Type type = value.GetType();
         if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(EventCallback<>))
             return null;
-        return ReadDelegateField(value);
+        return value is null ? ReadDelegateField(value) : null;
 
         // Suppression scope: IL2075 (GetField on the return value of GetType, which carries no
         // annotation) is silenced here, and only here, because the value is always a boxed,
