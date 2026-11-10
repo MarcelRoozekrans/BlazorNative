@@ -73,3 +73,31 @@ internal fun pollUntilOnSameActivity(
     if (act !== activity) throw AssertionError(RECREATED_WHILE_POLLED)
     predicate(act)
 }
+
+/** Names the failure for a handled back that also finished the activity. */
+internal const val PRESS_FINISHED_THE_ACTIVITY =
+    "the back press finished the activity, although back was enabled and handed to .NET: a handled back must not also take the platform's default"
+
+/**
+ * Presses back where back is enabled and handed to .NET, and asserts in the press's own
+ * main-thread turn that the press did not finish the activity. Returns the milliseconds
+ * `onBackPressed()` alone took (not the `isFinishing` read, not the `onActivity` hop), for the
+ * #346 pin.
+ *
+ * The check is in-turn because `finish()` sets `mFinished` synchronously, so a finish on the press
+ * path fails here deterministically. A check from a later turn can lose the race: the destruction
+ * completes first and the poll then only sees a DESTROYED activity (#544). The only legitimate
+ * finish after a handled back is `BackUnhandled`, which arrives on a later main-thread turn.
+ *
+ * Do not use it for a back that is meant to finish the activity, such as back at the root.
+ */
+internal fun pressHandledBack(scenario: ActivityScenario<MainActivity>): Long {
+    val elapsedMs = java.util.concurrent.atomic.AtomicLong(-1)
+    scenario.onActivity { act ->
+        val t0 = System.nanoTime()
+        act.onBackPressedDispatcher.onBackPressed()
+        elapsedMs.set(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0))
+        org.junit.Assert.assertFalse(PRESS_FINISHED_THE_ACTIVITY, act.isFinishing)
+    }
+    return elapsedMs.get()
+}
