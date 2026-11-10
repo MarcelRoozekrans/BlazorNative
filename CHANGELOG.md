@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.2...v0.21.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **18.5:** name a compiler lambda's page and position in the slow-handler warning ([#634](https://github.com/MarcelRoozekrans/BlazorNative/issues/634)) ([2cc6801](https://github.com/MarcelRoozekrans/BlazorNative/commit/2cc6801d37d5ec8a95d3d7be6f2bdb243a8dd355))
+* **deps:** pin the dotnet 10 family exactly so a patch release cannot split it ([#660](https://github.com/MarcelRoozekrans/BlazorNative/issues/660)) ([dbca494](https://github.com/MarcelRoozekrans/BlazorNative/commit/dbca4940cf64b53ed0fdd3ac5ae99620979f7793))
+
 ## [0.21.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.1...v0.21.2) (2026-11-07)
 
 
