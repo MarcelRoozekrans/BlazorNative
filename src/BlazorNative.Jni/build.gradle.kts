@@ -263,6 +263,14 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = TestExceptionFormat.FULL
         showStandardStreams = true
     }
+    // #543, design D2: a test stuck on a lost host-call completion held the CI step to the job's
+    // 45-minute limit with no results. SEPARATE_THREAD is required: a thread stuck in a JNA call
+    // does not answer an interrupt, so only abandoning it lets JUnit fail the test by name. The
+    // task timeout is the backstop for a wedged render thread, where later tests time out one by
+    // one. Both bounds come from measurement, see docs/plans/2026-11-10-phase-18.6-record.md.
+    systemProperty("junit.jupiter.execution.timeout.default", "120 s")
+    systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
+    timeout.set(java.time.Duration.ofMinutes(25))
     systemProperty("jna.library.path", winX64PublishPath)
     inputs.files(nativeRuntimeFiles)
         .withPathSensitivity(PathSensitivity.RELATIVE)
