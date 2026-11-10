@@ -925,6 +925,23 @@ public sealed class SlowHandlerWarningTests
         Assert.Contains($"in {typeof(SlowIteratorPage).FullName}, element button at sequence 0", line);
     }
 
+    /// <summary>A page's lambda passed to a GENERIC app component: the component type is
+    /// <c>SlowGenericCard`1</c>, and the warning prints the name cut at the backtick, never the
+    /// backtick or the generic arguments (#522).</summary>
+    [Fact]
+    public void ALambdaPassedToAGenericComponent_NamesItWithoutTheBacktick()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("generic-slow"), Click));
+
+        Assert.True(SlowProbe.RunsOf("generic-slow") == 1, "anchor: the slow lambda must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenComponent<SlowGenericCard<int>>(0) in SlowGenericCardPage_razor.g.cs.
+        Assert.Contains($"in {typeof(SlowGenericCardPage).FullName}, SlowGenericCard at sequence 0", line);
+        Assert.DoesNotContain("`", line);
+        Assert.DoesNotContain("<", line);
+    }
+
     [Fact]
     public void TheCap_Allows32Warnings_ThenOneSuppressionLine_ThenSilence()
     {
@@ -1175,6 +1192,10 @@ public sealed class SlowHandlerWarningTests
             // A method group over an iterator's enumerator, whose method sits on a generated type.
             b.OpenComponent<SlowIteratorPage>(92);
             b.AddComponentParameter(93, nameof(SlowIteratorPage.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // A page lambda passed to a generic app component, whose type name has a backtick.
+            b.OpenComponent<SlowGenericCardPage>(94);
+            b.AddComponentParameter(95, nameof(SlowGenericCardPage.Slow), (Action<string>)RunSlow);
             b.CloseComponent();
         }
 

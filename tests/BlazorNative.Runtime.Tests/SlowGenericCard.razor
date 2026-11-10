@@ -1,0 +1,17 @@
+@* Phase 18.5 (#522): a GENERIC app component that forwards its OnClick to a BnButton, for
+   SlowHandlerWarningTests. Its component type is SlowGenericCard`1, so the warning has to cut
+   the backtick off the name it prints. *@
+@using Microsoft.AspNetCore.Components.Web
+@typeparam TItem
+<BnButton Label="@Label" OnClick="OnClick" />
+
+@code {
+    /// <summary>The button's text.</summary>
+    [Parameter] public string Label { get; set; } = "";
+
+    /// <summary>Unused; it makes the component generic.</summary>
+    [Parameter] public TItem? Item { get; set; }
+
+    /// <summary>Forwarded to the BnButton as is.</summary>
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+}

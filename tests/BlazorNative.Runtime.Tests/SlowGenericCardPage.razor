@@ -1,0 +1,8 @@
+@* Phase 18.5 (#522): a page that passes a slow lambda to SlowGenericCard, a generic app
+   component that forwards it to a BnButton, for SlowHandlerWarningTests. *@
+<SlowGenericCard TItem="int" Label="generic-slow" OnClick="@(() => Slow("generic-slow"))" />
+
+@code {
+    /// <summary>Runs the slow part, tagged with this page's card.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+}
