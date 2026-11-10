@@ -2,15 +2,15 @@
 
 **Last session:** 2026-11-10
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), `[status: complete]`, 2026-11-10. 18.1 to 18.5 are complete. Next is 18.6, `[status: pending]`.
-**Branch:** `feat/18.5-bind-handler-naming`.
+**Phase:** 18.6 — test-suite honesty, part two (#543, #544), `[status: pending]`, no design yet. 18.1 to 18.5 are complete.
+**Branch:** `feat/18.6-test-suite-honesty`, from `main` at `2cc6801d`.
 
 ## Current Position
 
-- **18.5 is complete.** PR #634 is ready for review and awaits the owner's merge; it closes #522. Plan: `docs/superpowers/plans/2026-11-10-phase-18.5-bind-handler-naming.md`. Record: `docs/plans/2026-11-10-phase-18.5-record.md`, with the lanes in §1a.
-- **Lanes on the final head `05ba2b86`:** ci and android-instrumented green on attempt 1. ios failed on attempt 1 with one test, `BnNotificationsTests.testShowBuildsAnImmediateRequestCarryingTheRouteInUserInfo`: the #444 signature. The PR touches no iOS shell code. Commented on #444.
-- **Next phase:** 18.6, #543 and #544 (test-suite honesty, part two). Pending, no design yet.
-- **Worktree:** `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L` holds the 18.5 branch. The main checkout is on `feat/16.7-classify-fault`.
+- **18.5 is merged.** PR #634 was squash-merged on 2026-11-10 as `2cc6801d` and closed #522. All lanes were green on attempt 1 on the final head `89f2634a`, ios included. Release PR #658 (0.21.3) lists the fix; merging it is the owner's call.
+- **18.5's review round:** CodeRabbit found that the non-IL2072 publish gates dropped a whole line once it held `warning IL2072`. All six gates now judge each IL code on a line. See the 18.5 record, §5.
+- **Next phase:** 18.6, #543 (a JVM test waiting on a lost host-call completion hangs the step for 45 minutes) and #544 (an Android back that also finishes the Activity is caught only when its destruction wins a poll). Owner decision for #543: a bounded wait plus a Gradle per-test timeout. #544 has no decision yet.
+- **Worktree:** `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L` now holds the 18.6 branch. The main checkout is on `feat/16.7-classify-fault`.
 - **Baselines:** .NET 1412, JVM 209, Android 271, iOS 296.
 
 ## Owner decisions for M18 (2026-10-24)
@@ -33,7 +33,7 @@
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
 - #582: the allowlist for a second-Activity logcat check.
-- #444 recurred on PR #634's ios lane, attempt 1, on a PR with no iOS shell change. The M18 DoD needs attempt 1 green on every lane.
+- #444 recurred on PR #634's ios lane, attempt 1, on head `05ba2b86`, a PR with no iOS shell change; the final head was green on attempt 1. The M18 DoD needs attempt 1 green on every lane.
 - #444: decouple a show's `Granted` from presentation, because the SpringBoard stall is not ours.
 - #401 and #396: the canonical twin behaviour. 18.7's design proposes one.
 
@@ -43,7 +43,7 @@
 
 ## Recommended Next Step
 
-1. Wait for the owner to merge PR #634, then brainstorm 18.6 (#543 and #544): there is no design yet.
+1. Brainstorm 18.6 (#543 and #544) via `start-next-phase`: there is no design yet. Read both issues first.
 2. The rules still hold:
    - No Claude signature anywhere.
    - Implementers tick their plan boxes.
