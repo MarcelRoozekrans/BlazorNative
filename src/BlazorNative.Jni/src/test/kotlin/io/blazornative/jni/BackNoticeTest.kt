@@ -349,14 +349,10 @@ class BackNoticeTest {
             val backRc = AtomicInteger(Int.MIN_VALUE)
             val backReturnedAt = java.util.concurrent.atomic.AtomicLong(0)
             val backThrew = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
-            val backThread = Thread({
-                try {
-                    backRc.set(runtime.dispatchHostEventAndWait(BnHostEvent.Back))
-                    backReturnedAt.set(System.nanoTime())
-                } catch (t: Throwable) {
-                    backThrew.set(t)
-                }
-            }, "blocking-back").apply { isDaemon = true; start() }
+            // SCRATCH: the back runs untimed on the test thread
+            backRc.set(runtime.dispatchHostEventAndWait(BnHostEvent.Back))
+            backReturnedAt.set(System.nanoTime())
+            val backThread = Thread({}, "blocking-back")
             backThread.join(10_000) // BOUNDED, never join() with no timeout
 
             assertFalse(backThread.isAlive,

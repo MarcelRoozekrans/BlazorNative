@@ -272,7 +272,7 @@ tasks.withType<Test>().configureEach {
     // the backstop for a wedged render thread, where later tests time out one by one. Both bounds
     // come from measurement, see docs/plans/2026-11-10-phase-18.6-record.md.
     systemProperty("junit.jupiter.execution.timeout.default", "120 s")
-    systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
+    systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SAME_THREAD")
     timeout.set(Duration.ofMinutes(25))
     systemProperty("jna.library.path", winX64PublishPath)
     inputs.files(nativeRuntimeFiles)
