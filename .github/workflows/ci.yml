@@ -2865,8 +2865,12 @@ jobs:
           Write-Host "JVM step wall time: $([int]$stepClock.Elapsed.TotalSeconds) s"
           # Keep the per-test margin visible on every run (#543, D2): the five slowest tests.
           $cases = foreach ($x in @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)) {
-            foreach ($c in ([xml](Get-Content $x -Raw)).testsuite.testcase) {
-              [pscustomobject]@{ Name = "$($c.classname).$($c.name)"; Time = [double]::Parse($c.time, [cultureinfo]::InvariantCulture) }
+            try {
+              foreach ($c in ([xml](Get-Content $x -Raw)).testsuite.testcase) {
+                [pscustomobject]@{ Name = "$($c.classname).$($c.name)"; Time = [double]::Parse($c.time, [cultureinfo]::InvariantCulture) }
+              }
+            } catch {
+              Write-Host "warning: could not read timings from $($x.Name): $($_.Exception.Message)"
             }
           }
           $cases | Sort-Object Time -Descending | Select-Object -First 5 | ForEach-Object {
