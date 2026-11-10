@@ -273,7 +273,7 @@ tasks.withType<Test>().configureEach {
     // come from measurement, see docs/plans/2026-11-10-phase-18.6-record.md.
     systemProperty("junit.jupiter.execution.timeout.default", "120 s")
     systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
-    timeout.set(Duration.ofMinutes(25))
+    // SCRATCH R7: task timeout removed
     systemProperty("jna.library.path", winX64PublishPath)
     inputs.files(nativeRuntimeFiles)
         .withPathSensitivity(PathSensitivity.RELATIVE)
