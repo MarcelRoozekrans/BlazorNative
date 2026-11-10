@@ -2863,7 +2863,7 @@ jobs:
           $gradleExit = $LASTEXITCODE
           $stepClock.Stop()
           Write-Host "JVM step wall time: $([int]$stepClock.Elapsed.TotalSeconds) s"
-          # Keep the per-test margin visible on every run (#543, D2): the five slowest tests.
+          # Keep the per-test margin visible on every run that writes JUnit XML (#543, D2): the five slowest tests.
           $cases = foreach ($x in @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)) {
             try {
               foreach ($c in ([xml](Get-Content $x -Raw)).testsuite.testcase) {
