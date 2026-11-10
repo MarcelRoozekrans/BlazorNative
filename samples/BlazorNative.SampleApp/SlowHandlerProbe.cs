@@ -48,8 +48,8 @@ namespace BlazorNative.SampleApp;
 // The two capturing lambdas also prove the call-site position in the warning, as in
 // "in BlazorNative.SampleApp.SlowHandlerProbe, BnCheckbox at sequence 34". It is found
 // by reading the boxed EventCallback's non-public Delegate field by reflection, which
-// the trimmer can drop. The page-only fallback has no position, so the position text
-// shows the read succeeded in the published dll: for a reference T through BnButton,
+// the trimmer can drop. A null read gives a different position or the page alone,
+// so the expected position text shows the read succeeded in the published dll: for a reference T through BnButton,
 // and for a value T through BnCheckbox.
 //
 // WHY THE ECHO READS A SINK. The warning goes to BnLog, which the JVM lane cannot

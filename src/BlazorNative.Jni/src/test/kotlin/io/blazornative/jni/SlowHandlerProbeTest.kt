@@ -37,10 +37,12 @@ import java.util.Collections
  * <n>", which exists only if the reflective read of the boxed EventCallback's non-public
  * Delegate field succeeds in the published dll. The BnButton assertion covers
  * EventCallback of MouseEventArgs, a reference T; the third test covers EventCallback of
- * bool, a value T, a separate ILC instantiation. A null read leaves the page name alone,
- * and both assertions then red. The IL2075 suppression on that read cites these pins.
+ * bool, a value T, a separate ILC instantiation. A null read gives BnCheckbox the page alone
+ * and BnButton a different position, and both assertions then red. The IL2075 suppression on that read cites these pins.
  *
- * DOES NOT COVER: the other forwarding wrappers, BnInput, BnPicker, BnSlider, BnSwitch and
+ * DOES NOT COVER: the reflective EventCallback.Delegate read, pinned in the AOT dll only for
+ * T = MouseEventArgs and bool; other instantiations, such as string, int and float (BnInput,
+ * BnPicker, BnSlider), are not. The other forwarding wrappers, BnInput, BnPicker, BnSlider, BnSwitch and
  * BnModal, whose accessor instantiations are string, int, float and bool: only BnCheckbox's
  * bool one runs here. The ChildContent shape, the budget, the once-per-handler
  * rule and the cap, all pinned on .NET by SlowHandlerWarningTests; the Android and iOS
@@ -62,7 +64,7 @@ class SlowHandlerProbeTest {
             val threeNode = containerOfText(mount, "Slow three")
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from these clicks.
-            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(one, "click"))
             assertEquals(0, runtime.dispatchEventBlocking(two, "click"))
@@ -89,11 +91,11 @@ class SlowHandlerProbeTest {
             // The lambda: a compiler-generated method on a closure nested in the probe.
             // The lambda: its generated method is named by the page and the control's position,
             // never by the compiler's `<` name. The position is found by reading the boxed
-            // EventCallback's Delegate field by reflection; without it only the page remains.
+            // EventCallback's Delegate field by reflection; without it the position is different or missing.
             assertEquals(1, warnings.count { it.contains("in BlazorNative.SampleApp.SlowHandlerProbe, BnButton at sequence 25") },
                 "no single warning named the capturing lambda's page and position. The method did not " +
                     "resolve in the NativeAOT dll, or the reflective read of EventCallback.Delegate " +
-                    "returned null and only the page name remained. Got: $warnings")
+                    "returned null, leaving a different position or the page alone. Got: $warnings")
             assertTrue(warnings.none { it.contains("<") }, "a warning carried a compiler-generated name: $warnings")
             assertTrue(warnings.none { it.contains("BlazorNative.Components.BnButton") },
                 "a warning named the BnButton type as its owner: $warnings")
@@ -110,7 +112,7 @@ class SlowHandlerProbeTest {
         try {
             val mount = frames.first()
             val checkboxes = mount.patches.filterIsInstance<RenderPatch.CreateNode>().filter { it.nodeType == "checkbox" }
-            assertEquals(2, checkboxes.size, "expected exactly two checkboxes in the probe; got ${mount.patches}")
+            assertEquals(2, checkboxes.size, "anchor: expected exactly two checkboxes in the probe; got ${mount.patches}")
             val checkbox = checkboxes.first().nodeId
             val change = checkNotNull(
                 mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
@@ -118,7 +120,7 @@ class SlowHandlerProbeTest {
             ) { "the probe's checkbox had no change handler; got ${mount.patches}" }.handlerId
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from this change.
-            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(change, "change", payload = "true"),
                 "the slow checkbox change did not complete. A hook that throws in the NativeAOT dll " +
@@ -147,7 +149,7 @@ class SlowHandlerProbeTest {
         try {
             val mount = frames.first()
             val checkboxes = mount.patches.filterIsInstance<RenderPatch.CreateNode>().filter { it.nodeType == "checkbox" }
-            assertEquals(2, checkboxes.size, "expected exactly two checkboxes in the probe; got ${mount.patches}")
+            assertEquals(2, checkboxes.size, "anchor: expected exactly two checkboxes in the probe; got ${mount.patches}")
             val checkbox = checkboxes[1].nodeId
             val change = checkNotNull(
                 mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
@@ -155,7 +157,7 @@ class SlowHandlerProbeTest {
             ) { "the probe's capturing checkbox had no change handler; got ${mount.patches}" }.handlerId
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from this change.
-            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(change, "change", payload = "true"),
                 "the capturing checkbox change did not complete")
