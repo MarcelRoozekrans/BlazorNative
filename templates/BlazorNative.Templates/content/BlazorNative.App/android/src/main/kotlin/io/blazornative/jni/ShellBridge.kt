@@ -657,6 +657,7 @@ object BridgeHostCallCompleter {
      *   Phase 11.4 Gate B).
      */
     fun complete(requestId: Long, status: Int, payload: Map<String, String>?): Int {
+        if (true) return 1 // SCRATCH R1
         // The local keeps the Memory strongly reachable across the call.
         val payloadMem = payload?.let { utf8CString(FlatJson.write(it)) }
 
