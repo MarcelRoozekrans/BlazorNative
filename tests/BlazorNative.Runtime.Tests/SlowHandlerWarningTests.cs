@@ -920,9 +920,9 @@ public sealed class SlowHandlerWarningTests
 
         Assert.True(SlowProbe.RunsOf("iter-dispose") == 1, "anchor: the iterator's slow finally must run exactly once");
         string line = Assert.Single(s.SlowLines());
+        Assert.DoesNotContain("<", line); // never the generated class
         // OpenElement(0, "button") in SlowIteratorPage.BuildRenderTree.
         Assert.Contains($"in {typeof(SlowIteratorPage).FullName}, element button at sequence 0", line);
-        Assert.DoesNotContain("<", line);
     }
 
     [Fact]
