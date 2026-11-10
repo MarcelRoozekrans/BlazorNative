@@ -78,7 +78,6 @@ internal static class BlazorInterop
     /// type, because the walk meets arbitrary <c>T</c> and an <c>[UnsafeAccessor]</c> needs the
     /// <c>T</c> at compile time. <c>[DynamicDependency]</c> keeps the field in the NativeAOT
     /// build; the JVM <c>SlowHandlerProbeTest</c> pins that it resolves in the published dll.</para></summary>
-    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicFields, typeof(EventCallback<>))]
     internal static Delegate? CallbackDelegate(object? value)
     {
         if (HandlerDelegate(value) is { } handler)
