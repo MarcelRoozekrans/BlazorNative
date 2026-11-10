@@ -1,15 +1,20 @@
 # Session State
 
-**Last session:** 2026-11-04
+**Last session:** 2026-11-10
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), design approved by the owner on 2026-11-04; plan next. 18.1 to 18.4 are complete and merged; #605 merged as `0b430432` on 2026-11-03 and closed #511 and #601.
+**Phase:** 18.5 — slow-handler naming for compiler lambdas (#522), `[status: active]`. The design was approved on 2026-11-04 and the plan on 2026-11-10. No task has started yet. 18.1 to 18.4 are complete and merged.
 **Branch:** `feat/18.5-bind-handler-naming`.
 
 ## Current Position
 
-- **18.5 design drafted:** `docs/superpowers/specs/2026-11-04-phase-18.5-design.md`, builder check folded in, approved by the owner on 2026-11-04.
-- Owner decisions of 2026-11-04: the position is the control type plus its Razor frame sequence (not an ordinal), and the rule covers every compiler lambda, explicit ones included, not only bound inputs.
-- **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296.
+- **Plan approved 2026-11-10:** `docs/superpowers/plans/2026-11-10-phase-18.5-bind-handler-naming.md`, six tasks. Spec: `docs/superpowers/specs/2026-11-04-phase-18.5-design.md`.
+- **Branch** `feat/18.5-bind-handler-naming`, rebased onto `main` at 0.21.2 (`43f11713`). No PR yet; Task 1 Step 6 opens the draft PR, which closes #522.
+- **Plan-time decisions by the owner on 2026-11-10:**
+  - The JVM probe gains a capturing lambda on a `BnCheckbox`, which covers value-type `EventCallback<T>` reflection under NativeAOT.
+  - An IL2075 suppression is allowed only if the trim analyzer fires, paired with the `[DynamicDependency]`, in the style of `BlazorInterop.cs:87-95`. Record it in record §5; the final review checks it.
+  - CONVENTIONS.md now records Build and Test: `dotnet build` / `dotnet test` on `BlazorNative.sln -c Release`.
+- **Worktree:** the work happens in `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L`, which holds this branch. The main checkout is on `feat/16.7-classify-fault`.
+- **Baselines:** .NET 1406, JVM 208, Android 271, iOS 296. The plan moves .NET to 1410 and JVM to 209.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -40,7 +45,7 @@
 
 ## Recommended Next Step
 
-1. Write the 18.5 plan with writing-plans and execute it subagent-driven.
+1. Execute the 18.5 plan subagent-driven, from Task 1 Step 1. The plan's `list-phase-assumptions` gate is passed: the owner said "Lets go" on 2026-11-10.
 2. The rules still hold:
    - No Claude signature anywhere.
    - Implementers tick their plan boxes.
