@@ -2103,7 +2103,7 @@ public sealed class NativeRenderer : BlazorRenderer
     /// number and the event name. The delegate is only read here; its method, and the
     /// wrapper's forwarded delegate, are resolved when a dispatch is already over budget,
     /// never on the render path.</para></summary>
-    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
+    private readonly record struct HandlerCallSite(int ComponentId, Type Component, int Sequence, string EventName, Delegate? Handler)
     {
         public (string Key, string Owner, System.Reflection.MethodInfo? Lambda) Resolve()
         {
@@ -2215,7 +2215,7 @@ public sealed class NativeRenderer : BlazorRenderer
     private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
     {
         if (_componentTypes.TryGetValue(componentId, out Type? component))
-            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName, handler);
+            _handlerCallSites[handlerId] = new HandlerCallSite(componentId, component, sequence, eventName, handler);
     }
 
     /// <summary>Each live component's type, for <see cref="RecordCallSite"/>. Kept here
@@ -2306,8 +2306,46 @@ public sealed class NativeRenderer : BlazorRenderer
     {
         if (site is not { } s)
             return ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
-        (string key, string owner, _) = s.Resolve();
+        (string key, string owner, System.Reflection.MethodInfo? lambda) = s.Resolve();
+        if (lambda is not null && CallSitePosition(s.ComponentId, lambda) is { } position)
+            owner = $"{owner}, {position}";
         return (key, $"handler {e.HandlerId} '{e.EventName}' in {owner}");
+    }
+
+    /// <summary>Phase 18.5 (#522): where a compiler lambda's call site sits, for the slow-handler
+    /// warning. Starting at the component whose tree held the dispatched attribute, then up its
+    /// ancestors through the component-parent map, each component's current frames are searched
+    /// for an attribute whose value runs <paramref name="method"/>. A match REPLACES the one
+    /// before it, so the OUTERMOST wins: a page's lambda passed to an app component that forwards
+    /// it to a BnButton is held by all three trees, and the page's is the call site its source
+    /// wrote. A ChildContent's frames sit in the child's tree with the page's sequences, so the
+    /// page's own tree, holding only the fragment, does not override that match.
+    /// <para>Runs on the render thread, only once a dispatch is over budget. Any failure, such
+    /// as a component disposed during the dispatch whose frames can no longer be read, returns
+    /// null, never a partial result: an inner match whose ancestor threw may not be the
+    /// outermost. Naming a diagnostic must never fault the dispatch it names.</para></summary>
+    private BlazorInterop.FramePosition? CallSitePosition(int componentId, System.Reflection.MethodInfo method)
+    {
+        try
+        {
+            BlazorInterop.FramePosition? outermost = null;
+            int id = componentId;
+            while (true)
+            {
+                if (BlazorInterop.FindCallSite(GetCurrentRenderTreeFrames(id), method) is { } match)
+                    outermost = match;
+                if (!_tree.TryGetComponentParent(id, out var parent))
+                    return outermost;
+                id = parent.ParentComponentId;
+            }
+        }
+        catch (Exception)
+        {
+            // GetCurrentRenderTreeFrames throws for a component Blazor has already disposed;
+            // anything else here is a diagnostic's failure too. The warning names the page alone.
+            // Pinned by SlowHandlerWarningTests.ASlowHandlerThatHidesItsInput_NamesThePageAlone.
+            return null;
+        }
     }
 
     /// <summary>The start timestamp of a timed synchronous part.</summary>

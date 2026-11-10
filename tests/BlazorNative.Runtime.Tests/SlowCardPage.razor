@@ -1,0 +1,9 @@
+@* Phase 18.5 (#522): a page that passes a slow lambda to SlowCard, an app component that
+   forwards it to a BnButton, for SlowHandlerWarningTests. The lambda captures only this, so
+   the compiler declares it as an instance method on this page. *@
+<SlowCard Label="card-slow" OnClick="@(() => Slow("card-slow"))" />
+
+@code {
+    /// <summary>Runs the slow part, tagged with this page's card.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+}

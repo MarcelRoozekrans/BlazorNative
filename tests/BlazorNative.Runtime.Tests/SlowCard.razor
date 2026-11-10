@@ -1,0 +1,14 @@
+@* Phase 18.5 (#522): an app component that forwards its OnClick to a BnButton, for
+   SlowHandlerWarningTests. A lambda passed in by a page is then held by three trees:
+   BnButton's element, this component's BnButton frame and the page's SlowCard frame. The
+   outermost one, the page's, is the call site the warning names. *@
+@using Microsoft.AspNetCore.Components.Web
+<BnButton Label="@Label" OnClick="OnClick" />
+
+@code {
+    /// <summary>The button's text.</summary>
+    [Parameter] public string Label { get; set; } = "";
+
+    /// <summary>Forwarded to the BnButton as is.</summary>
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+}
