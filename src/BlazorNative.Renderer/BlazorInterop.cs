@@ -101,10 +101,6 @@ internal static class BlazorInterop
         // resolves in the published dll for EventCallback<MouseEventArgs> and EventCallback<bool>;
         // other instantiations are unpinned. If the field were trimmed the read returns null and
         // the warning falls back to the page alone, never a fault.
-        [UnconditionalSuppressMessage("Trimming", "IL2075",
-            Justification = "EventCallback<>'s non-public fields are kept by [DynamicDependency] on " +
-                            "CallbackDelegate. The JVM SlowHandlerProbeTest pins the read in the published dll " +
-                            "for EventCallback<MouseEventArgs> and EventCallback<bool>; other instantiations are unpinned.")]
         static Delegate? ReadDelegateField(object callback) =>
             callback.GetType().GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(callback) as Delegate;
     }
