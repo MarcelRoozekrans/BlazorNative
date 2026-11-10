@@ -62,9 +62,9 @@ internal sealed class BackHoldProbe : ComponentBase
 
     // Deliberately synchronous: see the file header. Blocks the render thread until the
     // shell answers the camera call.
-    private void Hold()
+    private async Task Hold()
     {
-        PhotoResult result = Camera.CapturePhotoAsync().AsTask().GetAwaiter().GetResult();
+        PhotoResult result = await Camera.CapturePhotoAsync(); // SCRATCH R3
         _echo = $"{ReleasedPrefix}{result.Status}";
     }
 }
