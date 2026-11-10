@@ -4024,8 +4024,11 @@ the app's handler through a forwarding hook.
 **Plan:** [`docs/superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md`](../superpowers/plans/2026-10-31-phase-18.4-recreation-during-boot.md)
 **Completed:** 2026-11-03
 
-#### Phase 18.5: Slow-handler naming for bound inputs (#522) [status: pending]
+#### Phase 18.5: Slow-handler naming for bound inputs (#522) [status: complete]
 **Goal:** Name the page and the wrapper's position, never a compiler lambda, by owner decision of 2026-10-24.
+**Design:** [`docs/superpowers/specs/2026-11-04-phase-18.5-design.md`](../superpowers/specs/2026-11-04-phase-18.5-design.md)
+**Plan:** [`docs/superpowers/plans/2026-11-10-phase-18.5-bind-handler-naming.md`](../superpowers/plans/2026-11-10-phase-18.5-bind-handler-naming.md)
+**Completed:** 2026-11-10
 **Surface:** Backend
 **HelpWanted:** no
 

@@ -1,0 +1,16 @@
+@* Phase 18.5 (#522): a page whose bound BnInput sits in a BnView's ChildContent, for
+   SlowHandlerWarningTests. The input renders into BnView's tree with this page's sequence
+   numbers, so the position walk finds it one component up from the input. A real .razor
+   file, so the binder is the one the Razor compiler emits. *@
+<BnView>
+    <BnInput Placeholder="bind-nested" @bind-Value="_text" @bind-Value:after="After" />
+</BnView>
+
+@code {
+    private string _text = "";
+
+    /// <summary>Runs the slow part, tagged with this page's input.</summary>
+    [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+    private void After() => Slow("bind-nested");
+}

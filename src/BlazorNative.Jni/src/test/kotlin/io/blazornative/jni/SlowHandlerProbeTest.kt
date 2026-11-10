@@ -33,7 +33,16 @@ import java.util.Collections
  * it did not, the renderer would fall back to the tree owner and the warning would name
  * BnCheckbox.
  *
- * DOES NOT COVER: the other forwarding wrappers, BnInput, BnPicker, BnSlider, BnSwitch and
+ * The capturing lambdas also pin the call-site position, "in <page>, <control> at sequence
+ * <n>", which exists only if the reflective read of the boxed EventCallback's non-public
+ * Delegate field succeeds in the published dll. The BnButton assertion covers
+ * EventCallback of MouseEventArgs, a reference T; the third test covers EventCallback of
+ * bool, a value T, a separate ILC instantiation. A null read gives both the page alone, and
+ * both assertions then red. The IL2075 suppression on that read cites these pins.
+ *
+ * DOES NOT COVER: the reflective EventCallback.Delegate read, pinned in the AOT dll only for
+ * T = MouseEventArgs and bool; other instantiations, such as string, int and float (BnInput,
+ * BnPicker, BnSlider), are not. The other forwarding wrappers, BnInput, BnPicker, BnSlider, BnSwitch and
  * BnModal, whose accessor instantiations are string, int, float and bool: only BnCheckbox's
  * bool one runs here. The ChildContent shape, the budget, the once-per-handler
  * rule and the cap, all pinned on .NET by SlowHandlerWarningTests; the Android and iOS
@@ -55,7 +64,7 @@ class SlowHandlerProbeTest {
             val threeNode = containerOfText(mount, "Slow three")
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from these clicks.
-            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(one, "click"))
             assertEquals(0, runtime.dispatchEventBlocking(two, "click"))
@@ -80,11 +89,16 @@ class SlowHandlerProbeTest {
             assertEquals(1, warnings.count { it.contains("SlowHandlerProbe.SlowTwo") },
                 "no single warning named SlowHandlerProbe.SlowTwo. Got: $warnings")
             // The lambda: a compiler-generated method on a closure nested in the probe.
-            assertEquals(1, warnings.count { it.contains("SlowHandlerProbe+") && it.contains("<BuildRenderTree>") },
-                "no single warning named the capturing lambda's generated method. The method did not " +
-                    "resolve in the NativeAOT dll or the EventCallback accessor missed it, and the key fell " +
-                    "back to the tree owner. Got: $warnings")
-            assertTrue(warnings.none { it.contains("BnButton") }, "a warning named BnButton: $warnings")
+            // The lambda: its generated method is named by the page and the control's position,
+            // never by the compiler's `<` name. The position is found by reading the boxed
+            // EventCallback's Delegate field by reflection; without it the position is different or missing.
+            assertEquals(1, warnings.count { it.contains("in BlazorNative.SampleApp.SlowHandlerProbe, BnButton at sequence 25") },
+                "no single warning named the capturing lambda's page and position. The method did not " +
+                    "resolve in the NativeAOT dll, or the reflective read of EventCallback.Delegate " +
+                    "returned null, leaving the page alone. Got: $warnings")
+            assertTrue(warnings.none { it.contains("<") }, "a warning carried a compiler-generated name: $warnings")
+            assertTrue(warnings.none { it.contains("BlazorNative.Components.BnButton") },
+                "a warning named the BnButton type as its owner: $warnings")
         } finally {
             runtime.retire()
         }
@@ -97,16 +111,16 @@ class SlowHandlerProbeTest {
         runtime.start(componentName = "SlowHandlerProbe", platformOs = "test-host", bridge = NoopBridge)
         try {
             val mount = frames.first()
-            val checkbox = checkNotNull(
-                mount.patches.filterIsInstance<RenderPatch.CreateNode>().singleOrNull { it.nodeType == "checkbox" }
-            ) { "expected exactly one checkbox in the probe; got ${mount.patches}" }.nodeId
+            val checkboxes = mount.patches.filterIsInstance<RenderPatch.CreateNode>().filter { it.nodeType == "checkbox" }
+            assertEquals(2, checkboxes.size, "anchor: expected exactly two checkboxes in the probe; got ${mount.patches}")
+            val checkbox = checkboxes.first().nodeId
             val change = checkNotNull(
                 mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
                     .singleOrNull { it.nodeId == checkbox && it.eventName == "change" }
             ) { "the probe's checkbox had no change handler; got ${mount.patches}" }.handlerId
             val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
             // Anchor: the echo starts empty, so any line below came from this change.
-            assertEquals("slow-warnings:0", latestEcho(frames), "the probe's echo did not start at zero")
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
 
             assertEquals(0, runtime.dispatchEventBlocking(change, "change", payload = "true"),
                 "the slow checkbox change did not complete. A hook that throws in the NativeAOT dll " +
@@ -122,6 +136,42 @@ class SlowHandlerProbeTest {
                     "means the hook's [UnsafeAccessor] did not bind in the NativeAOT dll and the key fell " +
                     "back to the tree owner. Got: $warnings")
             assertTrue(warnings.none { it.contains("BnCheckbox") }, "a warning named BnCheckbox: $warnings")
+        } finally {
+            runtime.retire()
+        }
+    }
+
+    @Test
+    fun a_capturing_lambda_on_a_bncheckbox_names_the_page_and_its_sequence() {
+        val frames = Collections.synchronizedList(mutableListOf<RenderFrame>())
+        val runtime = BlazorNativeRuntime(onFrame = { frames.add(it) }, onError = { _, _ -> })
+        runtime.start(componentName = "SlowHandlerProbe", platformOs = "test-host", bridge = NoopBridge)
+        try {
+            val mount = frames.first()
+            val checkboxes = mount.patches.filterIsInstance<RenderPatch.CreateNode>().filter { it.nodeType == "checkbox" }
+            assertEquals(2, checkboxes.size, "anchor: expected exactly two checkboxes in the probe; got ${mount.patches}")
+            val checkbox = checkboxes[1].nodeId
+            val change = checkNotNull(
+                mount.patches.filterIsInstance<RenderPatch.AttachEvent>()
+                    .singleOrNull { it.nodeId == checkbox && it.eventName == "change" }
+            ) { "the probe's capturing checkbox had no change handler; got ${mount.patches}" }.handlerId
+            val report = clickHandlerOn(mount, containerOfText(mount, "Report"))
+            // Anchor: the echo starts empty, so any line below came from this change.
+            assertEquals("slow-warnings:0", latestEcho(frames), "anchor: the probe's echo did not start at zero")
+
+            assertEquals(0, runtime.dispatchEventBlocking(change, "change", payload = "true"),
+                "the capturing checkbox change did not complete")
+            assertEquals(0, runtime.dispatchEventBlocking(report, "click"))
+
+            val lines = latestEcho(frames).split("\n")
+            val warnings = lines.drop(1)
+            assertEquals("slow-warnings:${warnings.size}", lines[0], "the echo's count and lines disagree: $lines")
+            assertEquals(1, warnings.size, "one slow checkbox change gave ${warnings.size} warnings, not 1: $warnings")
+            assertTrue(warnings[0].contains("in BlazorNative.SampleApp.SlowHandlerProbe, BnCheckbox at sequence 34"),
+                "the warning did not name the page and BnCheckbox at sequence 34. A warning with only the " +
+                    "page means the reflective read of EventCallback<bool>.Delegate returned null in the " +
+                    "NativeAOT dll: a value-type instantiation the trimmer may have dropped. Got: $warnings")
+            assertTrue(warnings.none { it.contains("<") }, "a warning carried a compiler-generated name: $warnings")
         } finally {
             runtime.retire()
         }

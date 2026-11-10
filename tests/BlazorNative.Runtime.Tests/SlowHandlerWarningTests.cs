@@ -480,10 +480,17 @@ public sealed class SlowHandlerWarningTests
         Assert.True(ids.Distinct().Count() == 3,
             $"the capturing lambda kept handler ids [{string.Join(", ", ids)}] across its "
             + "re-renders, so this pin no longer separates a call-site key from a handler-id "
-            + "key. Has SlowProbe's item button stopped capturing per-render state?");
+            + "key, nor proves that the position lookup matches by method after a re-render "
+            + "gave the call site a new delegate instance. Has SlowProbe's item button stopped "
+            + "capturing per-render state?");
         var line = Assert.Single(s.SlowLines());
         Assert.Contains($"handler {ids[0]} 'click'", line);
         Assert.Contains(nameof(SlowProbe), line);
+        Assert.DoesNotContain("<", line); // #522: never the compiler's generated name
+        // #522: the page and the call site's position. The warning names the first click,
+        // after which the page re-rendered, so the frame holds a new delegate of the same
+        // method: a lookup by delegate identity finds nothing and falls back to the page alone.
+        Assert.Contains($"in {typeof(SlowProbe).FullName}, element button at sequence 11", line);
     }
 
     [Fact]
@@ -532,6 +539,12 @@ public sealed class SlowHandlerWarningTests
         Assert.True(lines.Length == 2,
             $"expected one warning for the item loop's call site and one for 'other', got "
             + $"{lines.Length}:\n{string.Join("\n", lines)}");
+        // #522: each warning names its own call site's position, the loop's at 11 and
+        // 'other' at 14 (SlowProbe.BuildRenderTree).
+        Assert.True(lines.Count(l => l.Contains("element button at sequence 11")) == 1
+                && lines.Count(l => l.Contains("element button at sequence 14")) == 1,
+            $"the two warnings must name element button at sequence 11 and at sequence 14, one "
+            + $"each:\n{string.Join("\n", lines)}");
     }
 
     [Fact]
@@ -579,6 +592,11 @@ public sealed class SlowHandlerWarningTests
             $"the two warnings must name {nameof(ChildPageA)} and {nameof(ChildPageB)}, one each. A key that "
             + $"falls back to the tree owner names BnView instead:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnView).FullName!));
+        // #522: the button sits in BnView's tree at the page's sequence 2, so the walk finds
+        // it in the tree the call site was recorded in, BnView's, and nothing above matches.
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(ChildPageA).FullName}, element button at sequence 2")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(ChildPageB).FullName}, element button at sequence 2")) == 1,
+            $"each warning must name its page and element button at sequence 2:\n{string.Join("\n", lines)}");
     }
 
     [Fact]
@@ -743,10 +761,14 @@ public sealed class SlowHandlerWarningTests
             $"two @bind-Value BnInputs on two pages gave {lines.Length} warnings, not 2. BnInput forwards "
             + $"both from one line, so a key that does not ask it for the page's delegate merges them:"
             + $"\n{string.Join("\n", lines)}");
-        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageA).FullName}.")) == 1
-                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageB).FullName}.")) == 1,
-            $"the two warnings must name {nameof(SlowBindPageA)} and {nameof(SlowBindPageB)}, one each:\n{string.Join("\n", lines)}");
+        // #522: the page and its input's position. Both inputs open at sequence 0, in
+        // SlowBindPageA_razor.g.cs and SlowBindPageB_razor.g.cs.
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageA).FullName}, BnInput at sequence 0")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageB).FullName}, BnInput at sequence 0")) == 1,
+            $"the two warnings must name {nameof(SlowBindPageA)} and {nameof(SlowBindPageB)}, one each, each with "
+            + $"BnInput at sequence 0:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
     }
 
     /// <summary>Two bound wrappers on ONE page stay apart. The Razor compiler declares one
@@ -767,8 +789,13 @@ public sealed class SlowHandlerWarningTests
         Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
             $"two @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones. "
             + $"Each call site's page lambda is its own key:\n{string.Join("\n", lines)}");
-        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageTwo).FullName}.", l));
+        // #522: the page and each input's position, sequences 0 and 5 in SlowBindPageTwo_razor.g.cs.
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageTwo).FullName}, BnInput at sequence 0")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageTwo).FullName}, BnInput at sequence 5")) == 1,
+            $"the two warnings must name {nameof(SlowBindPageTwo)} with BnInput at sequence 0 and at sequence 5, "
+            + $"one each:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
     }
 
     /// <summary>Plain <c>@bind-Value</c>: the Razor compiler passes BnInput a lambda it
@@ -787,8 +814,35 @@ public sealed class SlowHandlerWarningTests
         Assert.True(lines.Length == 2 && lines.Distinct().Count() == 2,
             $"two plain @bind-Value BnInputs on one page gave {lines.Length} warnings, not 2 distinct ones:"
             + $"\n{string.Join("\n", lines)}");
-        Assert.All(lines, l => Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.", l));
+        // #522: the page and each input's position, sequences 0 and 5 in SlowBindPageForms_razor.g.cs.
+        Assert.True(lines.Count(l => l.Contains($"in {typeof(SlowBindPageForms).FullName}, BnInput at sequence 0")) == 1
+                && lines.Count(l => l.Contains($"in {typeof(SlowBindPageForms).FullName}, BnInput at sequence 5")) == 1,
+            $"the two warnings must name {nameof(SlowBindPageForms)} with BnInput at sequence 0 and at sequence 5, "
+            + $"one each:\n{string.Join("\n", lines)}");
         Assert.DoesNotContain(lines, l => l.Contains(typeof(BnInput).FullName!));
+        Assert.DoesNotContain(lines, l => l.Contains('<')); // #522: never a compiler-generated name
+    }
+
+    /// <summary>The call site can be gone by the time the warning is named: a slow
+    /// <c>:after</c> hides its own input, so the BnInput is disposed during the dispatch.
+    /// Nothing is left to look up, and the warning names the page alone, never the
+    /// compiler's generated name (#522).</summary>
+    [Fact]
+    public void ASlowHandlerThatHidesItsInput_NamesThePageAlone()
+    {
+        using var s = new Session();
+        int before = s.Renderer.ComponentIdsOfTypeForTests(typeof(BnInput)).Length;
+
+        int rc = Dispatch(s.HandlerByPlaceholder("bind-hides", "change"), Change("x"));
+
+        Assert.True(rc == 0, "anchor: the dispatch must complete");
+        Assert.True(SlowProbe.RunsOf("bind-hides") == 1, "anchor: the slow :after must run exactly once");
+        int after = s.Renderer.ComponentIdsOfTypeForTests(typeof(BnInput)).Length;
+        Assert.True(after == before - 1,
+            "anchor: the slow :after must remove its own input, or this pin never reaches the fallback");
+        string line = Assert.Single(s.SlowLines());
+        Assert.Contains($"in {typeof(SlowBindPageHides).FullName} held", line);
+        Assert.DoesNotContain("<", line);
     }
 
     /// <summary><c>@bind-Value:get/:set</c>: the Razor compiler passes BnInput the app's
@@ -803,6 +857,89 @@ public sealed class SlowHandlerWarningTests
         string line = Assert.Single(s.SlowLines());
         Assert.Contains($"in {typeof(SlowBindPageForms).FullName}.SetSlow held", line);
         Assert.DoesNotContain(typeof(BnInput).FullName!, line);
+    }
+
+    /// <summary>A bound BnInput in a BnView's ChildContent renders into BnView's tree with the
+    /// page's sequence numbers, so its ValueChanged frame is found one component up from the
+    /// input, in BnView's tree. The page's own tree holds only the ChildContent fragment, a
+    /// different method, so the position is the page's sequence for the input.</summary>
+    [Fact]
+    public void ABoundBnInputInBnViewChildContent_NamesThePageAndThePagesSequence()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.HandlerByPlaceholder("bind-nested", "change"), Change("x")));
+
+        Assert.True(SlowProbe.RunsOf("bind-nested") == 1, "anchor: the slow :after must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenComponent<BnInput>(2) in SlowBindPageNested_razor.g.cs.
+        Assert.Contains($"in {typeof(SlowBindPageNested).FullName}, BnInput at sequence 2", line);
+        Assert.DoesNotContain("<", line);
+    }
+
+    /// <summary>A page's lambda passed through an app component that forwards it to a
+    /// BnButton is held by three trees: BnButton's element, SlowCard's BnButton frame and the
+    /// page's SlowCard frame. The outermost match is the call site the page's source wrote.</summary>
+    [Fact]
+    public void ALambdaPassedThroughAnAppComponent_NamesTheOutermostCallSite()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("card-slow"), Click));
+
+        Assert.True(SlowProbe.RunsOf("card-slow") == 1, "anchor: the slow lambda must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenComponent<SlowCard>(0) in SlowCardPage_razor.g.cs.
+        Assert.Contains($"in {typeof(SlowCardPage).FullName}, SlowCard at sequence 0", line);
+        Assert.DoesNotContain("BnButton at sequence", line);
+        Assert.DoesNotContain("element button", line);
+    }
+
+    /// <summary>A lambda declared in a helper class, outside any component, names the helper
+    /// and the element the probe attached it to.</summary>
+    [Fact]
+    public void ALambdaDeclaredInAHelper_NamesTheHelperAndThePosition()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("helper"), Click));
+
+        Assert.True(SlowProbe.RunsOf("helper") == 1, "anchor: the helper's lambda must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenElement(89, "button") in SlowProbe.BuildRenderTree.
+        Assert.Contains($"in {typeof(SlowHelpers).FullName}, element button at sequence 89", line);
+        Assert.DoesNotContain("<", line);
+    }
+
+    /// <summary>A method group over an iterator's enumerator, <c>_enumerator.Dispose</c>: the
+    /// delegate's method is the explicit <c>IDisposable.Dispose</c> of the compiler's
+    /// <c>&lt;Items&gt;d__N</c> class, whose own name has no <c>&lt;</c> but whose declaring type
+    /// does. The warning names the page that holds the iterator, never the generated class (#522).</summary>
+    [Fact]
+    public void AMethodGroupOnAnIteratorsDispose_NamesThePage_NeverTheGeneratedClass()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("iter-dispose"), Click));
+
+        Assert.True(SlowProbe.RunsOf("iter-dispose") == 1, "anchor: the iterator's slow finally must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        Assert.DoesNotContain("<", line); // never the generated class
+        // OpenElement(0, "button") in SlowIteratorPage.BuildRenderTree.
+        Assert.Contains($"in {typeof(SlowIteratorPage).FullName}, element button at sequence 0", line);
+    }
+
+    /// <summary>A page's lambda passed to a GENERIC app component: the component type is
+    /// <c>SlowGenericCard`1</c>, and the warning prints the name cut at the backtick, never the
+    /// backtick or the generic arguments (#522).</summary>
+    [Fact]
+    public void ALambdaPassedToAGenericComponent_NamesItWithoutTheBacktick()
+    {
+        using var s = new Session();
+        Assert.Equal(0, Dispatch(s.Handler("generic-slow"), Click));
+
+        Assert.True(SlowProbe.RunsOf("generic-slow") == 1, "anchor: the slow lambda must run exactly once");
+        string line = Assert.Single(s.SlowLines());
+        // OpenComponent<SlowGenericCard<int>>(0) in SlowGenericCardPage_razor.g.cs.
+        Assert.Contains($"in {typeof(SlowGenericCardPage).FullName}, SlowGenericCard at sequence 0", line);
+        Assert.DoesNotContain("`", line);
+        Assert.DoesNotContain("<", line);
     }
 
     [Fact]
@@ -1036,11 +1173,75 @@ public sealed class SlowHandlerWarningTests
             b.OpenComponent<SlowBindPageForms>(79);
             b.AddComponentParameter(80, nameof(SlowBindPageForms.Slow), (Action<string>)RunSlow);
             b.CloseComponent();
+            // A slow :after that hides its own input (#522 fallback).
+            b.OpenComponent<SlowBindPageHides>(83);
+            b.AddComponentParameter(84, nameof(SlowBindPageHides.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // #522 positions: a bound input in a BnView's ChildContent, a page lambda passed
+            // through an app component, and a lambda declared in a helper class.
+            b.OpenComponent<SlowBindPageNested>(85);
+            b.AddComponentParameter(86, nameof(SlowBindPageNested.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            b.OpenComponent<SlowCardPage>(87);
+            b.AddComponentParameter(88, nameof(SlowCardPage.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            b.OpenElement(89, "button");
+            b.AddAttribute(90, "onclick", SlowHelpers.Make(this));
+            b.AddContent(91, "helper");
+            b.CloseElement();
+            // A method group over an iterator's enumerator, whose method sits on a generated type.
+            b.OpenComponent<SlowIteratorPage>(92);
+            b.AddComponentParameter(93, nameof(SlowIteratorPage.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
+            // A page lambda passed to a generic app component, whose type name has a backtick.
+            b.OpenComponent<SlowGenericCardPage>(94);
+            b.AddComponentParameter(95, nameof(SlowGenericCardPage.Slow), (Action<string>)RunSlow);
+            b.CloseComponent();
         }
 
         public void Dispose() => Bridge.NativeEvents -= OnNativeEvent;
 
         internal static void RunSlow(string tag) => Run(tag, SlowMs);
+    }
+
+    /// <summary>A lambda declared outside any component. It captures nothing, so the compiler
+    /// puts it on <c>SlowHelpers+&lt;&gt;c</c>, and the warning names <c>SlowHelpers</c>. Its
+    /// receiver is the probe, not the delegate's target, so Blazor keeps the attribute as a
+    /// boxed <see cref="EventCallback"/>.</summary>
+    private static class SlowHelpers
+    {
+        public static EventCallback Make(object receiver)
+            => EventCallback.Factory.Create(receiver, () => SlowProbe.RunSlow("helper"));
+    }
+
+    /// <summary>A page whose button is the method group <c>_enumerator.Dispose</c> on an iterator's
+    /// enumerator started in OnInitialized. Disposing it runs the iterator's <c>finally</c>, which
+    /// is the slow part. The delegate's method is on the compiler's <c>&lt;Items&gt;d__N</c> class.</summary>
+    private sealed class SlowIteratorPage : ComponentBase
+    {
+        private IEnumerator<int>? _enumerator;
+
+        [Parameter, EditorRequired] public Action<string> Slow { get; set; } = default!;
+
+        private IEnumerable<int> Items()
+        {
+            try { yield return 1; }
+            finally { Slow("iter-dispose"); }
+        }
+
+        protected override void OnInitialized()
+        {
+            _enumerator = Items().GetEnumerator();
+            _enumerator.MoveNext();
+        }
+
+        protected override void BuildRenderTree(RenderTreeBuilder b)
+        {
+            b.OpenElement(0, "button");
+            b.AddAttribute(1, "onclick", EventCallback.Factory.Create(this, (Action)_enumerator!.Dispose));
+            b.AddContent(2, "iter-dispose");
+            b.CloseElement();
+        }
     }
 
     /// <summary>A BnCheckbox whose hook throws <see cref="MissingFieldException"/>, the

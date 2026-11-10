@@ -230,7 +230,7 @@ jobs:
           } 2>&1 | tee ios-out/toolchain.txt
 
       # ── Publish the static NativeAOT archive (assert 4 IL2072) ───────────────
-      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072)
+      - name: Publish ${{ matrix.rid }} (NativeLib=Static; assert exactly 4 IL2072 and no other IL warning)
         run: |
           set -o pipefail
           # NOTE: PublishAot is NOT passed on the CLI. It lives in the SampleApp
@@ -247,6 +247,13 @@ jobs:
           if [ "$il2072" -ne 4 ]; then
             grep 'warning IL2072' ios-out/publish.log || true
             echo "$RID publish IL2072 drift: expected exactly 4, got $il2072" >&2
+            exit 1
+          fi
+          # Phase 18.5 (2026-11-10): also fail on any trim or AOT warning other than the 4 accepted IL2072s.
+          other=$(awk '{ s = $0; while (match(s, /warning IL[23][0-9][0-9][0-9]/)) { if (substr(s, RSTART + 8, 6) != "IL2072") { print; next }; s = substr(s, RSTART + RLENGTH) } }' ios-out/publish.log)
+          if [ -n "$other" ]; then
+            echo "$other"
+            echo "$RID publish: trim or AOT warning(s) other than the 4 accepted IL2072s" >&2
             exit 1
           fi
 

@@ -10,6 +10,8 @@
 **Package manager:** NuGet, Gradle, npm (`website/`)
 **Framework:** Blazor components rendered to native widgets (no WebView)
 **Datastore:** n/a
+**Build:** `dotnet build BlazorNative.sln -c Release`
+**Test:** `dotnet test BlazorNative.sln -c Release`
 
 ## Commits
 

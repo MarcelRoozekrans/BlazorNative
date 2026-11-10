@@ -61,6 +61,92 @@ internal static class BlazorInterop
         }
     }
 
+    /// <summary>Phase 18.5 (#522): where a compiler lambda's call site sits in one component's
+    /// frames. <see cref="Control"/> is a component's short type name, or <c>element</c> and
+    /// the element's name; never carries <c>&lt;</c>.</summary>
+    internal readonly record struct FramePosition(string Control, int Sequence)
+    {
+        public override string ToString() => $"{Control} at sequence {Sequence}";
+    }
+
+    /// <summary>Phase 18.5 (#522): the delegate an attribute frame's value runs, in any shape
+    /// a call site's frame can hold it: what <see cref="HandlerDelegate"/> reads, a raw
+    /// delegate or a boxed <see cref="EventCallback"/>, or a boxed
+    /// <see cref="EventCallback{TValue}"/> of any <c>TValue</c>, the shape a component
+    /// parameter holds. Null for any other value. Runs only on the slow-handler warning path.
+    /// <para>The <c>EventCallback&lt;T&gt;</c> field is read by reflection on the boxed value's
+    /// type, because the walk meets arbitrary <c>T</c> and an <c>[UnsafeAccessor]</c> needs the
+    /// <c>T</c> at compile time. <c>[DynamicDependency]</c> keeps the field in the NativeAOT
+    /// build; the JVM <c>SlowHandlerProbeTest</c> pins that it resolves in the published dll for
+    /// <c>EventCallback&lt;MouseEventArgs&gt;</c> and <c>EventCallback&lt;bool&gt;</c>. Other
+    /// instantiations are unpinned.</para></summary>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicFields, typeof(EventCallback<>))]
+    internal static Delegate? CallbackDelegate(object? value)
+    {
+        if (HandlerDelegate(value) is { } handler)
+            return handler;
+        if (value is null)
+            return null;
+        Type type = value.GetType();
+        if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(EventCallback<>))
+            return null;
+        return ReadDelegateField(value);
+
+        // Suppression scope: IL2075 (GetField on the return value of GetType, which carries no
+        // annotation) is silenced here, and only here, because the value is always a boxed,
+        // closed EventCallback<T> by the check above, and the [DynamicDependency] on
+        // CallbackDelegate keeps EventCallback<>'s non-public fields, Delegate among them. The
+        // analyzer cannot see that link, so ILC reports IL2075 on a NativeAOT publish (measured
+        // in Phase 18.5, record section 5). The JVM SlowHandlerProbeTest pins that the read
+        // resolves in the published dll for EventCallback<MouseEventArgs> and EventCallback<bool>;
+        // other instantiations are unpinned. If the field were trimmed the read returns null and
+        // the warning falls back to the page alone, never a fault.
+        [UnconditionalSuppressMessage("Trimming", "IL2075",
+            Justification = "EventCallback<>'s non-public fields are kept by [DynamicDependency] on " +
+                            "CallbackDelegate. The JVM SlowHandlerProbeTest pins the read in the published dll " +
+                            "for EventCallback<MouseEventArgs> and EventCallback<bool>; other instantiations are unpinned.")]
+        static Delegate? ReadDelegateField(object callback) =>
+            callback.GetType().GetField("Delegate", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(callback) as Delegate;
+    }
+
+    /// <summary>Phase 18.5 (#522): the position of the first attribute frame in
+    /// <paramref name="frames"/> whose value runs <paramref name="method"/>, read with
+    /// <see cref="CallbackDelegate"/>: the element or component frame that attribute belongs
+    /// to, which is the latest one before it, since attribute frames follow their owner's
+    /// frame. Matched by <see cref="MethodInfo"/>, never by delegate instance: a capturing
+    /// lambda is a new delegate on every render. Null when nothing matches. One linear pass;
+    /// runs only on the slow-handler warning path.</summary>
+    internal static FramePosition? FindCallSite(in ArrayRange<RenderTreeFrame> frames, MethodInfo method)
+    {
+        int ownerIndex = -1;
+        for (int i = 0; i < frames.Count; i++)
+        {
+            ref RenderTreeFrame frame = ref frames.Array[i];
+            switch (frame.FrameType)
+            {
+                case RenderTreeFrameType.Element:
+                case RenderTreeFrameType.Component:
+                    ownerIndex = i;
+                    break;
+                case RenderTreeFrameType.Attribute when ownerIndex >= 0
+                        && CallbackDelegate(frame.AttributeValue)?.Method == method:
+                    ref RenderTreeFrame owner = ref frames.Array[ownerIndex];
+                    return owner.FrameType == RenderTreeFrameType.Component
+                        ? new FramePosition(ShortName(owner.ComponentType), owner.Sequence)
+                        : new FramePosition("element " + owner.ElementName, owner.Sequence);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>A type's name cut at the first backtick, so a generic component reads
+    /// <c>BnList</c>, not <c>BnList`1</c>.</summary>
+    private static string ShortName(Type type)
+    {
+        int tick = type.Name.IndexOf('`');
+        return tick < 0 ? type.Name : type.Name[..tick];
+    }
+
     private static void VerifyVersion()
     {
         var actual = typeof(BlazorRenderer).Assembly.GetName().Version;
@@ -147,8 +233,11 @@ internal static class BlazorInterop
 
     /// <summary>Phase 18.2 (#500): the failure text when <paramref name="componentBase"/> has no
     /// instance bool field <c>_hasPendingQueuedRender</c>, else null. Takes the type so a fact can
-    /// plant one without the field; VerifyAccessors passes <c>typeof(ComponentBase)</c>.</summary>
-    internal static string? PendingQueuedRenderFieldProblem(Type componentBase)
+    /// plant one without the field; VerifyAccessors passes <c>typeof(ComponentBase)</c>. The
+    /// parameter's annotation tells the trimmer to keep the non-public fields of every type passed
+    /// in, so the lookup sees the real field in the NativeAOT build and ILC reports no IL2070.</summary>
+    internal static string? PendingQueuedRenderFieldProblem(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicFields)] Type componentBase)
         => componentBase.GetField("_hasPendingQueuedRender", BindingFlags.Instance | BindingFlags.NonPublic)?.FieldType == typeof(bool)
             ? null
             : "ComponentBase._hasPendingQueuedRender (bool) field not found; " +

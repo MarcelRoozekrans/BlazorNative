@@ -2091,18 +2091,21 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <para>When the method is FRAMEWORK code and its delegate's target is a wrapper that
     /// implements <see cref="IForwardsUiEvent"/> and returns the app's delegate for the
     /// event and this recorded delegate, that delegate is resolved instead, by the same
-    /// rule: an app method keys by and names itself. A component <c>@bind-Value</c>
-    /// forwards a lambda the Razor compiler declares on the page, so it names the page;
-    /// <c>:get</c>/<c>:set</c> forwards the app's <c>:set</c> method. Otherwise a
+    /// rule: an app method keys by and names itself, unless the compiler generated it
+    /// (<see cref="IsCompilerGenerated"/>), when the warning names the page that declares
+    /// it and the call site's position on that page, never the generated
+    /// name. A component <c>@bind-Value</c> forwards a lambda the Razor compiler declares
+    /// on the page, so it names the page; <c>:get</c>/<c>:set</c> forwards the app's
+    /// <c>:set</c> method, which is named as written. Otherwise a
     /// framework owner key is combined with the tree-owner key.</para>
     /// <para>The fallback, when no delegate can be reached, its method cannot be
     /// resolved, or resolving it throws, is the tree owner: the component type, the attribute frame's sequence
     /// number and the event name. The delegate is only read here; its method, and the
     /// wrapper's forwarded delegate, are resolved when a dispatch is already over budget,
     /// never on the render path.</para></summary>
-    private readonly record struct HandlerCallSite(Type Component, int Sequence, string EventName, Delegate? Handler)
+    private readonly record struct HandlerCallSite(int ComponentId, Type Component, int Sequence, string EventName, Delegate? Handler)
     {
-        public (string Key, string Owner) Resolve()
+        public (string Key, string Owner, System.Reflection.MethodInfo? Lambda) Resolve()
         {
             if (Handler is not null)
             {
@@ -2111,18 +2114,18 @@ public sealed class NativeRenderer : BlazorRenderer
                     if (OwnerOf(Handler) is { } owner)
                     {
                         if (!owner.Framework)
-                            return ($"{owner.Declaring}::{owner.Method}#{EventName}", $"{owner.Declaring}.{owner.Method}");
+                            return AppSite(owner);
                         if (Handler.Target is IForwardsUiEvent wrapper
                             && wrapper.ForwardedHandler(EventName, Handler) is { } forwarded
                             && OwnerOf(forwarded) is { Framework: false } app)
-                            return ($"{app.Declaring}::{app.Method}#{EventName}", $"{app.Declaring}.{app.Method}");
+                            return AppSite(app);
                         // A FRAMEWORK method is shared by every call site that uses it: each
                         // element @bind of one value type runs Blazor's own binder lambda, and a
                         // BlazorNative.Components wrapper runs its own handler for every
                         // instance. Combined with the tree-owner key it stays per call site,
                         // and the warning names the component that holds the call site.
                         return ($"{owner.Declaring}::{owner.Method}#{Component.FullName}#{Sequence}#{EventName}",
-                            Component.FullName ?? Component.Name);
+                            Component.FullName ?? Component.Name, null);
                     }
                 }
                 catch (Exception)
@@ -2136,19 +2139,69 @@ public sealed class NativeRenderer : BlazorRenderer
                     // SlowHandlerWarningTests.AHookThatThrows_NeverFaultsTheDispatch_….
                 }
             }
-            return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name);
+            return ($"{Component.FullName}#{Sequence}#{EventName}", Component.FullName ?? Component.Name, null);
+        }
+
+        /// <summary>The key and name of an app method. The key is the generated method's
+        /// own, so grouping is unchanged. A compiler-generated method is named by its page,
+        /// never its generated name, and returned as <c>Lambda</c> for the position lookup.
+        /// Everything here that can throw is inside <see cref="Resolve"/>'s catch-all.</summary>
+        private (string Key, string Owner, System.Reflection.MethodInfo? Lambda) AppSite(
+            (string Declaring, string Method, bool Framework, System.Reflection.MethodInfo Info) app)
+        {
+            string key = $"{app.Declaring}::{app.Method}#{EventName}";
+            if (!IsCompilerGenerated(app.Info))
+                return (key, $"{app.Declaring}.{app.Method}", null);
+            Type page = PageOf(app.Info.DeclaringType!);
+            return (key, page.FullName ?? page.Name, app.Info);
         }
 
         /// <summary>The method <paramref name="handler"/> runs, and whether it is framework
         /// code; null when its declaring type has no name. Can throw
         /// <see cref="NotSupportedException"/> under NativeAOT.</summary>
-        private static (string Declaring, string Method, bool Framework)? OwnerOf(Delegate handler)
+        private static (string Declaring, string Method, bool Framework, System.Reflection.MethodInfo Info)? OwnerOf(Delegate handler)
         {
             System.Reflection.MethodInfo method = handler.Method;
             return method.DeclaringType is { FullName: { } declaring } type
-                ? (declaring, method.Name, IsFrameworkAssembly(type.Assembly))
+                ? (declaring, method.Name, IsFrameworkAssembly(type.Assembly), method)
                 : null;
         }
+    }
+
+    /// <summary>Whether the compiler generated <paramref name="method"/>: its name starts
+    /// with <c>&lt;</c>, or its declaring type, or any type enclosing that, does. A lambda's
+    /// method always has a <c>&lt;</c> name; the type chain catches a method with a plain name on
+    /// a generated type, such as the explicit <c>IDisposable.Dispose</c> of an iterator's
+    /// <c>&lt;Items&gt;d__N</c> when a page's handler is the method group
+    /// <c>_enumerator.Dispose</c>. Pinned by
+    /// <c>SlowHandlerWarningTests.AMethodGroupOnAnIteratorsDispose_…</c>. Names only, never
+    /// <c>CompilerGeneratedAttribute</c>: the NativeAOT probe proves names resolve in the
+    /// published dll, and attribute metadata is not guaranteed there.</summary>
+    private static bool IsCompilerGenerated(System.Reflection.MethodInfo method)
+    {
+        if (method.Name.StartsWith('<'))
+            return true;
+        for (Type? t = method.DeclaringType; t is not null; t = t.DeclaringType)
+            if (t.Name.StartsWith('<'))
+                return true;
+        return false;
+    }
+
+    /// <summary>The page a compiler lambda belongs to: walking <c>DeclaringType</c>
+    /// outwards from <paramref name="declaring"/>, the first type whose name is not
+    /// compiler-generated; the outermost type when every one is.</summary>
+    private static Type PageOf(Type declaring)
+    {
+        // All-compiler case: the outermost name can itself contain '<', such as top-level
+        // statements' <Program>$; Razor pages never reach it, and the type is the only name left.
+        Type page = declaring;
+        for (Type? t = declaring; t is not null; t = t.DeclaringType)
+        {
+            page = t;
+            if (!t.Name.StartsWith('<'))
+                return t;
+        }
+        return page;
     }
 
     /// <summary>Whether <paramref name="assembly"/> is framework code for the slow-handler
@@ -2166,7 +2219,7 @@ public sealed class NativeRenderer : BlazorRenderer
     private void RecordCallSite(int componentId, int handlerId, int sequence, string eventName, Delegate? handler)
     {
         if (_componentTypes.TryGetValue(componentId, out Type? component))
-            _handlerCallSites[handlerId] = new HandlerCallSite(component, sequence, eventName, handler);
+            _handlerCallSites[handlerId] = new HandlerCallSite(componentId, component, sequence, eventName, handler);
     }
 
     /// <summary>Each live component's type, for <see cref="RecordCallSite"/>. Kept here
@@ -2253,12 +2306,55 @@ public sealed class NativeRenderer : BlazorRenderer
     /// <summary>The slow-handler key and subject of a UI dispatch: its call site when
     /// the attach was recorded, else its handler id. Formatted only once a dispatch
     /// is over budget, so the hot path allocates nothing for the warning.</summary>
-    private static (string Key, string Subject) DispatchSubject(NativeUiEvent e, HandlerCallSite? site)
+    private (string Key, string Subject) DispatchSubject(NativeUiEvent e, HandlerCallSite? site)
     {
         if (site is not { } s)
             return ($"handler {e.HandlerId}", $"handler {e.HandlerId} '{e.EventName}'");
-        (string key, string owner) = s.Resolve();
+        (string key, string owner, System.Reflection.MethodInfo? lambda) = s.Resolve();
+        if (lambda is not null && CallSitePosition(s.ComponentId, lambda) is { } position)
+            owner = $"{owner}, {position}";
         return (key, $"handler {e.HandlerId} '{e.EventName}' in {owner}");
+    }
+
+    /// <summary>Phase 18.5 (#522): where a compiler lambda's call site sits, for the slow-handler
+    /// warning. Starting at the component whose tree held the dispatched attribute, then up its
+    /// ancestors through the component-parent map, each component's current frames are searched
+    /// for an attribute whose value runs <paramref name="method"/>. A match REPLACES the one
+    /// before it, so the OUTERMOST wins: a page's lambda passed to an app component that forwards
+    /// it to a BnButton is held by all three trees, and the page's is the call site its source
+    /// wrote. A ChildContent's frames sit in the child's tree with the page's sequences, so the
+    /// page's own tree, holding only the fragment, does not override that match.
+    /// <para>Known limit: when one compiler method sits at several call sites on the walk, such as
+    /// a shared static helper's lambda used both in a nested component and in an ancestor, the
+    /// ancestor's site wins, because the outermost match wins. Within one tree that holds the same
+    /// method twice, the first match is used. The items of one loop share one sequence, so they
+    /// are unaffected.</para>
+    /// <para>Runs on the render thread, only once a dispatch is over budget. Any failure, such
+    /// as a component disposed during the dispatch whose frames can no longer be read, returns
+    /// null, never a partial result: an inner match whose ancestor threw may not be the
+    /// outermost. Naming a diagnostic must never fault the dispatch it names.</para></summary>
+    private BlazorInterop.FramePosition? CallSitePosition(int componentId, System.Reflection.MethodInfo method)
+    {
+        try
+        {
+            BlazorInterop.FramePosition? outermost = null;
+            int id = componentId;
+            while (true)
+            {
+                if (BlazorInterop.FindCallSite(GetCurrentRenderTreeFrames(id), method) is { } match)
+                    outermost = match;
+                if (!_tree.TryGetComponentParent(id, out var parent))
+                    return outermost;
+                id = parent.ParentComponentId;
+            }
+        }
+        catch (Exception)
+        {
+            // GetCurrentRenderTreeFrames throws for a component Blazor has already disposed;
+            // anything else here is a diagnostic's failure too. The warning names the page alone.
+            // Pinned by SlowHandlerWarningTests.ASlowHandlerThatHidesItsInput_NamesThePageAlone.
+            return null;
+        }
     }
 
     /// <summary>The start timestamp of a timed synchronous part.</summary>

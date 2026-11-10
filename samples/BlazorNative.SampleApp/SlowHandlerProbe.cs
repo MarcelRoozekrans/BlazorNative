@@ -27,6 +27,10 @@ namespace BlazorNative.SampleApp;
 //     │                         NativeAOT for the bool instantiation only, BnCheckbox's;
 //     │                         see SlowHandlerProbeTest's DOES NOT COVER for the rest
 //     ├─ BnButton "Report"   → restores the previous BnLog sink, and re-renders the echo
+//     ├─ BnCheckbox          → CheckedChanged = a CAPTURING LAMBDA that sleeps the same, the
+//     │                         value-type counterpart of "Slow three": a boxed
+//     │                         EventCallback<bool>, a separate ILC instantiation from
+//     │                         BnButton's EventCallback<MouseEventArgs>
 //     └─ BnText echo: "slow-warnings:<n>" then one "\n<line>" per warning
 //
 // WHY. The warning keys a dispatch by the method its delegate runs. BnButton
@@ -40,6 +44,13 @@ namespace BlazorNative.SampleApp;
 // For the accessor that is the bool instantiation only: ILC compiles the string one
 // through shared canonical code and the int and float ones separately, and none of
 // those runs here.
+//
+// The two capturing lambdas also prove the call-site position in the warning, as in
+// "in BlazorNative.SampleApp.SlowHandlerProbe, BnCheckbox at sequence 34". It is found
+// by reading the boxed EventCallback's non-public Delegate field by reflection, which
+// the trimmer can drop. A null read gives the page alone,
+// so the expected position text shows the read succeeded in the published dll: for a reference T through BnButton,
+// and for a value T through BnCheckbox.
 //
 // WHY THE ECHO READS A SINK. The warning goes to BnLog, which the JVM lane cannot
 // read from the native process's stderr. The page installs a BnLog.Sink when it
@@ -63,6 +74,7 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
 
     private readonly List<string> _warnings = new();
     private int _threePresses;
+    private int _fourPresses;
     private Action<BnLogLevel, string, string>? _previousSink;
 
     protected override void OnInitialized()
@@ -150,6 +162,20 @@ internal sealed class SlowHandlerProbe : ComponentBase, IDisposable
         string echo;
         lock (_warnings)
             echo = EchoPrefix + _warnings.Count + string.Concat(_warnings.Select(w => "\n" + w));
+        // SlowFour: the same capturing shape on a BnCheckbox, so the callback is a boxed
+        // EventCallback<bool>, a value-type instantiation.
+        int presses4 = _fourPresses;
+        b.OpenComponent<BnCheckbox>(34);
+        b.AddComponentParameter(35, nameof(BnCheckbox.CheckedChanged),
+            EventCallback.Factory.Create<bool>(this, v =>
+            {
+                _fourPresses = presses4 + 1;
+#pragma warning disable BN0004 // justification: a deliberate slow handler, the warning's subject
+                Thread.Sleep(SlowMs);
+#pragma warning restore BN0004
+            }));
+        b.CloseComponent();
+
         b.OpenComponent<BnText>(40);
         b.AddComponentParameter(41, nameof(BnText.Text), echo);
         b.CloseComponent();
