@@ -80,7 +80,6 @@ internal static class BlazorInterop
     /// build; the JVM <c>SlowHandlerProbeTest</c> pins that it resolves in the published dll for
     /// <c>EventCallback&lt;MouseEventArgs&gt;</c> and <c>EventCallback&lt;bool&gt;</c>. Other
     /// instantiations are unpinned.</para></summary>
-    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicFields, typeof(EventCallback<>))]
     internal static Delegate? CallbackDelegate(object? value)
     {
         if (HandlerDelegate(value) is { } handler)
