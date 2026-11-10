@@ -46,7 +46,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
   </ItemGroup>
 
   <ItemGroup>
