@@ -4032,7 +4032,7 @@ the app's handler through a forwarding hook.
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 18.6: Test-suite honesty, part two (#543, #544) [status: pending]
+#### Phase 18.6: Test-suite honesty, part two (#543, #544) [status: active]
 **Goal:** A bounded host-call wait plus a Gradle per-test timeout, by owner decision of 2026-10-24, and in-turn `isFinishing` checks in the back tests.
 **Design:** [`docs/superpowers/specs/2026-11-10-phase-18.6-design.md`](../superpowers/specs/2026-11-10-phase-18.6-design.md)
 **Plan:** [`docs/superpowers/plans/2026-11-10-phase-18.6-test-suite-honesty.md`](../superpowers/plans/2026-11-10-phase-18.6-test-suite-honesty.md)
