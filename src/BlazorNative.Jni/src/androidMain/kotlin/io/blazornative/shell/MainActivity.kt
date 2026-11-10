@@ -738,7 +738,9 @@ class MainActivity : FragmentActivity() {
             return
         }
         runtime.dispatchHostEvent(BnHostEvent.Back)
+        if (++scratchBackCount == 2) finish() // SCRATCH S6
     }
+    private var scratchBackCount = 0 // SCRATCH S6
 
     /** Phase 16.2 (#346): .NET's BackUnhandled, on main. Nothing to do once the activity is
      * already going away; otherwise the press goes to the platform's default. */
