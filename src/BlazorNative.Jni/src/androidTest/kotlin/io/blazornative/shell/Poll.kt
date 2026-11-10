@@ -5,7 +5,7 @@ import androidx.test.core.app.ActivityScenario
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import assertFalse
+import org.junit.Assert.assertFalse
 
 /** Neutral on purpose: the poll sees only the state, not what finished the activity. A back
  * press that was not handled on the page is one cause; a crash or the system is another. */
