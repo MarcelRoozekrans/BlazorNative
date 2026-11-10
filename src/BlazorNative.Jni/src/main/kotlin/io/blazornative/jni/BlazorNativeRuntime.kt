@@ -400,6 +400,7 @@ class BlazorNativeRuntime(
      */
     internal fun dispatchHostEventAndWait(event: BnHostEvent, payload: String? = null): Int {
         val future = dispatchLane.submit(java.util.concurrent.Callable {
+            if (event == BnHostEvent.Back) throw IllegalStateException("SCRATCH R4")
             hostEventCore(event.wireName, payload)
         })
         return try {
