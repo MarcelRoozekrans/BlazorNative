@@ -2,7 +2,10 @@ package io.blazornative.shell
 
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import assertFalse
 
 /** Neutral on purpose: the poll sees only the state, not what finished the activity. A back
  * press that was not handled on the page is one cause; a crash or the system is another. */
@@ -92,12 +95,12 @@ internal const val PRESS_FINISHED_THE_ACTIVITY =
  * Do not use it for a back that is meant to finish the activity, such as back at the root.
  */
 internal fun pressHandledBack(scenario: ActivityScenario<MainActivity>): Long {
-    val elapsedMs = java.util.concurrent.atomic.AtomicLong(-1)
+    val elapsedMs = AtomicLong(-1)
     scenario.onActivity { act ->
         val t0 = System.nanoTime()
         act.onBackPressedDispatcher.onBackPressed()
-        elapsedMs.set(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0))
-        org.junit.Assert.assertFalse(PRESS_FINISHED_THE_ACTIVITY, act.isFinishing)
+        elapsedMs.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0))
+        assertFalse(PRESS_FINISHED_THE_ACTIVITY, act.isFinishing)
     }
     return elapsedMs.get()
 }
