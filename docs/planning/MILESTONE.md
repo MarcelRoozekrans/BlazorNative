@@ -43,7 +43,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 - [x] **#543 and #544 are fixed.** Done in 18.6, PR #659.
   - **#543**, decided by the owner on 2026-10-24: bounded wait plus suite timeout. A JVM test that waits on a host call joins it with a bound and fails by name. The Gradle test task has a per-test timeout, so no single test can hold the step for 45 minutes.
   - **#544:** the back tests check in their own turn that a back press does not finish the Activity, and S4, finishing on back, reds all five tests.
-- [ ] **#401 and #396 are fixed.** Each twin divergence is resolved to one documented behaviour on both shells and pinned by a twin pin.
+- [x] **#401 and #396 are fixed.** Each twin divergence is resolved to one documented behaviour on both shells and pinned by a twin pin. Done in 18.7, PR #691.
   - #401 is the stderr pump's level gate.
   - #396 is secure storage on an unenrolled device.
 - [ ] **#530 is fixed.** The process that outlives `dotnet publish` and holds the reference generator's output pipe is identified and fixed at its source. The bound from 17.5 still names it if it ever returns.
@@ -64,7 +64,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [complete]
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
-7. Phase 18.7 — twin divergences (#401, #396) [active]
+7. Phase 18.7 — twin divergences (#401, #396) [complete]
 8. Phase 18.8 — the generator's pipe holder (#530) [pending]
 9. Phase 18.9 — audit and close (#568) [pending]
 

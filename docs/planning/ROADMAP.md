@@ -4040,10 +4040,11 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 18.7: Twin divergences (#401, #396) [status: active]
+#### Phase 18.7: Twin divergences (#401, #396) [status: complete]
 **Goal:** The stderr level gate and unenrolled-device secure storage each get one documented behaviour on both shells, with a twin pin.
 **Design:** [`docs/superpowers/specs/2026-11-11-phase-18.7-design.md`](../superpowers/specs/2026-11-11-phase-18.7-design.md)
 **Plan:** [`docs/superpowers/plans/2026-11-11-phase-18.7-twin-divergences.md`](../superpowers/plans/2026-11-11-phase-18.7-twin-divergences.md)
+**Completed:** 2026-11-11
 **Surface:** Mixed
 **HelpWanted:** no
 
