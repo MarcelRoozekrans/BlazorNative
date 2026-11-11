@@ -217,8 +217,11 @@ object BnShellLog {
      */
     @JvmStatic
     @JvmOverloads
-    fun relay(priority: Int, tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) =
+    fun relay(priority: Int, tag: String, message: String, privacy: BnPrivacy = BnPrivacy.REDACTED) {
+        val gateLevel = (BnLogLevel.ERROR..BnLogLevel.VERBOSE).first { androidPriority(it) == priority }
+        if (!isEnabled(gateLevel)) return
         writeUngated(priority, tag, message, null, privacy)
+    }
 
     private fun write(level: Int, tag: String, message: String, t: Throwable?, privacy: BnPrivacy) {
         if (!isEnabled(level)) return
