@@ -65,6 +65,31 @@ catch (Exception ex)
     return 2;
 }
 
+string stderrPath = Path.Combine(repoRoot, Emitters.StderrVectorsManifestPath.Replace('/', Path.DirectorySeparatorChar));
+
+if (!File.Exists(stderrPath))
+{
+    Console.Error.WriteLine($"stderr-pump-vectors: manifest not found at {stderrPath}");
+    return 2;
+}
+
+StderrPumpVectors stderrVectors;
+try
+{
+    stderrVectors = System.Text.Json.JsonSerializer.Deserialize<StderrPumpVectors>(
+        File.ReadAllText(stderrPath),
+        new System.Text.Json.JsonSerializerOptions
+        {
+            ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        })
+        ?? throw new InvalidOperationException("manifest deserialized to null");
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"stderr-pump-vectors: {Emitters.StderrVectorsManifestPath} is invalid — {ex.Message}");
+    return 2;
+}
+
 var stale = new List<string>();
 foreach ((string relative, string content) in Emitters.EmitAll(vocabulary))
 {
@@ -101,6 +126,23 @@ foreach ((string relative, string content) in Emitters.EmitAllVectors(vectors))
     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     File.WriteAllText(path, content);
     Console.WriteLine($"deeplink-vectors: wrote {relative}");
+}
+
+// The stderr pump vector tables (18.7), through the same staleness rule.
+foreach ((string relative, string content) in Emitters.EmitAllStderrVectors(stderrVectors))
+{
+    string path = Path.Combine(repoRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+    string? existing = File.Exists(path) ? File.ReadAllText(path) : null;
+
+    if (existing is not null && Normalize(existing) == Normalize(content))
+        continue;
+
+    stale.Add(relative);
+    if (check) continue;
+
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllText(path, content);
+    Console.WriteLine($"stderr-pump-vectors: wrote {relative}");
 }
 
 if (check)

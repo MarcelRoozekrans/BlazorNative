@@ -132,6 +132,22 @@ public sealed class WireVocabularyCodegenTests
             Assert.Equal(Normalize(expected), Normalize(File.ReadAllText(path)));
         }
 
+        // The stderr pump tables (18.7) ride the same byte-comparison, so a hand edit
+        // or a manifest change without regenerating reds this fact too.
+        string stderrJson = File.ReadAllText(Path.Combine(root, "src", "stderr-pump-vectors.json"));
+        StderrPumpVectors? stderrVectors = JsonSerializer.Deserialize<StderrPumpVectors>(
+            stderrJson, new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
+        Assert.NotNull(stderrVectors);
+        Assert.True(stderrVectors!.Vectors.Length >= 4,
+            $"the stderr pump vector table has {stderrVectors.Vectors.Length} cases; an empty table "
+            + "emits two empty test tables and both pump suites pass asserting NOTHING.");
+        foreach ((string relative, string expected) in Emitters.EmitAllStderrVectors(stderrVectors))
+        {
+            string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(path), $"generated stderr vector file missing: {relative}");
+            Assert.Equal(Normalize(expected), Normalize(File.ReadAllText(path)));
+        }
+
         // THE SAME REFUSAL ONE LEVEL UP, and the floor above cannot stand in for
         // it: that one guards the MANIFEST, this one guards the EMITTED SET.
         // Dropping a language from EmitAllVectors shrinks the CLI's write set and

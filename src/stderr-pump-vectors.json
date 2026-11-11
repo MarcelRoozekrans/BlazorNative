@@ -1,0 +1,31 @@
+{
+  "$doc": [
+    "STDERR PUMP VECTORS — one table, two test suites (Phase 18.7, #401/#396).",
+    "",
+    "Both shells pump the .NET runtime's stderr into their own log: Kotlin",
+    "BnStderrLogcatPump on Android, Swift BnStderrPump on iOS. Each parses a line",
+    "with its own BnLogFormat.parse and forwards it at the parsed level. The two",
+    "pumps are hand-written twins, so the table they must satisfy is written ONCE",
+    "here and tools/BlazorNative.WireGen emits it for Swift and Kotlin.",
+    "",
+    "Every vector expects the line to be FORWARDED. There is deliberately no",
+    "`forwarded: false` case: on 2026-11-11 the owner decided that the managed level",
+    "is the only gate. The shell level (`shellLevel`) is set on the shell log before",
+    "the line is pumped, and it must NOT suppress a line the managed side emitted.",
+    "A vector that expected a drop would re-introduce the second gate.",
+    "",
+    "Fields: `shellLevel` is the shell log level in force; `line` is the raw stderr",
+    "line; `level`, `category` and `message` are the forwarded record. Levels are the",
+    "BnLogLevel ordinals: 1 Error, 2 Warn, 3 Info, 4 Debug, 5 Verbose. An unprefixed",
+    "line is forwarded at Warn under the category `native`, whole.",
+    "",
+    "TO ADD A CASE: add it here, run `dotnet run --project tools/BlazorNative.WireGen`,",
+    "and commit the regenerated files. Never hand-edit a .g.* file."
+  ],
+  "vectors": [
+    { "name": "warn-at-error",       "shellLevel": 1, "line": "[BN|W|boot] slow start",                          "level": 2, "category": "boot",     "message": "slow start",                                     "why": "a Warn line passes a shell set to Error: the managed level is the only gate" },
+    { "name": "unprefixed-at-error", "shellLevel": 1, "line": "Unhandled exception. System.TypeLoadException: x", "level": 2, "category": "native",   "message": "Unhandled exception. System.TypeLoadException: x", "why": "an unprefixed line is a native fault: forwarded whole at Warn whatever the shell level" },
+    { "name": "debug-at-warn",       "shellLevel": 2, "line": "[BN|D|dispatch] lane idle",                       "level": 4, "category": "dispatch", "message": "lane idle",                                      "why": "a Debug line passes a shell set to Warn" },
+    { "name": "error-at-verbose",    "shellLevel": 5, "line": "[BN|E|render] patch failed",                      "level": 1, "category": "render",   "message": "patch failed",                                   "why": "an Error line is forwarded at Error even on a Verbose shell" }
+  ]
+}
