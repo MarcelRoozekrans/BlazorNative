@@ -245,15 +245,26 @@ enum BnLog {
         emit(BnLogLevel.verbose, category, message(), privacy)
     }
 
-    /// Emits at an arbitrary ordinal — the entry point the `@_cdecl` [BnLogC]
-    /// shim and the stderr pump use, since neither has a level known at compile
-    /// time.
+    /// Emits at an arbitrary ordinal, GATED by the shell's level. Since 18.7 this
+    /// serves only the `@_cdecl` [BnLogC] shim, which has no level known at compile
+    /// time. The stderr pump does not come through here: it uses [relay].
     static func write(_ level: Int32,
                       _ category: String,
                       _ message: @autoclosure () -> String,
                       _ privacy: BnLogPrivacy = .redacted) {
         guard isEnabled(level) else { return }
         emit(level, category, message(), privacy)
+    }
+
+    /// Emits at an arbitrary ordinal WITHOUT applying the shell's level. The stderr
+    /// pump's entry point (18.7, #401): a line that reached fd 2 was already gated
+    /// by .NET's own level, so gating it again here would drop lines a managed
+    /// `BnLog.Level` raise had let through. Pinned by `BnStderrPumpTwinTests`.
+    static func relay(_ level: Int32,
+                      _ category: String,
+                      _ message: String,
+                      _ privacy: BnLogPrivacy = .redacted) {
+        emit(level, category, message, privacy)
     }
 
     // ── the unified-log sink ─────────────────────────────────────────────────
