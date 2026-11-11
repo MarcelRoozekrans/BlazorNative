@@ -349,40 +349,54 @@ try {
             }
         }
         else {
-            $libDir = Join-Path $dest "lib\net10.0"
-            if (-not (Test-Path $libDir)) {
-                Write-Fail "$id`: lib/net10.0/ missing from the package"
-                exit 1
-            }
-            $libFiles = @(Get-ChildItem $libDir -File | Sort-Object Name)
+            # Every library package multi-targets: each shipped TFM folder must
+            # carry exactly the assembly + its XML doc, and nothing else (no
+            # third TFM folder either). net10.0 stays the floor the type scan
+            # reads; net11.0 is the added target.
             $expectedLib = @("$id.dll", "$id.xml")
-            if (Compare-Object @($libFiles.Name) $expectedLib) {
-                Write-Fail "$id`: lib/net10.0 must carry exactly one assembly + its XML doc ($($expectedLib -join ', ')), found: $($libFiles.Name -join ', ')"
+            $shippedTfms = @("net10.0", "net11.0")
+            $libTfms = @(Get-ChildItem (Join-Path $dest "lib") -Directory | ForEach-Object { $_.Name } | Sort-Object)
+            if (Compare-Object $libTfms $shippedTfms) {
+                Write-Fail "$id`: lib/ must carry exactly $($shippedTfms -join ', '), found: $($libTfms -join ', ')"
                 exit 1
             }
+            foreach ($tfm in $shippedTfms) {
+                $tfmDir = Join-Path $dest "lib\$tfm"
+                $libFiles = @(Get-ChildItem $tfmDir -File | Sort-Object Name)
+                if (Compare-Object @($libFiles.Name) $expectedLib) {
+                    Write-Fail "$id`: lib/$tfm must carry exactly one assembly + its XML doc ($($expectedLib -join ', ')), found: $($libFiles.Name -join ', ')"
+                    exit 1
+                }
+            }
+            $libDir = Join-Path $dest "lib\net10.0"
             $dll = Join-Path $libDir "$id.dll"
         }
 
         # ── type-level purity, off the PE (no loading) ───────────────────────
-        $typeNames = @(Get-TypeNames $dll)
+        # Every shipped assembly is scanned, not just the net10.0 floor: a type that
+        # only exists in the net11.0 build would otherwise ship unchecked.
+        $scanDlls = if ($proj -eq "Analyzers") { @($dll) } else { @("net10.0", "net11.0") | ForEach-Object { Join-Path $dest "lib\$_\$id.dll" } }
+        foreach ($dll in $scanDlls) {
+            $typeNames = @(Get-TypeNames $dll)
 
-        # The positive control FIRST — the absence assertions below are only
-        # worth their exit code if the scanner can see the surface at all.
-        if ($typeNames.Count -eq 0) {
-            Write-Fail "$id`: the type scan read ZERO types out of $([System.IO.Path]::GetFileName($dll)) — every purity assertion below would pass VACUOUSLY over a blind scanner. This is Get-TypeNames failing to see its subject, not a clean package (Gate 1 review, I-3)."
-            exit 1
-        }
-        $sentinel = $sentinels[$proj]
-        if ($typeNames -cnotcontains $sentinel) {
-            Write-Fail "$id`: the sentinel type '$sentinel' is NOT among the $($typeNames.Count) types the scan read from $([System.IO.Path]::GetFileName($dll)) — either the scanner is misreading the surface (the purity assertions below are then vacuous) or the package genuinely lost a load-bearing type. Both are stop-and-analyze; do not 'fix' this by changing the sentinel without reading the dll (Gate 1 review, I-3)."
-            exit 1
-        }
+            # The positive control FIRST — the absence assertions below are only
+            # worth their exit code if the scanner can see the surface at all.
+            if ($typeNames.Count -eq 0) {
+                Write-Fail "$id`: the type scan read ZERO types out of $([System.IO.Path]::GetFileName($dll)) — every purity assertion below would pass VACUOUSLY over a blind scanner. This is Get-TypeNames failing to see its subject, not a clean package (Gate 1 review, I-3)."
+                exit 1
+            }
+            $sentinel = $sentinels[$proj]
+            if ($typeNames -cnotcontains $sentinel) {
+                Write-Fail "$id`: the sentinel type '$sentinel' is NOT among the $($typeNames.Count) types the scan read from $([System.IO.Path]::GetFileName($dll)) — either the scanner is misreading the surface (the purity assertions below are then vacuous) or the package genuinely lost a load-bearing type. Both are stop-and-analyze; do not 'fix' this by changing the sentinel without reading the dll (Gate 1 review, I-3)."
+                exit 1
+            }
 
-        $offenders = @($typeNames | Where-Object { $_ -match $appShapedPattern })
-        $offenders += @($typeNames | Where-Object { $movedRoster -ccontains $_ })
-        if ($offenders.Count -ne 0) {
-            Write-Fail "$id`: app-shaped/moved types INSIDE the packed dll ($([System.IO.Path]::GetFileName($dll))): $((@($offenders | Select-Object -Unique)) -join ', ') — shipped packages carry no app types (8.0 rule, 8.1 packaging tooth)"
-            exit 1
+            $offenders = @($typeNames | Where-Object { $_ -match $appShapedPattern })
+            $offenders += @($typeNames | Where-Object { $movedRoster -ccontains $_ })
+            if ($offenders.Count -ne 0) {
+                Write-Fail "$id`: app-shaped/moved types INSIDE the packed dll ($([System.IO.Path]::GetFileName($dll))): $((@($offenders | Select-Object -Unique)) -join ', ') — shipped packages carry no app types (8.0 rule, 8.1 packaging tooth)"
+                exit 1
+            }
         }
 
         # ── Gate B (Phase 11.0): the Runtime package SHIPS the deep-link route
@@ -487,7 +501,7 @@ try {
 
     # ── 5. Run the smoke ─────────────────────────────────────────────────────
     Write-Step "running ConsumerSmoke (mount + patch-set + RegisterPages assertions) ..."
-    $dll = Join-Path $smokeDir "bin\Release\net10.0\ConsumerSmoke.dll"
+    $dll = Join-Path $smokeDir "bin\Release\net11.0\ConsumerSmoke.dll"
     & dotnet $dll 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "ConsumerSmoke exited $LASTEXITCODE"

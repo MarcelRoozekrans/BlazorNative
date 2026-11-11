@@ -2,7 +2,8 @@
 # BlazorNative — prerequisite installer for Linux and macOS.
 #
 # The counterpart of setup.ps1 (Windows). Installs and verifies:
-#   • the .NET SDK band pinned in global.json
+#   • the .NET SDK band pinned in global.json, plus the .NET 10 runtime (the net10.0
+#     test runs, the route generator and the NativeAOT head target net10.0)
 #   • PowerShell 7 (pwsh) — the .NET suite's reference-drift fixtures run
 #     scripts/generate-reference.ps1 through it
 #   • Temurin JDK 25, the version CI builds on, unless JAVA_HOME already holds it
@@ -151,6 +152,26 @@ else
         exports+=('export PATH="$HOME/.dotnet:$PATH"')
     else
         fail ".NET SDK install did not produce a $pin_mm.${pin_band}xx SDK >= $sdk_pin"
+        exit 1
+    fi
+fi
+
+# The SDK in global.json is .NET 11, which ships no .NET 10 runtime. The net10.0
+# test runs, the net10.0 route generator and the net10.0 NativeAOT head need one.
+has_net10_runtime() { dotnet --list-runtimes 2>/dev/null | grep -q '^Microsoft\.NETCore\.App 10\.'; }
+if has_net10_runtime; then
+    ok ".NET 10 runtime is installed"
+else
+    step "Installing the .NET 10 runtime into ~/.dotnet..."
+    installer="$(mktemp)"
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$installer"
+    bash "$installer" --runtime dotnet --channel 10.0 --install-dir "$HOME/.dotnet" >/dev/null
+    rm -f "$installer"
+    if has_net10_runtime; then
+        ok ".NET 10 runtime installed"
+        remember_export DOTNET_ROOT "$HOME/.dotnet"
+    else
+        fail ".NET 10 runtime install did not produce a Microsoft.NETCore.App 10.x runtime"
         exit 1
     fi
 fi

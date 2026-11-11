@@ -186,7 +186,7 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 
 | Surface | Command | Count | Asserted by |
 |---|---|---|---|
-| .NET | `dotnet test` | 1412 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
+| .NET | `dotnet test` | 2824 passed / 0 skipped | `ci.yml` → `build-test` — **required, gates the PR** |
 | JVM (JNA + win-x64 .dll) | `gradlew testDebugUnitTest` | 209 | `ci.yml` → `build-test` — **required, gates the PR** |
 | Android (instrumented, AVD) | `gradlew connectedAndroidTest` | 271 | `android-instrumented.yml` — advisory (nightly/dispatch) |
 | iOS (XCTest, simulator) | `xcodebuild test` | 296 | `ios.yml` — advisory (on-merge/dispatch) |
@@ -195,7 +195,7 @@ re-parses this table against the gates, so these numbers can't quietly go stale.
 
 | Tool | Purpose | Required |
 |---|---|---|
-| .NET 10 SDK (see `global.json`) | build + NativeAOT publish | ✅ |
+| .NET 11 SDK (see `global.json`) | build + NativeAOT publish | ✅ |
 | PowerShell 7 (`pwsh`) | the .NET suite's reference-drift tests | ✅ |
 | Temurin JDK 25 (the CI version) | Gradle / Kotlin shell | ✅ |
 | Android SDK + NDK 26.3 | bionic cross-compile + emulator | for Android |

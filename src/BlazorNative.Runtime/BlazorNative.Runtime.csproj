@@ -21,7 +21,7 @@
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BlazorNative.Runtime</RootNamespace>
@@ -164,7 +164,10 @@
     </ItemGroup>
     <Error Condition="'@(_RouteGenToolFile)' == ''"
            Text="_AddRouteGenToolToPackage: no BlazorNative.RouteGen output under '$(RouteGenToolDir)' — the deep-link route codegen tool did not build, so this package would ship without it and every consumer's GenerateBlazorNativeRoutes would fail. Build tools/BlazorNative.RouteGen first (the ProjectReference above does this on a normal pack)." />
-    <ItemGroup>
+    <!-- The tool is TFM-independent and this package multi-targets, so the target
+         runs once per TFM: add the files on the net10.0 pass only, or pack warns
+         NU5118 (already contains file) for every file on the second pass. -->
+    <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
       <TfmSpecificPackageFile Include="@(_RouteGenToolFile)">
         <PackagePath>tools/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
       </TfmSpecificPackageFile>
