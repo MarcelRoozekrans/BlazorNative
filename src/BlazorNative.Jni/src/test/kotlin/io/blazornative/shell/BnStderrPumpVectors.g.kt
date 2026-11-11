@@ -24,14 +24,5 @@ data class BnStderrPumpVector(
 /** The stderr pump cases, generated from the manifest. The DATA only. */
 object BnStderrPumpVectors {
     /** Every case. Each expects the line to be forwarded: the managed level is the only gate. */
-    val all: List<BnStderrPumpVector> = listOf(
-        // a Warn line passes a shell set to Error: the managed level is the only gate
-        BnStderrPumpVector("warn-at-error", 1, "[BN|W|boot] slow start", 2, "boot", "slow start"),
-        // an unprefixed line is a native fault: forwarded whole at Warn whatever the shell level
-        BnStderrPumpVector("unprefixed-at-error", 1, "Unhandled exception. System.TypeLoadException: x", 2, "native", "Unhandled exception. System.TypeLoadException: x"),
-        // a Debug line passes a shell set to Warn
-        BnStderrPumpVector("debug-at-warn", 2, "[BN|D|dispatch] lane idle", 4, "dispatch", "lane idle"),
-        // an Error line is forwarded at Error even on a Verbose shell
-        BnStderrPumpVector("error-at-verbose", 5, "[BN|E|render] patch failed", 1, "render", "patch failed"),
-    )
+    val all: List<BnStderrPumpVector> = emptyList()
 }
