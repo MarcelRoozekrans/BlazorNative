@@ -373,25 +373,30 @@ try {
         }
 
         # ── type-level purity, off the PE (no loading) ───────────────────────
-        $typeNames = @(Get-TypeNames $dll)
+        # Every shipped assembly is scanned, not just the net10.0 floor: a type that
+        # only exists in the net11.0 build would otherwise ship unchecked.
+        $scanDlls = if ($proj -eq "Analyzers") { @($dll) } else { @("net10.0", "net11.0") | ForEach-Object { Join-Path $dest "lib\$_\$id.dll" } }
+        foreach ($dll in $scanDlls) {
+            $typeNames = @(Get-TypeNames $dll)
 
-        # The positive control FIRST — the absence assertions below are only
-        # worth their exit code if the scanner can see the surface at all.
-        if ($typeNames.Count -eq 0) {
-            Write-Fail "$id`: the type scan read ZERO types out of $([System.IO.Path]::GetFileName($dll)) — every purity assertion below would pass VACUOUSLY over a blind scanner. This is Get-TypeNames failing to see its subject, not a clean package (Gate 1 review, I-3)."
-            exit 1
-        }
-        $sentinel = $sentinels[$proj]
-        if ($typeNames -cnotcontains $sentinel) {
-            Write-Fail "$id`: the sentinel type '$sentinel' is NOT among the $($typeNames.Count) types the scan read from $([System.IO.Path]::GetFileName($dll)) — either the scanner is misreading the surface (the purity assertions below are then vacuous) or the package genuinely lost a load-bearing type. Both are stop-and-analyze; do not 'fix' this by changing the sentinel without reading the dll (Gate 1 review, I-3)."
-            exit 1
-        }
+            # The positive control FIRST — the absence assertions below are only
+            # worth their exit code if the scanner can see the surface at all.
+            if ($typeNames.Count -eq 0) {
+                Write-Fail "$id`: the type scan read ZERO types out of $([System.IO.Path]::GetFileName($dll)) — every purity assertion below would pass VACUOUSLY over a blind scanner. This is Get-TypeNames failing to see its subject, not a clean package (Gate 1 review, I-3)."
+                exit 1
+            }
+            $sentinel = $sentinels[$proj]
+            if ($typeNames -cnotcontains $sentinel) {
+                Write-Fail "$id`: the sentinel type '$sentinel' is NOT among the $($typeNames.Count) types the scan read from $([System.IO.Path]::GetFileName($dll)) — either the scanner is misreading the surface (the purity assertions below are then vacuous) or the package genuinely lost a load-bearing type. Both are stop-and-analyze; do not 'fix' this by changing the sentinel without reading the dll (Gate 1 review, I-3)."
+                exit 1
+            }
 
-        $offenders = @($typeNames | Where-Object { $_ -match $appShapedPattern })
-        $offenders += @($typeNames | Where-Object { $movedRoster -ccontains $_ })
-        if ($offenders.Count -ne 0) {
-            Write-Fail "$id`: app-shaped/moved types INSIDE the packed dll ($([System.IO.Path]::GetFileName($dll))): $((@($offenders | Select-Object -Unique)) -join ', ') — shipped packages carry no app types (8.0 rule, 8.1 packaging tooth)"
-            exit 1
+            $offenders = @($typeNames | Where-Object { $_ -match $appShapedPattern })
+            $offenders += @($typeNames | Where-Object { $movedRoster -ccontains $_ })
+            if ($offenders.Count -ne 0) {
+                Write-Fail "$id`: app-shaped/moved types INSIDE the packed dll ($([System.IO.Path]::GetFileName($dll))): $((@($offenders | Select-Object -Unique)) -join ', ') — shipped packages carry no app types (8.0 rule, 8.1 packaging tooth)"
+                exit 1
+            }
         }
 
         # ── Gate B (Phase 11.0): the Runtime package SHIPS the deep-link route

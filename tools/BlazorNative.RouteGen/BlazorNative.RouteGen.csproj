@@ -44,6 +44,10 @@
     <RootNamespace>BlazorNative.RouteGen</RootNamespace>
     <AssemblyName>BlazorNative.RouteGen</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- The packaged tool runs on whatever runtime the consumer has: a machine with
+         only the .NET 11 SDK has no 10.x runtime, and `dotnet RouteGen.dll` does not
+         roll forward a major version by default. -->
+    <RollForward>Major</RollForward>
     <!-- A build-time host tool: never AOT, never RID-specific. The consumer's
          ProjectReference undefines RuntimeIdentifier so this builds for the
          host even during a linux-bionic publish. -->

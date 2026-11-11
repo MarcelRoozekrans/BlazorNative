@@ -4,7 +4,8 @@
     BlazorNative — full prerequisite installer for Windows 11
 .DESCRIPTION
     Installs and configures everything needed to build and run BlazorNative:
-      • the .NET 10 SDK band pinned in global.json
+      • the .NET SDK band pinned in global.json, plus the .NET 10 runtime (the net10.0
+        test runs, the route generator and the NativeAOT head target net10.0)
       • PowerShell 7 (pwsh) — the .NET suite's reference-drift fixtures run
         scripts/generate-reference.ps1 through it
       • Temurin JDK 25, the version CI builds on (Android toolchain + Gradle daemon)
@@ -133,14 +134,14 @@ if (Command-Exists "winget") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. .NET 10 SDK
+# 2. .NET SDK + .NET 10 runtime
 # ─────────────────────────────────────────────────────────────────────────────
 
 Write-Header "2 · .NET SDK (the band global.json pins)"
 
 # global.json pins an exact version with rollForward latestPatch, so any SDK in
-# the same feature band at or above it satisfies it: 10.0.401 → 10.0.4xx >= 401.
-# Any other 10.x SDK installs fine and then fails every build on global.json.
+# the same feature band at or above it satisfies it: 11.0.100 → 11.0.1xx >= 100.
+# Any other 11.x SDK installs fine and then fails every build on global.json.
 $sdkPin = [version](Get-Content (Join-Path $PSScriptRoot "global.json") -Raw | ConvertFrom-Json).sdk.version
 function Find-PinnedSdk {
     if (-not (Command-Exists "dotnet")) { return $null }
@@ -186,6 +187,20 @@ if (Command-Exists "pwsh") {
     Refresh-Path
     if (-not (Command-Exists "pwsh")) {
         Write-Warn "pwsh not on PATH yet — open a fresh terminal before running the .NET suite"
+    }
+}
+
+# The SDK in global.json is .NET 11, which ships no .NET 10 runtime. The net10.0
+# test runs, the net10.0 route generator and the net10.0 NativeAOT head need one.
+function Has-Net10Runtime { [bool]((dotnet --list-runtimes 2>$null) -match '^Microsoft\.NETCore\.App 10\.') }
+if (Has-Net10Runtime) {
+    Write-OK ".NET 10 runtime is installed"
+} else {
+    Invoke-Winget "Microsoft.DotNet.Runtime.10" ".NET 10 runtime"
+    Refresh-Path
+    if (-not (Has-Net10Runtime)) {
+        Write-Fail "no Microsoft.NETCore.App 10.x runtime after install — install it from https://dotnet.microsoft.com/download/dotnet/10.0"
+        exit 1
     }
 }
 
@@ -439,7 +454,7 @@ if (Test-Path "BlazorNative.sln") {
 
 Write-Host ""
 Write-Host "  ────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  Setup complete (.NET 10 · JDK $jdkMajor · Android SDK/NDK 26.3 · bionic NativeAOT)" -ForegroundColor White
+Write-Host "  Setup complete (.NET 11 · JDK $jdkMajor · Android SDK/NDK 26.3 · bionic NativeAOT)" -ForegroundColor White
 Write-Host ""
 Write-Host "    ✓ Passed  : $script:passed" -ForegroundColor Green
 if ($script:skipped -gt 0) {

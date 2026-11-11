@@ -23,6 +23,11 @@
 
   <PropertyGroup>
     <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <!-- The reference-drift fixtures run `dotnet tool restore` and publish into shared
+         artifacts/ directories. xUnit's collection serialises them inside one test host
+         only, so two hosts side by side would race on the NuGet cache and on those
+         directories. Run the target frameworks one after the other. -->
+    <TestTfmsInParallel>false</TestTfmsInParallel>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
