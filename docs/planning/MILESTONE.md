@@ -64,7 +64,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [complete]
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
-7. Phase 18.7 — twin divergences (#401, #396) [pending]
+7. Phase 18.7 — twin divergences (#401, #396) [active]
 8. Phase 18.8 — the generator's pipe holder (#530) [pending]
 9. Phase 18.9 — audit and close (#568) [pending]
 
