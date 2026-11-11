@@ -157,7 +157,7 @@ enum BnLog {
     /// default" rule `Exports.ToPlatformKind` applies to the neighbouring ordinal
     /// at offset 24.
     static func setLevelFromOrdinal(_ ordinal: Int32) {
-        level = (ordinal >= BnLogLevel.error && ordinal <= BnLogLevel.verbose) ? ordinal : defaultLevel
+        _ = ordinal
     }
 
     /// Would a message at `level` be emitted? Public because it is how a caller

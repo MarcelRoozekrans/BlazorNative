@@ -148,8 +148,7 @@ object BnShellLog {
      */
     @JvmStatic
     fun setLevelFromOrdinal(ordinal: Int) {
-        threshold = if (ordinal >= BnLogLevel.ERROR && ordinal <= BnLogLevel.VERBOSE)
-            ordinal else DEFAULT_LEVEL
+        // mutation 18.7-R3: the level is never applied
     }
 
     /** The current threshold — a [BnLogLevel] ordinal, never [BnLogLevel.UNSET]. */
