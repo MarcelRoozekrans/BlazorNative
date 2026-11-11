@@ -1466,6 +1466,11 @@ class AndroidShellBridge(
      * prove no orphan blob survives a delete. Reads the prefs only. */
     internal fun hasBlobForTest(key: String): Boolean = loadBlob(key) != null
 
+    /** 18.7 (#396) test seam: whether the AndroidKeyStore holds a key entry for [key], so a pin can
+     * prove a refused auth-bound set left no key behind. Reads the keystore only. */
+    internal fun hasKeystoreEntryForTest(key: String): Boolean =
+        androidKeyStore().containsAlias(aliasFor(key))
+
     /** 18.3 (#506) test seam: whether [key] is held by a pending prompt, on any bridge since 18.4.
      * Reads [held] on the secure-storage executor, its only thread, through a latch, as
      * [drainForTest] does. */

@@ -473,9 +473,11 @@ public enum BiometricStatus
 //                    produce a different status there, and secureErrorStatus classifies
 //                    only InvalidAlgorithmParameterException / IllegalStateException as
 //                    Unavailable — everything else, for example a key invalidated by an
-//                    enrolment change (KeyPermanentlyInvalidatedException), is Error. On
-//                    iOS what an unenrolled auth-bound SET returns is NOT ESTABLISHED —
-//                    see #396.
+//                    enrolment change (KeyPermanentlyInvalidatedException), is Error.
+//                    An auth-bound SET with no enrolled biometric returns Unavailable and
+//                    stores nothing on BOTH shells (18.7, #396): Android's provisionKey
+//                    refuses the key, and iOS checks enrolment before it builds the access
+//                    control. With no biometric hardware each shell answers for itself.
 //   4 Error        — unexpected host error (a caught throw, a decrypt failure, malformed/oversize args)
 //
 // NotFound (1), AuthFailed (2), Unavailable (3) and Error (4) are all VALUES,
@@ -499,9 +501,9 @@ public enum SecureStorageStatus
     /// the auth-bound <c>set</c> path refusing to provision a key when no biometric is
     /// enrolled — a <c>getWithAuth</c> of an existing item does not reach this status the
     /// same way; a denied or unavailable prompt there always resolves to
-    /// <c>AuthFailed</c> instead. <b>On iOS, what an unenrolled auth-bound <c>set</c>
-    /// returns is not yet established</b> (issue #396) — do not assume it agrees with
-    /// Android until that is settled on a device.</summary>
+    /// <c>AuthFailed</c> instead. An auth-bound <c>set</c> with no enrolled biometric
+    /// returns <c>Unavailable</c> and stores nothing on both shells (since 18.7, issue
+    /// #396). With no biometric hardware each shell answers for itself.</summary>
     Unavailable = 3,
     /// <summary>Unexpected host error (a caught throw, a decrypt failure, malformed/oversize args).</summary>
     Error = 4,
