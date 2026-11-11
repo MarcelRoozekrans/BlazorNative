@@ -46,6 +46,12 @@ class BnStderrPumpTwinTest {
         BnShellLog.setLevelFromOrdinal(BnLogLevel.UNSET)
     }
 
+    private fun writeGated(level: Int) = when (level) {
+        BnLogLevel.INFO -> BnShellLog.info("control", "gated")
+        BnLogLevel.DEBUG -> BnShellLog.debug("control", "gated")
+        else -> BnShellLog.verbose("control", "gated")
+    }
+
     @Test
     fun `every_vector_is_forwarded_whatever_the_shell_level`() {
         for (v in BnStderrPumpVectors.all) {
@@ -55,19 +61,34 @@ class BnStderrPumpTwinTest {
             BnShellLog.reveal = true
             BnShellLog.sink = { priority, tag, message -> captured += Triple(priority, tag, message) }
 
-            // Level control: a line one level below the threshold must be gated.
-            // Warn and Error are ungated, so the control starts at Info.
+            // Level controls. A pump that forwards everything also passes if the
+            // shell level was never applied, so prove the level took, three ways.
+            // 1. The setter took: the getter reads back the vector's level.
+            assertEquals(
+                v.shellLevel, BnShellLog.level(),
+                "shell level ${v.shellLevel} was not applied: the shell's level setter did not take",
+            )
+            // 2. Positive: a gated line AT the shell level reaches the sink. Warn and
+            //    Error are ungated in BnShellLog, so this only exists from Info up.
+            if (v.shellLevel >= BnLogLevel.INFO) {
+                writeGated(v.shellLevel)
+                assertEquals(
+                    1, captured.size,
+                    "shell level ${v.shellLevel} was not applied: a gated line at it did not reach the sink",
+                )
+            }
+            // 3. Negative: a gated line one below the threshold is dropped. It is
+            //    never below Info for the same reason.
+            captured.clear()
             if (v.shellLevel < BnLogLevel.VERBOSE) {
-                when (maxOf(v.shellLevel + 1, BnLogLevel.INFO)) {
-                    BnLogLevel.INFO -> BnShellLog.info("control", "gated")
-                    BnLogLevel.DEBUG -> BnShellLog.debug("control", "gated")
-                    else -> BnShellLog.verbose("control", "gated")
-                }
+                writeGated(maxOf(v.shellLevel + 1, BnLogLevel.INFO))
                 assertTrue(
                     captured.isEmpty(),
                     "shell level ${v.shellLevel} was not applied: a gated line below it reached the sink",
                 )
             }
+            // The collector must hold only the forwarded record from here on.
+            captured.clear()
 
             BnStderrLogcatPump.forward(BnLogFormat.parse(v.line))
 
