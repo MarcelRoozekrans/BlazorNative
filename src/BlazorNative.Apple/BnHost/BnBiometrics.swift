@@ -173,9 +173,11 @@ final class BnBiometrics {
 
     // ── Test seams (static, reset in teardown — the BnGeolocation/BnNotifications twins) ──
 
-    /// Overrides the read of `canEvaluatePolicy` so a hosted test drives `check`
+    /// Overrides the read of `canEvaluatePolicy` so a hosted test drives `check`, and
+    /// since 18.7 (#396) the enrolment check of an auth-bound `BnSecureStorage.secureSet`,
     /// deterministically (the sim's real biometric-availability state is not drivable).
-    /// Returns (canEvaluate, error?). Null in production → the real LAContext is asked.
+    /// Both read it through `evaluateBiometry`. Returns (canEvaluate, error?). Null in
+    /// production → the real LAContext is asked.
     static var canEvaluatePolicyOverrideForTest: (() -> (Bool, Error?))?
 
     /// Overrides the async `evaluatePolicy` REPLY so a hosted test drives the
@@ -299,17 +301,28 @@ final class BnBiometrics {
     /// map the LAError (not-available/not-enrolled ⇒ Unavailable, lockout ⇒ LockedOut) —
     /// a status, never a throw. Never prompts.
     private func canAuthenticateStatus() -> Int32 {
-        let canEvaluate: Bool
-        let error: Error?
-        if let override = Self.canEvaluatePolicyOverrideForTest {
-            (canEvaluate, error) = override()
-        } else {
-            var err: NSError?
-            canEvaluate = Self.makeContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
-            error = err
-        }
+        let (canEvaluate, error) = Self.evaluateBiometry()
         if canEvaluate { return BnBiometricStatus.authenticated }
         return mapError(error)
+    }
+
+    /// 18.7 (#396): the one read of "can biometry be evaluated here". It backs this
+    /// handler's `check` and `BnSecureStorage.secureSet`'s enrolment check, so the one
+    /// seam, `canEvaluatePolicyOverrideForTest`, drives both. Returns the override's
+    /// answer when it is set; otherwise asks a fresh `LAContext` from `makeContext`,
+    /// never the boot warm-up's, for `canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)`,
+    /// the policy the authorized read evaluates.
+    ///
+    /// It takes no lock and uses no queue, so it runs on whichever thread calls it:
+    /// `workQueue` for `check`, the secure-storage queue for an auth-bound set. It
+    /// never prompts. Its cost is one `LAContext` creation, timed by `BnLAContextTiming`
+    /// like every other, plus the read.
+    static func evaluateBiometry() -> (Bool, Error?) {
+        if let override = canEvaluatePolicyOverrideForTest { return override() }
+        var err: NSError?
+        let canEvaluate = makeContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
+        let error: Error? = err
+        return (canEvaluate, error)
     }
 
     /// Presents the Face/Touch ID prompt (or the seam reply) and maps the outcome. The

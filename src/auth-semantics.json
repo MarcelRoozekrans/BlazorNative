@@ -1,6 +1,6 @@
 {
   "$doc": [
-    "AUTH SEMANTICS — one meaning for requireAuth, seven sites, two shells (#213 item 1).",
+    "AUTH SEMANTICS — one meaning for requireAuth, eight sites, two shells (#213 item 1).",
     "",
     "`requireAuth: true` means BIOMETRY. Not biometry-or-passcode. Every site below",
     "that gates or probes access must say so in its own platform's vocabulary.",
@@ -188,6 +188,14 @@
       "kind": "probe",
       "token": ".deviceOwnerAuthenticationWithBiometrics",
       "reason": "backs the `check` capability report, the Apple twin of androidCanAuthenticate."
+    },
+    {
+      "name": "appleStorageEnrolmentCheck",
+      "file": "src/BlazorNative.Apple/BnHost/BnBiometrics.swift",
+      "language": "swift",
+      "kind": "probe",
+      "token": ".deviceOwnerAuthenticationWithBiometrics",
+      "reason": "18.7, #396: the enrolment check an auth-bound BnSecureStorage.secureSet asks before it builds the ACL. With no enrolled biometric, or no biometric hardware, the set returns Unavailable and stores nothing, as Android's provisionKey does. It must probe the same authenticator class the write ACL and the read policy demand, or a set could pass on a device whose read then refuses. The token lives in BnBiometrics.evaluateBiometry, which secureSet calls and which also backs `check`, so this site and appleBiometricsCanEvaluate name one occurrence, and appleBiometricsEvaluate shares the file and the token: per coverage limit (1), deleting the call does not red this site. A CHANGE of policy at that call reds the completeness scan instead, as an undeclared authenticator. That the set asks at all is pinned behaviourally by BnSecureStorageTests, not here."
     }
   ],
   "ignored": [

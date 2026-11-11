@@ -16,7 +16,12 @@
 //       – getWithAuth of an absent key is NotFound; of a plain item reads DIRECTLY (no
 //         prompt); of an auth item engages the gate and a seam-DENY is AuthFailed — DATA,
 //         no hang; a seam-AUTHORIZE returns the value in {"value":…};
-//       – the iOS-vs-Android ASYMMETRY: an auth-bound `set` does NOT prompt on iOS.
+//       – the iOS-vs-Android ASYMMETRY: an auth-bound `set` does NOT prompt on iOS;
+//       – 18.7 (#396): an auth-bound `set` with no enrolled biometric, or no biometric
+//         hardware, is Unavailable and stores nothing, as on Android. Seamed through
+//         `BnBiometrics.canEvaluatePolicyOverrideForTest`, and end to end, unseamed, on
+//         the lane's unenrolled simulator. setUp reports biometry evaluable so every
+//         other auth set keeps reaching the real Keychain.
 //   • UNPROVEN until a physical iPhone (the M9 deferral, named not smuggled): the REAL
 //     Face ID sheet + the TEE-enforced Secure-Enclave read behind it (the simulator's
 //     enrolled Face ID is a menu toggle, not a TrueDepth capture, and the real gesture is
@@ -43,12 +48,22 @@ final class BnSecureStorageTests: BnHostTestCase {
     override func setUp() {
         super.setUp()
         BnSecureStorage.resetForTest()
+        BnBiometrics.resetForTest()
+        // 18.7 (#396): an auth-bound set now asks `BnBiometrics.evaluateBiometry` first,
+        // and the CI simulator has no enrolled biometric, so without this every auth set
+        // below would be refused as Unavailable before it reached the Keychain. Every
+        // test here that does an auth set and expects a store, the hosted begin paths and
+        // the pairing boot test included, runs with biometry reported as evaluable, so it
+        // keeps exercising the REAL Keychain path. The #396 tests replace it per test, and
+        // the unenrolled boot test clears it to ask the simulator itself.
+        BnBiometrics.canEvaluatePolicyOverrideForTest = { (true, nil) }
         purgeKeys()
         captured = []
     }
 
     override func tearDown() {
         BnSecureStorage.resetForTest()
+        BnBiometrics.resetForTest()
         purgeKeys()
         super.tearDown()
     }
@@ -268,6 +283,80 @@ final class BnSecureStorageTests: BnHostTestCase {
         let status = bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true)
         XCTAssertEqual(status, BnSecureStorageStatus.ok, "the auth-bound set completes synchronously — no prompt")
         XCTAssertFalse(gateEngaged, "iOS does NOT engage a biometric gate on an auth-bound WRITE")
+    }
+
+    // ── 18.7 (#396): the enrolment check, the Android `provisionKey` twin ─────────
+    //
+    // WHAT THEY PIN. An auth-bound set asks `BnBiometrics.evaluateBiometry` before it
+    // builds the ACL. Not enrolled, or no hardware, is Unavailable and stores nothing, as
+    // Android's `provisionKey` refuses to generate the key. The seam is the one `check`
+    // uses, `canEvaluatePolicyOverrideForTest`, because the simulator's real enrolment
+    // state is not drivable. Each test stores a value under the key first, so "stores
+    // nothing" also proves the refused set did not leave the OLD value behind.
+    //
+    // WHAT THEY DO NOT COVER. A real device's answer to `canEvaluatePolicy`: the boot
+    // test `testSetOnTheUnenrolledSimulatorShowsUnavailable` asks the simulator itself,
+    // and a device run is #17's. Lockout parity with Android is not established; the
+    // lockout test pins only that iOS proceeds.
+
+    func testAuthSetWithNoEnrolledBiometricIsUnavailableAndStoresNothing() {
+        assertAuthSetIsRefused(LAError(.biometryNotEnrolled),
+                               "an auth-bound set with no enrolled biometric must be Unavailable, as Android's provisionKey is (#396)")
+    }
+
+    func testAuthSetWithNoBiometricHardwareIsUnavailable() {
+        assertAuthSetIsRefused(LAError(.biometryNotAvailable),
+                               "an auth-bound set with no biometric hardware must be Unavailable, as Android's provisionKey is (#396)")
+    }
+
+    func testAuthSetUnderLockoutProceeds() {
+        let bridge = AppleShellBridge()
+        BnBiometrics.canEvaluatePolicyOverrideForTest = { (false, LAError(.biometryLockout)) }
+        let status = bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true)
+        // Recorded in the lane log for the 18.7 record: the status the simulator
+        // Keychain gives a set that passed the check.
+        NSLog("[BnSecureStorageTests] 18.7 #396: an auth set under a seamed lockout returned status \(status)")
+        XCTAssertNotEqual(status, BnSecureStorageStatus.unavailable,
+                          "a lockout leaves the biometric enrolled, so an auth-bound set must proceed past the enrolment check, not be Unavailable (#396)")
+        XCTAssertNotNil(BnSecureStorage.lastSetAccessControlForTest,
+                        "an auth-bound set under lockout must go on to build the .biometryCurrentSet ACL")
+    }
+
+    func testPlainSetNeverAsksForBiometry() {
+        let bridge = AppleShellBridge()
+        let askedLock = NSLock()
+        var asked = false
+        BnBiometrics.canEvaluatePolicyOverrideForTest = {
+            askedLock.lock(); asked = true; askedLock.unlock()
+            XCTFail("a plain set asked whether biometry can be evaluated; only an auth-bound set may (#396)")
+            return (false, LAError(.biometryNotEnrolled))
+        }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: plainKey, value: "hunter2", requireAuth: false),
+                       BnSecureStorageStatus.ok,
+                       "a plain set must store whatever the biometric state is (#396)")
+        askedLock.lock(); let wasAsked = asked; askedLock.unlock()
+        XCTAssertFalse(wasAsked, "a plain set must never ask for biometry (#396)")
+        XCTAssertEqual(bridge.secureStorage.secureGet(key: plainKey).value, "hunter2")
+    }
+
+    /// The refused-set assertions the two #396 Unavailable tests share. A value is stored
+    /// first, with biometry evaluable, so the refused set has an old item to leave behind.
+    private func assertAuthSetIsRefused(_ evaluateError: LAError, _ message: String,
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        let bridge = AppleShellBridge()
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "old", requireAuth: true),
+                       BnSecureStorageStatus.ok, "the setup store with biometry evaluable failed", file: file, line: line)
+
+        BnBiometrics.canEvaluatePolicyOverrideForTest = { (false, evaluateError) }
+        XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "hunter2", requireAuth: true),
+                       BnSecureStorageStatus.unavailable, message, file: file, line: line)
+        let got = bridge.secureStorage.secureGet(key: authKey)
+        XCTAssertEqual(got.status, BnSecureStorageStatus.notFound,
+                       "a refused auth-bound set must store nothing: a plain get must be NotFound, not AuthFailed or the old value (#396)",
+                       file: file, line: line)
+        XCTAssertNil(got.value, "a refused auth-bound set must leave no value to read (#396)", file: file, line: line)
+        XCTAssertNil(BnSecureStorage.lastSetAccessControlForTest,
+                     "a refused auth-bound set must not build the .biometryCurrentSet ACL (#396)", file: file, line: line)
     }
 
     // ── Error (4) is DATA: an unknown action never crashes ────────────────────────
@@ -644,6 +733,11 @@ final class BnSecureStorageTests: BnHostTestCase {
     func testSetThenUnlockRoundTripsThePairingThroughTheRealHostCallComplete() throws {
         // The gate authorizes (the seam) so the demo's Unlock returns the stored value.
         BnSecureStorage.authGateHookForTest = { gate in gate.authenticate() }
+        // 18.7 (#396): biometry reported evaluable, so the demo's auth Set passes the
+        // enrolment check and the pairing still runs through the real Keychain. setUp
+        // already installs this; it is restated because this test depends on it. The
+        // unenrolled simulator's own answer is `testSetOnTheUnenrolledSimulatorShowsUnavailable`.
+        BnBiometrics.canEvaluatePolicyOverrideForTest = { (true, nil) }
         let form = try bootSecureDemo()
 
         try tapButton("Set", in: form) // SetAsync("demo-secret", "hunter2", requireAuth:true)
@@ -655,6 +749,42 @@ final class BnSecureStorageTests: BnHostTestCase {
                       "the pairing never round-tripped the unlocked value to the echo (a hang or the OS-unlock model broke)")
         // Polled, not read once: the rc is stored on the handler's queue after the export
         // returns, so the echo can render first (16.4).
+        XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
+                      "host_call_complete did not route to the in-flight .NET requestId")
+    }
+
+    /// 18.7 (#396, owner decision 2026-11-11): the end-to-end pin of the enrolment check.
+    /// No seam: the check asks the simulator, which the lane does not enrol, so the
+    /// sample's auth Set must come back Unavailable through the whole app. It also logs
+    /// what an uncached `evaluateBiometry` costs on the lane, for the 18.7 record (#580
+    /// saw a cold `LAContext` take over 40 s).
+    func testSetOnTheUnenrolledSimulatorShowsUnavailable() throws {
+        BnBiometrics.canEvaluatePolicyOverrideForTest = nil // ask the simulator itself
+        let form = try bootSecureDemo()
+
+        // The boot warm-up pays LocalAuthentication's cold start. Wait for it as a named
+        // step, the BnBiometricsTests posture, so a cold start fails here and not inside
+        // the Set poll below.
+        let bio = try XCTUnwrap(runtime?.bridge.biometrics)
+        XCTAssertTrue(pollUntil(deadline: 60) { bio.contextIsWarmForTest() },
+                      "the boot LAContext warm-up did not finish within 60 s (#453, #580)")
+        let firstMs = BnLAContextTiming.firstCreationMsForTest.map { "\($0) ms" } ?? "not finished"
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        let (canEvaluate, evaluateError) = BnBiometrics.evaluateBiometry()
+        let elapsedMs = (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        let code = (evaluateError as? LAError).map { String($0.code.rawValue) } ?? "none"
+        NSLog("[BnSecureStorageTests] 18.7 #396: uncached evaluateBiometry took \(elapsedMs) ms, "
+              + "canEvaluate=\(canEvaluate), LAError code \(code); first LAContext creation in this process: \(firstMs)")
+        guard !canEvaluate else {
+            XCTFail("the lane's simulator reports biometry as evaluable, so it is enrolled: this pin "
+                    + "needs an unenrolled simulator. Report it; do not force it (#396)")
+            return
+        }
+
+        try tapButton("Set", in: form) // SetAsync("demo-secret", "hunter2", requireAuth:true)
+        XCTAssertTrue(pollUntil(deadline: 30) { self.echoLabel()?.text == "status:Unavailable" },
+                      "the sample's auth Set on an unenrolled simulator did not show Unavailable (#396, owner decision 2026-11-11)")
         XCTAssertTrue(pollUntil { BnSecureStorage.lastHostCallCompleteRcForTest == 0 },
                       "host_call_complete did not route to the in-flight .NET requestId")
     }
