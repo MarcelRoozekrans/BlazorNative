@@ -502,7 +502,19 @@ public static class Emitters
         "edit fails the required build-test lane rather than reaching a device.",
     ]);
 
-    private static string Q(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("$", "\\$") + "\"";
+    /// <summary>A string literal in the target language. Both escape backslash, quote and the
+    /// control characters; only Kotlin treats <c>$</c> as a template start, and Swift has no
+    /// <c>\$</c> escape, so it must not get one.</summary>
+    private static string Quote(string s, bool kotlin)
+    {
+        string r = s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        if (kotlin) r = r.Replace("$", "\\$");
+        return "\"" + r + "\"";
+    }
+
+    private static string KQ(string s) => Quote(s, kotlin: true);
+    private static string SQ(string s) => Quote(s, kotlin: false);
 
     /// <summary>The Kotlin stderr vector table, for the JVM test source set.</summary>
     public static string EmitKotlinStderrVectors(StderrPumpVectors v)
@@ -533,7 +545,7 @@ public static class Emitters
         foreach (StderrPumpVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        BnStderrPumpVector({Q(c.Name)}, {c.ShellLevel}, {Q(c.Line)}, {c.Level}, {Q(c.Category)}, {Q(c.Message)}),\n");
+            sb.Append($"        BnStderrPumpVector({KQ(c.Name)}, {c.ShellLevel}, {KQ(c.Line)}, {c.Level}, {KQ(c.Category)}, {KQ(c.Message)}),\n");
         }
 
         sb.Append("    )\n");
@@ -568,7 +580,7 @@ public static class Emitters
         foreach (StderrPumpVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        BnStderrPumpVector(name: {Q(c.Name)}, shellLevel: {c.ShellLevel}, line: {Q(c.Line)}, level: {c.Level}, category: {Q(c.Category)}, message: {Q(c.Message)}),\n");
+            sb.Append($"        BnStderrPumpVector(name: {SQ(c.Name)}, shellLevel: {c.ShellLevel}, line: {SQ(c.Line)}, level: {c.Level}, category: {SQ(c.Category)}, message: {SQ(c.Message)}),\n");
         }
 
         sb.Append("    ]\n");
