@@ -103,7 +103,7 @@ enum BnStderrPump {
     /// Android since 18.7. Pinned against the shared vectors by `BnStderrPumpTwinTests`
     /// (iOS) and `BnStderrPumpTwinTest` (Android).
     static func forward(_ record: BnLogRecord) {
-        BnLog.relay(record.level, record.category, record.message)
+        BnLog.write(record.level, record.category, record.message)
     }
 
     private static let lock = NSLock()
