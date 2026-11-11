@@ -295,6 +295,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       # ── The door's own logic, proven on every PR too ─────────────────────
       # The 9-row classifier table with NEGATIVE rows — the same self-test the
@@ -403,6 +404,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       - name: Build the release tag (Release)
         run: dotnet build BlazorNative.sln -c Release
@@ -446,7 +448,9 @@ jobs:
       - name: Setup .NET SDK (10.0.x — nuget push is a transport; there is no project to build)
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            10.0.x
+            11.0.x
 
       - name: Download the validated feed (these bytes were packed and proven by validate)
         uses: actions/download-artifact@v8

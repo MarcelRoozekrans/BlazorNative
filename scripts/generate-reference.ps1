@@ -341,7 +341,9 @@ foreach ($name in $Package) {
     # Each package gets its OWN publish dir so a transitively-referenced type from a
     # sibling package is present when xmldoc2md resolves the surface.
     Write-Host "==> generate-reference [$name]: publishing (the dependency-complete output)"
-    dotnet publish $project -c Release -o $pubDir --nologo -v minimal -nodeReuse:false | Out-Host
+    # -f net10.0: the packages multi-target (net10.0;net11.0) and a publish needs one
+    # TFM. net10.0 is the shipped floor; the generator only reads this output's metadata.
+    dotnet publish $project -c Release -f net10.0 -o $pubDir --nologo -v minimal -nodeReuse:false | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $name (exit $LASTEXITCODE)" }
 
     $assembly = Join-Path $pubDir $entry.Dll

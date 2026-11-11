@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (1412 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (2824 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -132,6 +132,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
@@ -2396,7 +2397,9 @@ jobs:
       # as 0 hits, at random, on Windows (#626).
       # 1406 -> 1412 (18.5, +6, 2026-11-10): Runtime 1232 -> 1238. A compiler lambda's slow-handler warning
       # names its page and the call site's position, falling back to the page alone.
-      - name: .NET tests (assert 1412 passed / 0 skipped)
+      # 1412 -> 2824 (.NET 11 target, x2, 2026-11-11): the three test projects now run on net10.0 and net11.0,
+      # so every fact counts twice (Analyzers 27 -> 54, Renderer 147 -> 294, Runtime 1238 -> 2476). No fact was added.
+      - name: .NET tests (assert 2824 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2414,8 +2417,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 1412 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 1412 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 2824 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 2824 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It
@@ -3029,6 +3032,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       - name: Download the coverage reports from build-test
         uses: actions/download-artifact@v8
@@ -3154,6 +3158,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
@@ -3401,6 +3406,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       # macos-latest drifts (Xcode, SDK, clang). Record it — assert nothing — so a
       # link failure that is really an image bump is diagnosable from one run.

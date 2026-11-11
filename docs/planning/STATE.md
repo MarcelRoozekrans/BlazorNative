@@ -14,7 +14,7 @@
 - **A dependency break was fixed on main on the way, owner decision 2026-11-10.** The floating `10.0.1*` on Components picked up a partly published 10.0.15 and split the family (NU1605). PR #660, `dbca4940`, pins the whole dotnet 10 family exactly at 10.0.14, so Renovate's dotnet monorepo group moves it together.
 - **Release PR #658 (0.21.3)** still awaits the owner.
 - **Worktree:** `.claude/worktrees/bridge-cse_01RwoARgGNqhyJEGJMs6wt4L` holds the 18.6 branch.
-- **Baselines:** .NET 1412, JVM 209, Android 271, iOS 296. Unchanged by 18.6.
+- **Baselines:** .NET 2824 (1412 facts on two TFMs), JVM 209, Android 271, iOS 296. Unchanged by 18.6.
 
 ## Owner decisions for M18 (2026-10-24)
 
