@@ -18,8 +18,9 @@
 //     `.biometryCurrentSet` — the OS-KEY-LEVEL binding (§4c, owner-locked): the Secure
 //     Enclave itself refuses to release the bytes without a fresh Face/Touch ID, AND
 //     `.biometryCurrentSet` INVALIDATES the item if the enrolled biometric set changes.
-//     With no enrolled biometric, or no biometric hardware, it returns Unavailable and
-//     stores nothing, as Android does (18.7, #396): the shell checks enrolment first.
+//     With no enrolled biometric it returns Unavailable and stores nothing, as Android
+//     does (18.7, #396): the shell checks enrolment first. With no biometric hardware
+//     it also returns Unavailable and stores nothing; Android's answer there is unpinned.
 //   • get(key) → SecItemCopyMatching with kSecUseAuthenticationUI = .fail so a plain
 //     get NEVER silently prompts: a non-auth item returns Ok+value; an AUTH-bound item
 //     is REFUSED as AuthFailed. THE CONTRACT — a plain get of an auth item must not hand
@@ -112,8 +113,9 @@ enum BnSecureStorageStatus {
     static let authFailed: Int32 = 2  // the biometric gate denied / failed / cancelled / locked out; or a plain get of an auth item
     /// No secure hardware, the Keychain is unusable, or, since 18.7 (#396), an
     /// auth-bound `set` with no enrolled biometric or no biometric hardware. The last is
-    /// `secureSet`'s enrolment check, and it stores nothing, the same as Android, whose
-    /// `provisionKey` refuses an auth-bound set without an enrolled biometric. The others
+    /// `secureSet`'s enrolment check, and it stores nothing. With no enrolled biometric
+    /// that is the same as Android, whose `provisionKey` refuses an auth-bound set; the
+    /// no-hardware case is iOS's own behaviour, its Android twin unpinned. The others
     /// come from a nil `SecAccessControlCreateWithFlags` result, in `secureSet`, or from
     /// `errSecMissingEntitlement` / `errSecNotAvailable`, in `mapAddError`. What a read of
     /// an item stored before the last biometric was removed returns is not established on
@@ -385,9 +387,10 @@ final class BnSecureStorage {
     /// DeviceOnly. Ok on success; Unavailable when SecAccessControlCreateWithFlags
     /// returns nil; Error on any other add failure — all DATA.
     ///
-    /// 18.7 (#396): an auth-bound set with no enrolled biometric, or no biometric
-    /// hardware, returns Unavailable and stores nothing, the same as Android, whose
-    /// `provisionKey` refuses to generate the key. The shell checks enrolment itself,
+    /// 18.7 (#396): an auth-bound set with no enrolled biometric returns Unavailable and
+    /// stores nothing, the same as Android, whose `provisionKey` refuses to generate the
+    /// key. With no biometric hardware it also returns Unavailable and stores nothing;
+    /// that is iOS's own behaviour, not a pinned parity claim. The shell checks enrolment itself,
     /// before it builds the ACL, so the outcome does not rest on what an unenrolled
     /// device's Keychain would do with a `.biometryCurrentSet` item. A plain set never
     /// asks. What a read returns for an item stored BEFORE the last biometric was
@@ -400,9 +403,9 @@ final class BnSecureStorage {
         query[kSecValueData as String] = Data(value.utf8)
         Self.lastSetAccessControlForTest = nil
         if requireAuth {
-            // 18.7 (#396), THE ENROLMENT CHECK. It runs after the delete above, Android's
-            // order too (`provisionKey` deletes the entry before it generates the key),
-            // so a refused set leaves the key absent: a later plain get is NotFound, not
+            // 18.7 (#396), THE ENROLMENT CHECK. It runs after the delete above, the order
+            // `AndroidShellBridge.provisionKey` uses: it deletes the keystore entry before it
+            // generates the key. So a refused set leaves the key absent: a later plain get is NotFound, not
             // the old value. It runs before `markAuthBound` and the `authLabel` stamp, so
             // a refusal leaves no auth-bound record behind; the delete already cleared
             // any earlier one. Not enrolled, no hardware, or any other failure is

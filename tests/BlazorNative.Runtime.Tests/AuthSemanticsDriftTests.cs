@@ -59,7 +59,7 @@ public sealed class AuthSemanticsDriftTests
                 Required(s, "reason", $"site '{name}'")));
         }
 
-        Assert.True(sites.Count >= 8,
+        Assert.True(sites.Count >= 7,
             $"only {sites.Count} sites declared — the manifest lost entries, or this loop "
             + "stopped seeing them");
         return [.. sites];

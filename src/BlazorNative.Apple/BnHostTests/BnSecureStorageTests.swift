@@ -781,6 +781,13 @@ final class BnSecureStorageTests: BnHostTestCase {
                     + "needs an unenrolled simulator. Report it; do not force it (#396)")
             return
         }
+        // A lockout means a biometric is enrolled, and the check lets it proceed, so the
+        // Set below would store. That is not the unenrolled state this pin needs.
+        guard (evaluateError as? LAError)?.code != LAError.Code.biometryLockout else {
+            XCTFail("the lane's simulator reports a biometry lockout, so a biometric is enrolled: this pin "
+                    + "needs an unenrolled simulator. Report it; do not force it (#396)")
+            return
+        }
 
         try tapButton("Set", in: form) // SetAsync("demo-secret", "hunter2", requireAuth:true)
         XCTAssertTrue(pollUntil(deadline: 30) { self.echoLabel()?.text == "status:Unavailable" },
