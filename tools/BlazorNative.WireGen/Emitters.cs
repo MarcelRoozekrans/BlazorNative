@@ -396,7 +396,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        ({CQ(c.Url)}, {(c.Route is null ? "null" : CQ(c.Route))}),\n");
         }
 
         sb.Append("    ];\n");
@@ -426,7 +426,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        Pair(\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        Pair({KQ(c.Url)}, {(c.Route is null ? "null" : KQ(c.Route))}),\n");
         }
 
         sb.Append("    )\n");
@@ -452,7 +452,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "nil" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        ({SQ(c.Url)}, {(c.Route is null ? "nil" : SQ(c.Route))}),\n");
         }
 
         sb.Append("    ]\n");
@@ -515,6 +515,8 @@ public static class Emitters
 
     private static string KQ(string s) => Quote(s, kotlin: true);
     private static string SQ(string s) => Quote(s, kotlin: false);
+    /// <summary>C# regular string literal: the same escapes as Swift, and <c>$</c> is literal.</summary>
+    private static string CQ(string s) => Quote(s, kotlin: false);
 
     /// <summary>The Kotlin stderr vector table, for the JVM test source set.</summary>
     public static string EmitKotlinStderrVectors(StderrPumpVectors v)
