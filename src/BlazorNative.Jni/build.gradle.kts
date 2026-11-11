@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import java.time.Duration
 
 plugins {
     id("com.android.application") version "9.5.1"
@@ -263,6 +264,16 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = TestExceptionFormat.FULL
         showStandardStreams = true
     }
+    // #543, design D2: a test stuck on a lost host-call completion held the CI step to the job's
+    // 45-minute limit with no results. SEPARATE_THREAD is chosen because a thread stuck in a JNA
+    // call may not answer an interrupt, and the same-thread mode can only interrupt; the reds that
+    // prove it are R5a and R5b in the phase record section 3 (R1 and R2 do not separate the mode,
+    // their stuck thread is interruptible). The task timeout is
+    // the backstop for a wedged render thread, where later tests time out one by one. Both bounds
+    // come from measurement, see docs/plans/2026-11-10-phase-18.6-record.md.
+    systemProperty("junit.jupiter.execution.timeout.default", "120 s")
+    systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
+    timeout.set(Duration.ofMinutes(25))
     systemProperty("jna.library.path", winX64PublishPath)
     inputs.files(nativeRuntimeFiles)
         .withPathSensitivity(PathSensitivity.RELATIVE)

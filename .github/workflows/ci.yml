@@ -2858,8 +2858,25 @@ jobs:
       - name: JVM tests (Gradle testDebugUnitTest — assert 209 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
+          $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
           .\gradlew.bat --no-daemon testDebugUnitTest
-          if ($LASTEXITCODE -ne 0) { throw "gradlew testDebugUnitTest failed (exit $LASTEXITCODE)" }
+          $gradleExit = $LASTEXITCODE
+          $stepClock.Stop()
+          Write-Host "JVM step wall time: $([int]$stepClock.Elapsed.TotalSeconds) s"
+          # Keep the per-test margin visible on every run that writes JUnit XML (#543, D2): the five slowest tests.
+          $cases = foreach ($x in @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)) {
+            try {
+              foreach ($c in ([xml](Get-Content $x -Raw)).testsuite.testcase) {
+                [pscustomobject]@{ Name = "$($c.classname).$($c.name)"; Time = [double]::Parse($c.time, [cultureinfo]::InvariantCulture) }
+              }
+            } catch {
+              Write-Host "warning: could not read timings from $($x.Name): $($_.Exception.Message)"
+            }
+          }
+          $cases | Sort-Object Time -Descending | Select-Object -First 5 | ForEach-Object {
+            Write-Host ("slowest JVM test: {0} {1} s" -f $_.Name, $_.Time.ToString("0.###", [cultureinfo]::InvariantCulture))
+          }
+          if ($gradleExit -ne 0) { throw "gradlew testDebugUnitTest failed (exit $gradleExit)" }
           $xmls = @(Get-ChildItem build\test-results\testDebugUnitTest\*.xml -ErrorAction SilentlyContinue)
           if ($xmls.Count -eq 0) { throw "No JUnit XML results found under build\test-results\testDebugUnitTest" }
           $tests = 0; $failures = 0; $errors = 0; $skipped = 0

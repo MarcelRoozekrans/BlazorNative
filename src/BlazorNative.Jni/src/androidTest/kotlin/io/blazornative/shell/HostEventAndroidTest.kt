@@ -125,7 +125,7 @@ class HostEventAndroidTest {
             // NavigateBack. Committing a system predictive-back GESTURE under
             // instrumentation is unreliable (it starts then cancels), so the entry
             // point is driven directly rather than through an injected gesture/key.
-            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            pressHandledBack(scenario)
 
             // BnDemo returns: its full form is back with the input on screen and
             // the settings title gone (mutually-exclusive trees).

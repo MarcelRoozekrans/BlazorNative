@@ -24,7 +24,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -109,7 +108,7 @@ class BackAndroidTest {
             // after the batch) sees the flag down.
             assertEnabledOnceWithThePage(toggles)
 
-            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            pressHandledBack(scenario)
 
             assertTrue("BnDemo never returned within 10s of back",
                 pollUntil(scenario, 10_000) { act ->
@@ -187,15 +186,10 @@ class BackAndroidTest {
                 }, "back-hold-releaser").apply { isDaemon = true; start() }
 
                 // THE PIN: the press returns at once. The pre-16.2 back took ~3 s here.
-                val elapsedMs = AtomicLong(-1)
-                scenario.onActivity { act ->
-                    val t0 = System.nanoTime()
-                    act.onBackPressedDispatcher.onBackPressed()
-                    elapsedMs.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0))
-                }
-                assertTrue("the back press held the main thread for ${elapsedMs.get()} ms while the " +
+                val elapsedMs = pressHandledBack(scenario) // times onBackPressed() alone
+                assertTrue("the back press held the main thread for $elapsedMs ms while the " +
                     "render thread was held. That is #346: back waits on .NET.",
-                    elapsedMs.get() in 0 until 1_000)
+                    elapsedMs in 0 until 1_000)
 
                 // Nothing can have moved yet: the render thread is still held.
                 scenario.onActivity { act ->
@@ -227,13 +221,17 @@ class BackAndroidTest {
             val toggles = recordEnableToggles(scenario)
 
             tapButton(scenario, "Settings →")
-            // Press back in the SAME main-thread turn that first sees the settings page.
+            // Press back in the SAME main-thread turn that first sees the settings page. The press
+            // stays inline, with the shared PRESS_FINISHED_THE_ACTIVITY check, so it provably sits
+            // in the same turn as the page check; the helper's own onActivity call is not relied
+            // on when nested inside a predicate.
             val pressed = AtomicBoolean(false)
             assertTrue("the swap to settings never completed within 10s",
                 pollUntil(scenario, 10_000, sleepMs = 5) { act ->
                     val shown = settingsTitle(act) != null && !hasEditText(act)
                     if (shown) {
                         act.onBackPressedDispatcher.onBackPressed()
+                        assertFalse(PRESS_FINISHED_THE_ACTIVITY, act.isFinishing)
                         pressed.set(true)
                     }
                     shown
@@ -282,7 +280,7 @@ class BackAndroidTest {
                     act.onBackPressedDispatcher.hasEnabledCallbacks())
             }
 
-            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+            pressHandledBack(scenario)
 
             assertTrue("back never dismissed the open modal within 10s",
                 pollUntil(scenario, 10_000) { it.mapper.modalOverlayCount == 0 })
@@ -351,7 +349,7 @@ class BackAndroidTest {
             pollUntil(scenario, 10_000) { settingsTitle(it) != null && !hasEditText(it) })
         assertTrue("back is not enabled on settings, so the drain cannot run",
             pollUntil(scenario, 10_000) { it.onBackPressedDispatcher.hasEnabledCallbacks() })
-        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        pressHandledBack(scenario)
         assertTrue("BnDemo never returned within 10s of the draining back",
             pollUntil(scenario, 10_000) { form(it) != null && hasEditText(it) && settingsTitle(it) == null })
         assertTrue("back stayed enabled at the root after the draining back",

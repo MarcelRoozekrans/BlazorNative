@@ -40,7 +40,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 - [x] **#522 is fixed as decided.** The owner decided on 2026-10-24 on page plus wrapper position. Done in 18.5, PR #634: a compiler lambda is named by its page and position, and an app method keeps its own name.
   - For a bound input, the slow-handler warning names the page type and the wrapper's position, never a `<…>b__` compiler lambda.
   - The warning still names the app's method wherever one exists.
-- [ ] **#543 and #544 are fixed.**
+- [x] **#543 and #544 are fixed.** Done in 18.6, PR #659.
   - **#543**, decided by the owner on 2026-10-24: bounded wait plus suite timeout. A JVM test that waits on a host call joins it with a bound and fails by name. The Gradle test task has a per-test timeout, so no single test can hold the step for 45 minutes.
   - **#544:** the back tests check in their own turn that a back press does not finish the Activity, and S4, finishing on back, reds all five tests.
 - [ ] **#401 and #396 are fixed.** Each twin divergence is resolved to one documented behaviour on both shells and pinned by a twin pin.
@@ -63,7 +63,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 3. Phase 18.3 — secure-storage per-key ordering (#506) [complete] — same-key requests queue behind a pending prompt on both shells (#599)
 4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [complete]
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
-6. Phase 18.6 — test-suite honesty, part two (#543, #544) [pending]
+6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
 7. Phase 18.7 — twin divergences (#401, #396) [pending]
 8. Phase 18.8 — the generator's pipe holder (#530) [pending]
 9. Phase 18.9 — audit and close (#568) [pending]
