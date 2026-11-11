@@ -14,7 +14,7 @@
 #     and no other IL warning) →
 #     ten-export verification (dumpbin via vswhere / llvm-readelf from the
 #     pinned NDK) → Gradle testDebugUnitTest against the fresh win-x64 dll
-#     (209 passed / 0 failed — the assertion is the step near the end of this
+#     (210 passed / 0 failed — the assertion is the step near the end of this
 #     job; this header is a copy, and it read 92 for four milestones) →
 #     the instrumented sources COMPILE →
 #     consumer smoke (EIGHT packages packed at the one props version, nupkg
@@ -2858,7 +2858,9 @@ jobs:
       # 207 -> 208 (18.4 final review, +1, 2026-11-03): RetiredLaneDispatchTest — a host event on a
       #    retired runtime's lane is dropped, not thrown to a live older Activity.
       # 208 -> 209 (18.5, +1, 2026-11-10): the JVM host test for the lambda call-site naming.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 209 passed / 0 failed)
+      # 209 -> 210 (18.7, +1, 2026-11-11): BnStderrPumpTwinTest, #401 — every stderr vector is forwarded
+      #    whatever the shell level.
+      - name: JVM tests (Gradle testDebugUnitTest — assert 210 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
@@ -2889,8 +2891,8 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          if ($tests -ne 209 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 209 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -ne 210 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 210 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job
