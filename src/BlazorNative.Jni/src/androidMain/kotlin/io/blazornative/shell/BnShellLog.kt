@@ -166,7 +166,7 @@ object BnShellLog {
      */
     @JvmStatic
     fun isEnabled(level: Int): Boolean =
-        level != BnLogLevel.UNSET && level <= threshold
+        level != BnLogLevel.UNSET
 
     /** Success narration — boot lines, deep-link routes, the bridge's navigate.
      * SUPPRESSED at the Release default; this is issue #200's whole subject. */
