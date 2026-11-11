@@ -164,7 +164,7 @@ enum BnLog {
     /// avoids work it will not use; the `@autoclosure` message parameters below
     /// already cover the string-building case.
     static func isEnabled(_ level: Int32) -> Bool {
-        level != BnLogLevel.unset && level <= self.level
+        level != BnLogLevel.unset
     }
 
     // ── the five levels ──────────────────────────────────────────────────────
