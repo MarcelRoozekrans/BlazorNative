@@ -17,8 +17,10 @@
 //         prompt); of an auth item engages the gate and a seam-DENY is AuthFailed — DATA,
 //         no hang; a seam-AUTHORIZE returns the value in {"value":…};
 //       – the iOS-vs-Android ASYMMETRY: an auth-bound `set` does NOT prompt on iOS;
-//       – 18.7 (#396): an auth-bound `set` with no enrolled biometric, or no biometric
-//         hardware, is Unavailable and stores nothing, as on Android. Seamed through
+//       – 18.7 (#396): an auth-bound `set` with no enrolled biometric is Unavailable and
+//         stores nothing, as on Android. With no biometric hardware, or any other reason
+//         biometry cannot be evaluated, it is Unavailable on iOS too (fail closed); the
+//         Android twin of those is unpinned. Seamed through
 //         `BnBiometrics.canEvaluatePolicyOverrideForTest`, and end to end, unseamed, on
 //         the lane's unenrolled simulator. setUp reports biometry evaluable so every
 //         other auth set keeps reaching the real Keychain.
@@ -288,8 +290,10 @@ final class BnSecureStorageTests: BnHostTestCase {
     // ── 18.7 (#396): the enrolment check, the Android `provisionKey` twin ─────────
     //
     // WHAT THEY PIN. An auth-bound set asks `BnBiometrics.evaluateBiometry` before it
-    // builds the ACL. Not enrolled, or no hardware, is Unavailable and stores nothing, as
-    // Android's `provisionKey` refuses to generate the key. The seam is the one `check`
+    // builds the ACL. Not enrolled is Unavailable and stores nothing, as Android's
+    // `provisionKey` refuses to generate the key. No hardware, and any other failure to
+    // evaluate (a passcode not set, or no error at all), is Unavailable on iOS as well;
+    // the Android twin of those is unpinned. The seam is the one `check`
     // uses, `canEvaluatePolicyOverrideForTest`, because the simulator's real enrolment
     // state is not drivable. Each test stores a value under the key first, so "stores
     // nothing" also proves the refused set did not leave the OLD value behind.
@@ -306,7 +310,18 @@ final class BnSecureStorageTests: BnHostTestCase {
 
     func testAuthSetWithNoBiometricHardwareIsUnavailable() {
         assertAuthSetIsRefused(LAError(.biometryNotAvailable),
-                               "an auth-bound set with no biometric hardware must be Unavailable, as Android's provisionKey is (#396)")
+                               "an auth-bound set with no biometric hardware must be Unavailable on iOS (#396)")
+    }
+
+    /// Fail closed: only a lockout may proceed past the enrolment check. Any other
+    /// reason biometry cannot be evaluated, a known code the first two tests do not
+    /// cover or no error at all, is Unavailable and stores nothing. An allow-list that
+    /// refused only the two named codes would let both of these reach the Keychain.
+    func testAuthSetWhenBiometryCannotBeEvaluatedForAnyOtherReasonIsUnavailable() {
+        assertAuthSetIsRefused(LAError(.passcodeNotSet),
+                               "an auth-bound set whose biometry cannot be evaluated because no passcode is set must be Unavailable on iOS (#396)")
+        assertAuthSetIsRefused(nil,
+                               "an auth-bound set whose biometry cannot be evaluated, with no error given, must be Unavailable on iOS (#396)")
     }
 
     func testAuthSetUnderLockoutProceeds() {
@@ -339,11 +354,14 @@ final class BnSecureStorageTests: BnHostTestCase {
         XCTAssertEqual(bridge.secureStorage.secureGet(key: plainKey).value, "hunter2")
     }
 
-    /// The refused-set assertions the two #396 Unavailable tests share. A value is stored
+    /// The refused-set assertions the three #396 Unavailable tests share. A value is stored
     /// first, with biometry evaluable, so the refused set has an old item to leave behind.
-    private func assertAuthSetIsRefused(_ evaluateError: LAError, _ message: String,
+    private func assertAuthSetIsRefused(_ evaluateError: Error?, _ message: String,
                                         file: StaticString = #filePath, line: UInt = #line) {
         let bridge = AppleShellBridge()
+        // Biometry evaluable again for the setup store, as setUp left it: a helper that
+        // runs twice in one test would otherwise start from the first run's refusal.
+        BnBiometrics.canEvaluatePolicyOverrideForTest = { (true, nil) }
         XCTAssertEqual(bridge.secureStorage.secureSet(key: authKey, value: "old", requireAuth: true),
                        BnSecureStorageStatus.ok, "the setup store with biometry evaluable failed", file: file, line: line)
 

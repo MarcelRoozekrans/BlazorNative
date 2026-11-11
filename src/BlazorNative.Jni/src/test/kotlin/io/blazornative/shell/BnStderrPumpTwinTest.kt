@@ -3,7 +3,6 @@ package io.blazornative.shell
 import io.blazornative.jni.BnLogFormat
 import io.blazornative.jni.BnLogLevel
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -54,6 +53,11 @@ class BnStderrPumpTwinTest {
 
     @Test
     fun `every_vector_is_forwarded_whatever_the_shell_level`() {
+        assertTrue(BnStderrPumpVectors.all.isNotEmpty(), "no vectors ran: the generated table is empty")
+
+        // Every vector runs and every failure is collected, so one red names every
+        // vector that broke, not only the first. XCTest on iOS continues the same way.
+        val failures = mutableListOf<String>()
         for (v in BnStderrPumpVectors.all) {
             captured.clear()
             BnShellLog.setLevelFromOrdinal(v.shellLevel)
@@ -64,47 +68,48 @@ class BnStderrPumpTwinTest {
             // Level controls. A pump that forwards everything also passes if the
             // shell level was never applied, so prove the level took, three ways.
             // 1. The setter took: the getter reads back the vector's level.
-            assertEquals(
-                v.shellLevel, BnShellLog.level(),
-                "shell level ${v.shellLevel} was not applied: the shell's level setter did not take",
-            )
+            if (BnShellLog.level() != v.shellLevel) {
+                failures += "vector ${v.name}: shell level ${v.shellLevel} was not applied: " +
+                    "the shell's level setter did not take"
+            }
             // 2. Positive: a gated line AT the shell level reaches the sink. Warn and
             //    Error are ungated in BnShellLog, so this only exists from Info up.
             if (v.shellLevel >= BnLogLevel.INFO) {
                 writeGated(v.shellLevel)
-                assertEquals(
-                    1, captured.size,
-                    "shell level ${v.shellLevel} was not applied: a gated line at it did not reach the sink",
-                )
+                if (captured.size != 1) {
+                    failures += "vector ${v.name}: shell level ${v.shellLevel} was not applied: " +
+                        "a gated line at it did not reach the sink"
+                }
             }
             // 3. Negative: a gated line one below the threshold is dropped. It is
             //    never below Info for the same reason.
             captured.clear()
             if (v.shellLevel < BnLogLevel.VERBOSE) {
                 writeGated(maxOf(v.shellLevel + 1, BnLogLevel.INFO))
-                assertTrue(
-                    captured.isEmpty(),
-                    "shell level ${v.shellLevel} was not applied: a gated line below it reached the sink",
-                )
+                if (captured.isNotEmpty()) {
+                    failures += "vector ${v.name}: shell level ${v.shellLevel} was not applied: " +
+                        "a gated line below it reached the sink"
+                }
             }
             // The collector must hold only the forwarded record from here on.
             captured.clear()
 
             BnStderrLogcatPump.forward(BnLogFormat.parse(v.line))
 
-            assertEquals(
-                1, captured.size,
-                "vector ${v.name}: the pump dropped or re-levelled a line .NET already gated",
-            )
+            if (captured.size != 1) {
+                failures += "vector ${v.name}: the pump dropped or re-levelled a line .NET already gated " +
+                    "(${captured.size} records)"
+                continue
+            }
             val (priority, tag, message) = captured[0]
             val expectedPriority = BnLogFormat.priorityForTag(LETTERS_BY_ORDINAL[v.level - 1])
-            assertEquals(expectedPriority, priority, "vector ${v.name}: wrong android priority")
-            assertEquals(
-                "${BnStderrLogcatPump.TAG_PREFIX}/${v.category}", tag,
-                "vector ${v.name}: wrong logcat tag",
-            )
-            assertEquals(v.message, message, "vector ${v.name}: wrong message")
+            if (priority != expectedPriority) {
+                failures += "vector ${v.name}: wrong android priority $priority, expected $expectedPriority"
+            }
+            val expectedTag = "${BnStderrLogcatPump.TAG_PREFIX}/${v.category}"
+            if (tag != expectedTag) failures += "vector ${v.name}: wrong logcat tag $tag, expected $expectedTag"
+            if (message != v.message) failures += "vector ${v.name}: wrong message"
         }
-        assertTrue(BnStderrPumpVectors.all.isNotEmpty(), "no vectors ran: the generated table is empty")
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
     }
 }

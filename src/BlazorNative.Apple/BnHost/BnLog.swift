@@ -257,9 +257,11 @@ enum BnLog {
     }
 
     /// Emits at an arbitrary ordinal WITHOUT applying the shell's level. The stderr
-    /// pump's entry point (18.7, #401): a line that reached fd 2 was already gated
+    /// pump's entry point (18.7, #401). A prefixed line that reached fd 2 was gated
     /// by .NET's own level, so gating it again here would drop lines a managed
-    /// `BnLog.Level` raise had let through. Pinned by `BnStderrPumpTwinTests`.
+    /// `BnLog.Level` raise had let through. Unprefixed text (BCL, crash detail,
+    /// native libraries) was gated by nothing; it is forwarded at Warn by decision
+    /// (#401). Pinned by `BnStderrPumpTwinTests`.
     static func relay(_ level: Int32,
                       _ category: String,
                       _ message: String,

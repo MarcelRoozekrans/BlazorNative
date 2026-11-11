@@ -21,6 +21,8 @@
 //     With no enrolled biometric it returns Unavailable and stores nothing, as Android
 //     does (18.7, #396): the shell checks enrolment first. With no biometric hardware
 //     it also returns Unavailable and stores nothing; Android's answer there is unpinned.
+//     Pinned by BnSecureStorageTests' #396 tests and, for the Android half,
+//     SecureStorageAndroidTest.auth_set_with_no_enrolled_biometric_is_unavailable.
 //   • get(key) → SecItemCopyMatching with kSecUseAuthenticationUI = .fail so a plain
 //     get NEVER silently prompts: a non-auth item returns Ok+value; an AUTH-bound item
 //     is REFUSED as AuthFailed. THE CONTRACT — a plain get of an auth item must not hand
@@ -390,7 +392,10 @@ final class BnSecureStorage {
     /// 18.7 (#396): an auth-bound set with no enrolled biometric returns Unavailable and
     /// stores nothing, the same as Android, whose `provisionKey` refuses to generate the
     /// key. With no biometric hardware it also returns Unavailable and stores nothing;
-    /// that is iOS's own behaviour, not a pinned parity claim. The shell checks enrolment itself,
+    /// that is iOS's own behaviour, not a pinned parity claim. Pinned by BnSecureStorageTests'
+    /// #396 tests and, for the Android half of the enrolment case,
+    /// `SecureStorageAndroidTest.auth_set_with_no_enrolled_biometric_is_unavailable`.
+    /// The shell checks enrolment itself,
     /// before it builds the ACL, so the outcome does not rest on what an unenrolled
     /// device's Keychain would do with a `.biometryCurrentSet` item. A plain set never
     /// asks. What a read returns for an item stored BEFORE the last biometric was
@@ -403,11 +408,13 @@ final class BnSecureStorage {
         query[kSecValueData as String] = Data(value.utf8)
         Self.lastSetAccessControlForTest = nil
         if requireAuth {
-            // 18.7 (#396), THE ENROLMENT CHECK. It runs after the delete above, the order
-            // `AndroidShellBridge.provisionKey` uses: it deletes the keystore entry before it
-            // generates the key. So a refused set leaves the key absent: a later plain get is NotFound, not
-            // the old value. It runs before `markAuthBound` and the `authLabel` stamp, so
-            // a refusal leaves no auth-bound record behind; the delete already cleared
+            // 18.7 (#396), THE ENROLMENT CHECK. It runs after the delete above, so on iOS a
+            // refused set leaves the key absent: a later plain get is NotFound, not the old
+            // value. Android's later get is NotFound too, by a different route, pinned by
+            // `auth_set_over_an_existing_value_is_unavailable_and_get_is_not_found`: its
+            // `provisionKey` deletes the keystore key and leaves the old blob in prefs,
+            // which apps cannot observe. It runs before `markAuthBound` and the `authLabel`
+            // stamp, so a refusal leaves no auth-bound record behind; the delete already cleared
             // any earlier one. Not enrolled, no hardware, or any other failure is
             // Unavailable. A lockout proceeds: the biometric is still enrolled, and
             // enrolment is the condition mirrored from Android. Lockout parity with
@@ -415,6 +422,7 @@ final class BnSecureStorage {
             // unmeasured. The pins are BnSecureStorageTests'
             // `testAuthSetWithNoEnrolledBiometricIsUnavailableAndStoresNothing`,
             // `testAuthSetWithNoBiometricHardwareIsUnavailable`,
+            // `testAuthSetWhenBiometryCannotBeEvaluatedForAnyOtherReasonIsUnavailable`,
             // `testAuthSetUnderLockoutProceeds`, `testPlainSetNeverAsksForBiometry`, and
             // the boot test `testSetOnTheUnenrolledSimulatorShowsUnavailable`.
             let (canEvaluate, evaluateError) = BnBiometrics.evaluateBiometry()
