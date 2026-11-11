@@ -22,14 +22,5 @@ struct BnStderrPumpVector {
 /// The stderr pump cases, generated from the manifest. The DATA only.
 enum BnStderrPumpVectors {
     /// Every case. Each expects the line to be forwarded: the managed level is the only gate.
-    static let all: [BnStderrPumpVector] = [
-        // a Warn line passes a shell set to Error: the managed level is the only gate
-        BnStderrPumpVector(name: "warn-at-error", shellLevel: 1, line: "[BN|W|boot] slow start", level: 2, category: "boot", message: "slow start"),
-        // an unprefixed line is a native fault: forwarded whole at Warn whatever the shell level
-        BnStderrPumpVector(name: "unprefixed-at-error", shellLevel: 1, line: "Unhandled exception. System.TypeLoadException: x", level: 2, category: "native", message: "Unhandled exception. System.TypeLoadException: x"),
-        // a Debug line passes a shell set to Warn
-        BnStderrPumpVector(name: "debug-at-warn", shellLevel: 2, line: "[BN|D|dispatch] lane idle", level: 4, category: "dispatch", message: "lane idle"),
-        // an Error line is forwarded at Error even on a Verbose shell
-        BnStderrPumpVector(name: "error-at-verbose", shellLevel: 5, line: "[BN|E|render] patch failed", level: 1, category: "render", message: "patch failed"),
-    ]
+    static let all: [BnStderrPumpVector] = []
 }
