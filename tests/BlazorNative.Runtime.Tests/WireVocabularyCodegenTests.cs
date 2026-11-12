@@ -141,7 +141,21 @@ public sealed class WireVocabularyCodegenTests
         Assert.True(stderrVectors!.Vectors.Length >= 4,
             $"the stderr pump vector table has {stderrVectors.Vectors.Length} cases; an empty table "
             + "emits two empty test tables and both pump suites pass asserting NOTHING.");
-        foreach ((string relative, string expected) in Emitters.EmitAllStderrVectors(stderrVectors))
+        // The floor above guards the MANIFEST; this guards the EMITTED SET. Dropping
+        // a platform from EmitAllStderrVectors shrinks the CLI's write set and the
+        // loop below together, so that table goes stale on disk with nothing red.
+        IReadOnlyDictionary<string, string> stderrEmitted = Emitters.EmitAllStderrVectors(stderrVectors);
+        foreach (string target in new[]
+        {
+            "src/BlazorNative.Jni/src/test/kotlin/io/blazornative/shell/BnStderrPumpVectors.g.kt",
+            "src/BlazorNative.Apple/BnHostTests/BnStderrPumpVectors.g.swift",
+        })
+        {
+            Assert.True(stderrEmitted.ContainsKey(target),
+                $"EmitAllStderrVectors no longer emits {target}: its committed table would go stale "
+                + "while that shell's pump suite keeps passing against it.");
+        }
+        foreach ((string relative, string expected) in stderrEmitted)
         {
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path), $"generated stderr vector file missing: {relative}");
