@@ -41,8 +41,8 @@
 
   <ItemGroup>
     <PackageReference Include="ZeroAlloc.AsyncEvents" Version="1.2.0" />
-    <PackageReference Include="ZeroAlloc.Inject" Version="1.11.6" />
-    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.11.6">
+    <PackageReference Include="ZeroAlloc.Inject" Version="1.12.0" />
+    <PackageReference Include="ZeroAlloc.Inject.Generator" Version="1.12.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>analyzers;build</IncludeAssets>
     </PackageReference>
