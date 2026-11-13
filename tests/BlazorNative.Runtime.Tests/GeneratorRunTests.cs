@@ -234,7 +234,7 @@ public sealed class GeneratorRunTests
         }
     }
 
-    // ── node reuse off in the generator: #454's fix, proven by 18.8 ──────────────────────
+    // ── node reuse off in the generator: #454's fix, proven by 18.8 ─────────────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
     /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
@@ -288,7 +288,9 @@ public sealed class GeneratorRunTests
     /// <summary>
     /// PIN, #454's fix: every MSBuild call in generate-reference.ps1 passes
     /// -nodeReuse:false, and the script sets MSBUILDDISABLENODEREUSE=1 before the
-    /// first one, so no MSBuild worker node the publish starts outlives it. The
+    /// first one. By MSBuild's documented behaviour no worker node the publish starts
+    /// then outlives it; the fixed arm of the 18.8 experiment showed that on Windows,
+    /// and this fact does not pin it. The
     /// 18.8 experiment, docs/plans/2026-11-13-phase-18.8-record.md §2, proved the
     /// holder: with node reuse on, the generator stalled in 20 of 20 iterations, and
     /// the holder of its output pipe, in all 98 rows over 59 firings, was a
@@ -318,7 +320,7 @@ public sealed class GeneratorRunTests
             + "its whole point, so the recogniser is broken, not the script clean");
         Assert.True(withReuse.Count == 0,
             "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on (#454): a reused "
-            + "worker node outlives the publish and holds the generator's pipe, as the 18.8 experiment showed. "
+            + "worker node outlived the publish and held the generator's pipe in the 18.8 experiment on Windows. "
             + "Add -nodeReuse:false:\n  "
             + string.Join("\n  ", withReuse));
 

@@ -135,9 +135,9 @@ $ErrorActionPreference = 'Stop'
 # emitted Runtime "publishing" line, the publish's own final "->" output line and
 # its arguments, and no emitted "xmldoc2md ->" line; no dump is of the publish. The 2026-10-15 Linux hang ran with node
 # reuse on: no MSBUILDDISABLENODEREUSE in the environment of any of the three
-# dumped processes, and persistent MSBuild nodes running. The holder is that
-# worker node. In the 18.8 experiment, on Windows CI, node reuse on stalled this
-# script in 20 of 20 iterations and node reuse off in 0 of 20. In all 98 holder
+# dumped processes, and persistent MSBuild nodes running. In the 18.8 experiment,
+# on Windows CI, the holder was a reused MSBuild worker node: node reuse on stalled
+# this script in 20 of 20 iterations and node reuse off in 0 of 20. In all 98 holder
 # rows over 59 firings, the process holding the generator's output pipe was
 # `dotnet ... MSBuild.dll ... /nodemode:1 /nodeReuse:true`, matched by kernel pipe
 # id. The publish had already exited; the node it started kept the publish's
