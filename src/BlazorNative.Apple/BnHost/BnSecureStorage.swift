@@ -18,6 +18,11 @@
 //     `.biometryCurrentSet` — the OS-KEY-LEVEL binding (§4c, owner-locked): the Secure
 //     Enclave itself refuses to release the bytes without a fresh Face/Touch ID, AND
 //     `.biometryCurrentSet` INVALIDATES the item if the enrolled biometric set changes.
+//     With no enrolled biometric it returns Unavailable and stores nothing, as Android
+//     does (18.7, #396): the shell checks enrolment first. With no biometric hardware
+//     it also returns Unavailable and stores nothing; Android's answer there is unpinned.
+//     Pinned by BnSecureStorageTests' #396 tests and, for the Android half,
+//     SecureStorageAndroidTest.auth_set_with_no_enrolled_biometric_is_unavailable.
 //   • get(key) → SecItemCopyMatching with kSecUseAuthenticationUI = .fail so a plain
 //     get NEVER silently prompts: a non-auth item returns Ok+value; an AUTH-bound item
 //     is REFUSED as AuthFailed. THE CONTRACT — a plain get of an auth item must not hand
@@ -108,14 +113,15 @@ enum BnSecureStorageStatus {
     static let ok: Int32 = 0          // set/delete succeeded; GET FOUND THE VALUE ({"value":…} on get)
     static let notFound: Int32 = 1    // get/getWithAuth of an absent key (no payload)
     static let authFailed: Int32 = 2  // the biometric gate denied / failed / cancelled / locked out; or a plain get of an auth item
-    /// No secure hardware, or the Keychain is unusable. Returned from a nil
-    /// `SecAccessControlCreateWithFlags` result, in `secureSet`, or from
-    /// `errSecMissingEntitlement` / `errSecNotAvailable`, in `mapAddError`. NOT
-    /// "biometrics not enrolled" — nothing on iOS checks enrolment. What an unenrolled
-    /// auth-bound `set` returns here is not established (#396). Android's `provisionKey`
-    /// path, reached only from its own auth-bound SET, DOES map that case to Unavailable;
-    /// a `getWithAuth` of an existing item there does not reach it the same way. iOS may
-    /// not agree either way — untested.
+    /// No secure hardware, the Keychain is unusable, or, since 18.7 (#396), an
+    /// auth-bound `set` with no enrolled biometric or no biometric hardware. The last is
+    /// `secureSet`'s enrolment check, and it stores nothing. With no enrolled biometric
+    /// that is the same as Android, whose `provisionKey` refuses an auth-bound set; the
+    /// no-hardware case is iOS's own behaviour, its Android twin unpinned. The others
+    /// come from a nil `SecAccessControlCreateWithFlags` result, in `secureSet`, or from
+    /// `errSecMissingEntitlement` / `errSecNotAvailable`, in `mapAddError`. What a read of
+    /// an item stored before the last biometric was removed returns is not established on
+    /// either shell, and out of scope.
     static let unavailable: Int32 = 3
     static let error: Int32 = 4       // unexpected host error (a caught throw, malformed args)
 }
@@ -383,11 +389,18 @@ final class BnSecureStorage {
     /// DeviceOnly. Ok on success; Unavailable when SecAccessControlCreateWithFlags
     /// returns nil; Error on any other add failure — all DATA.
     ///
-    /// NOT ESTABLISHED: whether a device with NO enrolled biometric fails here at ACL
-    /// creation, the way Android refuses at provisionKey, or succeeds and fails later
-    /// at SecItemAdd. The simulator cannot answer it — it has no Secure Enclave and
-    /// does not enforce a SecAccessControl at all. Do not restate this as a guarantee
-    /// until a device has shown it (#213 item 1, phase 14.3).
+    /// 18.7 (#396): an auth-bound set with no enrolled biometric returns Unavailable and
+    /// stores nothing, the same as Android, whose `provisionKey` refuses to generate the
+    /// key. With no biometric hardware it also returns Unavailable and stores nothing;
+    /// that is iOS's own behaviour, not a pinned parity claim. Pinned by BnSecureStorageTests'
+    /// #396 tests and, for the Android half of the enrolment case,
+    /// `SecureStorageAndroidTest.auth_set_with_no_enrolled_biometric_is_unavailable`.
+    /// The shell checks enrolment itself,
+    /// before it builds the ACL, so the outcome does not rest on what an unenrolled
+    /// device's Keychain would do with a `.biometryCurrentSet` item. A plain set never
+    /// asks. What a read returns for an item stored BEFORE the last biometric was
+    /// removed is a separate question, not established on either shell, and out of
+    /// scope here.
     @discardableResult
     func secureSet(key: String, value: String, requireAuth: Bool) -> Int32 {
         _ = secureDelete(key: key) // idempotent overwrite
@@ -395,6 +408,32 @@ final class BnSecureStorage {
         query[kSecValueData as String] = Data(value.utf8)
         Self.lastSetAccessControlForTest = nil
         if requireAuth {
+            // 18.7 (#396), THE ENROLMENT CHECK. It runs after the delete above, so on iOS a
+            // refused set leaves the key absent: a later plain get is NotFound, not the old
+            // value. Android's later get is NotFound too, by a different route, pinned by
+            // `auth_set_over_an_existing_value_is_unavailable_and_get_is_not_found`: its
+            // `provisionKey` deletes the keystore key and leaves the old blob in prefs,
+            // which apps cannot observe. It runs before `markAuthBound` and the `authLabel`
+            // stamp, so a refusal leaves no auth-bound record behind; the delete already cleared
+            // any earlier one. Not enrolled, no hardware, or any other failure is
+            // Unavailable. A lockout proceeds: the biometric is still enrolled, and
+            // enrolment is the condition mirrored from Android. Lockout parity with
+            // Android is NOT established; what its key generation does under lockout is
+            // unmeasured. The pins are BnSecureStorageTests'
+            // `testAuthSetWithNoEnrolledBiometricIsUnavailableAndStoresNothing`,
+            // `testAuthSetWithNoBiometricHardwareIsUnavailable`,
+            // `testAuthSetWhenBiometryCannotBeEvaluatedForAnyOtherReasonIsUnavailable`,
+            // `testAuthSetUnderLockoutProceeds`, `testPlainSetNeverAsksForBiometry`, and
+            // the boot test `testSetOnTheUnenrolledSimulatorShowsUnavailable`.
+            let (canEvaluate, evaluateError) = BnBiometrics.evaluateBiometry()
+            if !canEvaluate {
+                let laCode: LAError.Code? = (evaluateError as? LAError)?.code
+                if laCode != LAError.Code.biometryLockout {
+                    let codeText = laCode.map { String($0.rawValue) } ?? "none"
+                    BnLog.warn("BnSecureStorage", "set('\(key)') auth: biometry cannot be evaluated, LAError code \(codeText) — Unavailable, nothing stored")
+                    return BnSecureStorageStatus.unavailable
+                }
+            }
             var acError: Unmanaged<CFError>?
             guard let access = SecAccessControlCreateWithFlags(
                 kCFAllocatorDefault,

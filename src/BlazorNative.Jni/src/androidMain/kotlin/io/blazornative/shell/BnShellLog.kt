@@ -211,7 +211,10 @@ object BnShellLog {
 
     /**
      * Writes a line at a ready-made `android.util.Log` priority, ungated. The
-     * stderr pump uses it, because the .NET side already applied the level.
+     * stderr pump uses it: a prefixed line was already gated by .NET's level, and
+     * unprefixed native text is forwarded at Warn by decision (#401). The
+     * iOS pump is ungated the same way since 18.7 (#401), and
+     * `BnStderrPumpTwinTest` pins this half against the shared vectors.
      */
     @JvmStatic
     @JvmOverloads
@@ -223,6 +226,9 @@ object BnShellLog {
         writeUngated(androidPriority(level), tag, message, t, privacy)
     }
 
+    // Ungated on purpose. Its callers are info/debug/verbose and the gated write,
+    // which check isEnabled first; warn and error, which are ungated by design;
+    // and the stderr pump, whose prefixed lines .NET already gated.
     // Unrevealed: a REDACTED text becomes PRIVATE, a SAFE text is kept, and the
     // throwable is dropped either way. Revealed: text and throwable as given.
     private fun writeUngated(priority: Int, tag: String, message: String, t: Throwable?, privacy: BnPrivacy) {

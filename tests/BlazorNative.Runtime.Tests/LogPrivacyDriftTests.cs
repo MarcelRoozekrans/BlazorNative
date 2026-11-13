@@ -97,8 +97,8 @@ public sealed class LogPrivacyDriftTests
     private const int SeamPrivacyDefaults = 6;
 
     /// <summary>The number of <c>BnLog</c> entry points with a privacy default:
-    /// error, warn, info, debug, verbose and write.</summary>
-    private const int SwiftPrivacyDefaults = 6;
+    /// error, warn, info, debug, verbose, write and relay.</summary>
+    private const int SwiftPrivacyDefaults = 7;
 
     private static readonly string[] ShellDirs = [ShellDir, TemplateShellDir];
 
@@ -339,9 +339,18 @@ public sealed class LogPrivacyDriftTests
             @"static\s+func\s+write\s*\(\s*_\s+level\s*:\s*Int32\s*,[^{]*?_\s+privacy\s*:\s*BnLogPrivacy\s*=\s*\.redacted\s*\)\s*\{",
             log);
 
+        Assert.Matches(
+            @"static\s+func\s+relay\s*\(\s*_\s+level\s*:\s*Int32\s*,[^{]*?_\s+privacy\s*:\s*BnLogPrivacy\s*=\s*\.redacted\s*\)\s*\{",
+            log);
+
+        // 18.7: the sink forwards through `forward`, which relays UNGATED and takes
+        // the redacted default.
         string pump = Code(SwiftPump);
         Assert.Matches(
-            @"static\s+var\s+sink\s*:[^=]*=\s*\{\s*record\s+in\s+BnLog\s*\.\s*write\s*\(\s*record\.level\s*,\s*record\.category\s*,\s*record\.message\s*\)\s*\}",
+            @"static\s+var\s+sink\s*:[^=]*=\s*\{\s*BnStderrPump\s*\.\s*forward\s*\(\s*\$0\s*\)\s*\}",
+            pump);
+        Assert.Matches(
+            @"static\s+func\s+forward\s*\(\s*_\s+record\s*:\s*BnLogRecord\s*\)\s*\{\s*BnLog\s*\.\s*relay\s*\(\s*record\.level\s*,\s*record\.category\s*,\s*record\.message\s*\)\s*\}",
             pump);
     }
 

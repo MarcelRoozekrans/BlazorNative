@@ -8,19 +8,25 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.blazornative.jni.BiometricStatus
+import io.blazornative.jni.HostCallOp
 import io.blazornative.jni.SecureStorageStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +128,93 @@ class SecureStorageAndroidTest {
         // is DATA in range, never a thrown exception.
         assertTrue("check must return a BiometricStatus value (0..5), got $status",
             status in BiometricStatus.AUTHENTICATED..BiometricStatus.ERROR)
+    }
+
+    // ── 18.7 (#396): an auth-bound set with no enrolled biometric is Unavailable ──
+
+    /** The three preconditions the #396 tests share, checked first so UNAVAILABLE cannot come
+     * from anywhere but the missing enrolment: a secure lock screen, no enrolled biometric,
+     * and the device-credential test seam off. They are preconditions, not graded pins. */
+    private fun assertUnenrolledLaneWithASecureLockScreen() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val keyguard = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        assertTrue("the lane's AVD has no secure lock screen: UNAVAILABLE would come from that, not from enrolment",
+            keyguard.isDeviceSecure)
+        assertEquals("the lane's AVD has an enrolled biometric: this anchor needs none",
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED, BiometricManager.from(ctx).canAuthenticate(BIOMETRIC_STRONG))
+        assertFalse("the device-credential test seam must be off: it is production's false",
+            AndroidShellBridge.setAuthAllowsDeviceCredentialForTest)
+    }
+
+    @Test
+    fun auth_set_with_no_enrolled_biometric_is_unavailable() {
+        // THE ANDROID ANCHOR of the #396 twin; iOS's BnSecureStorageTests holds the other half.
+        // The set goes in through hostCallBegin, the entry .NET uses, and the completion status
+        // is read from the completion hook. Production provisioning is biometric-only, so
+        // provisionKey's KeyGenParameterSpec refuses a key when none is enrolled, and
+        // secureSetAuth completes Unavailable BEFORE any prompt is armed.
+        // PRECONDITIONS first, so UNAVAILABLE cannot come from anywhere else. setup() set the
+        // lock-screen PIN; the lane itself sets none. Without a secure lock screen the
+        // refusal would come from that, not from enrolment.
+        assertUnenrolledLaneWithASecureLockScreen()
+
+        // A prompt must never be reached. If provisioning wrongly succeeded, the set would arm
+        // its gate: this hook records that and denies at once, so the test fails on the
+        // assertions below and does not wait on a system sheet.
+        val gateReached = AtomicReference(false)
+        val completions = LinkedBlockingQueue<Int>()
+        AndroidShellBridge.biometricGateHook = { gate ->
+            gateReached.set(true)
+            gate.deny(SecureStorageStatus.AUTH_FAILED)
+        }
+        AndroidShellBridge.completeHookForTest = { _, status, _, _ -> completions.add(status) }
+        try {
+            bridge.hostCallBegin(1_000_000_000L + 396L, HostCallOp.SECURE_STORAGE,
+                """{"action":"set","key":"$authKey","value":"v","auth":"1"}""")
+            val status = completions.poll(10, TimeUnit.SECONDS)
+            assertNotNull("the auth-bound set never completed within 10s: a hang", status)
+            assertEquals(
+                "an auth-bound set with no enrolled biometric must be Unavailable on Android, the twin of iOS's check (#396)",
+                SecureStorageStatus.UNAVAILABLE, status)
+            assertFalse("a refused provision must complete before any prompt is armed", gateReached.get())
+            assertFalse("a refused auth-bound set must leave no key in the AndroidKeyStore",
+                bridge.hasKeystoreEntryForTest(authKey))
+            assertFalse("a refused auth-bound set must store no blob", bridge.hasBlobForTest(authKey))
+        } finally {
+            AndroidShellBridge.resetHostCallContractForTest()
+        }
+    }
+
+    @Test
+    fun auth_set_over_an_existing_value_is_unavailable_and_get_is_not_found() {
+        // THE ANDROID TWIN of iOS's refused-set-over-an-old-value assertions (#396). A plain
+        // value is stored first; the refused auth-bound set then deletes the keystore key in
+        // provisionKey, so a later get is NotFound, not the old value. The old ciphertext blob
+        // is NOT asserted: it stays in prefs, unreadable without its key and unobservable by
+        // an app, a known difference from iOS, which deletes the item itself.
+        assertUnenrolledLaneWithASecureLockScreen()
+        assertEquals("the setup store of the old value failed",
+            SecureStorageStatus.OK, bridge.secureSetPlainCore(authKey, "old").status)
+        assertEquals("the old value must read back before the refused set",
+            "old", bridge.secureGetCore(authKey).value)
+
+        val completions = LinkedBlockingQueue<Int>()
+        AndroidShellBridge.biometricGateHook = { gate -> gate.deny(SecureStorageStatus.AUTH_FAILED) }
+        AndroidShellBridge.completeHookForTest = { _, status, _, _ -> completions.add(status) }
+        try {
+            bridge.hostCallBegin(1_000_000_000L + 3961L, HostCallOp.SECURE_STORAGE,
+                """{"action":"set","key":"$authKey","value":"v","auth":"1"}""")
+            val status = completions.poll(10, TimeUnit.SECONDS)
+            assertNotNull("the auth-bound set never completed within 10s: a hang", status)
+            assertEquals("an auth-bound set over an existing value, with no enrolled biometric, must be Unavailable (#396)",
+                SecureStorageStatus.UNAVAILABLE, status)
+            val got = bridge.secureGetCore(authKey)
+            assertEquals("a refused auth-bound set must leave a later get at NotFound, not the old value or AuthFailed (#396)",
+                SecureStorageStatus.NOT_FOUND, got.status)
+            assertNull("a refused auth-bound set must leave no value to read", got.value)
+        } finally {
+            AndroidShellBridge.resetHostCallContractForTest()
+        }
     }
 }
 

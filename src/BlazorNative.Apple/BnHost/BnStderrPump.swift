@@ -58,6 +58,15 @@
 // handlers do): last writer wins. This cannot be tested; it is written down here
 // and in the shell docs. Hence [install] is idempotent and guarded.
 //
+// ⚠ THE PUMP IS UNGATED (18.7, #401). .NET applies its own level before it writes
+// a prefixed line to fd 2, so the pump forwards every line it reads at the level
+// .NET wrote it, through `BnLog.relay`, and never compares it with the shell's
+// level. Unprefixed text (BCL, crash detail, native libraries) was gated by
+// nothing; it is forwarded at Warn by decision. The shell's own narration keeps
+// the level it resolved at boot. Android does the same. `BnStderrPumpTwinTests`
+// (iOS) and `BnStderrPumpTwinTest` (Android) pin the two halves against the
+// shared vectors.
+//
 // ⚠ CI-VERIFIED ONLY. Like every Swift file in this shell, this was not built or
 // run on the authoring machine (no Mac, no Xcode) — the iOS lane is
 // .github/workflows/ios.yml.
@@ -78,12 +87,23 @@ enum BnStderrPump {
     /// `BnStderrPump.MAX_LINE`.
     static let maxLine = 4000
 
-    /// THE SINK SEAM (design §8.1 pin 5). Production forwards to [BnLog]; a test
-    /// swaps in a collector and asserts the level and category it observed —
-    /// which is the honest pin, because scraping the unified log for a line is
+    /// THE SINK SEAM (design §8.1 pin 5). Production forwards to [BnLog] through
+    /// [forward], which is UNGATED: .NET already applied its own level to a prefixed
+    /// line before it reached fd 2, so the shell's level is not applied a second
+    /// time. Pinned by `LogPrivacyDriftTests` (the sink to forward to relay source
+    /// tokens) and by the twin tests `BnStderrPumpTwinTests` and
+    /// `BnStderrPumpTwinTest`, which drive `forward`. A test
+    /// swaps in a collector and asserts the level and category it observed — which
+    /// is the honest pin, because scraping the unified log for a line is
     /// timing-sensitive and slow.
-    static var sink: (BnLogRecord) -> Void = { record in
-        BnLog.write(record.level, record.category, record.message)
+    static var sink: (BnLogRecord) -> Void = { BnStderrPump.forward($0) }
+
+    /// The production forward: one parsed stderr record onto the unified log, at the
+    /// level .NET wrote it, with NO shell-level gate (18.7, #401). The same as
+    /// Android since 18.7. Pinned against the shared vectors by `BnStderrPumpTwinTests`
+    /// (iOS) and `BnStderrPumpTwinTest` (Android).
+    static func forward(_ record: BnLogRecord) {
+        BnLog.relay(record.level, record.category, record.message)
     }
 
     private static let lock = NSLock()

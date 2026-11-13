@@ -170,8 +170,15 @@ object SecureStorageStatus {
                                  // throws when generating a key with none enrolled; caught by
                                  // secureErrorStatus). getWithAuth of an EXISTING item does NOT reach
                                  // this the same way — a denied/unavailable prompt there always folds
-                                 // to AuthFailed. iOS is NOT known to map the SET case the same way —
-                                 // nothing on that shell checks enrolment (#396).
+                                 // to AuthFailed. An auth-bound SET with no enrolled biometric is
+                                 // Unavailable on BOTH shells, storing nothing (18.7, #396): iOS checks
+                                 // enrolment before it builds the access control. Pinned by
+                                 // BnSecureStorageTests' #396 tests and
+                                 // SecureStorageAndroidTest.auth_set_with_no_enrolled_biometric_is_unavailable.
+                                 // A refused set over an existing value leaves a later get at
+                                 // NotFound (an Android test pins it); the old blob stays in
+                                 // prefs, which apps cannot observe. With no biometric
+                                 // hardware each shell answers for itself.
     const val ERROR = 4         // unexpected host error (a caught throw, a decrypt failure, malformed args)
 }
 

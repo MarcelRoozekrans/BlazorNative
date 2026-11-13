@@ -43,8 +43,8 @@ declared default, which beats the runtime default, and the shell hands the resul
 boot. A managed `BnLog.Level` assignment made from your `ConfigureServices` callback runs
 later than that — when the first page mounts — so it replaces the level .NET was booted with,
 for the rest of the session. It does not reach back into the shells: their own narration keeps
-the level they resolved, and on iOS the shell's stderr pump re-applies that level to the lines
-.NET writes, so a managed raise shows up there only once the shell's level is raised too.
+the level they resolved. On both shells the stderr pump forwards what .NET wrote, at the level
+.NET wrote it, without re-applying the shell's level, so a managed raise shows up at once.
 
 ### From managed code — `BnLog.Level`
 

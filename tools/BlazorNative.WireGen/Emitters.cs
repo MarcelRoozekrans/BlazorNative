@@ -25,6 +25,9 @@ public static class Emitters
     /// <summary>The deep-link vector manifest — the second table this tool owns.</summary>
     public const string VectorsManifestPath = "src/deeplink-vectors.json";
 
+    /// <summary>The stderr pump vector manifest — the third table this tool owns.</summary>
+    public const string StderrVectorsManifestPath = "src/stderr-pump-vectors.json";
+
     /// <summary>A comment block in the target language's line-comment syntax.
     /// Every generated file opens with one; only the prose differs.</summary>
     private static string CommentBlock(string commentPrefix, string[] lines)
@@ -393,7 +396,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        ({CQ(c.Url)}, {(c.Route is null ? "null" : CQ(c.Route))}),\n");
         }
 
         sb.Append("    ];\n");
@@ -423,7 +426,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        Pair(\"{c.Url}\", {(c.Route is null ? "null" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        Pair({KQ(c.Url)}, {(c.Route is null ? "null" : KQ(c.Route))}),\n");
         }
 
         sb.Append("    )\n");
@@ -449,7 +452,7 @@ public static class Emitters
         foreach (DeepLinkVector c in v.Vectors)
         {
             sb.Append($"        // {c.Why}\n");
-            sb.Append($"        (\"{c.Url}\", {(c.Route is null ? "nil" : $"\"{c.Route}\"")}),\n");
+            sb.Append($"        ({SQ(c.Url)}, {(c.Route is null ? "nil" : SQ(c.Route))}),\n");
         }
 
         sb.Append("    ]\n");
@@ -478,5 +481,119 @@ public static class Emitters
         ["tests/BlazorNative.Runtime.Tests/BnDeepLinkVectors.g.cs"] = EmitCSharpVectors(v),
         ["src/BlazorNative.Jni/src/androidTest/kotlin/io/blazornative/shell/BnDeepLinkVectors.g.kt"] = EmitKotlinVectors(v),
         ["src/BlazorNative.Apple/BnHostTests/BnDeepLinkVectors.g.swift"] = EmitSwiftVectors(v),
+    };
+
+    // ── Stderr pump vectors (18.7) ───────────────────────────────────────────
+    // The Kotlin and Swift stderr pumps are hand-written twins. The table of
+    // (shell level, raw line) -> forwarded record they must both satisfy is
+    // written once in the manifest. No C# copy: no .NET suite consumes it.
+
+    private static string StderrBanner() => CommentBlock("//",
+    [
+        "GENERATED FILE — DO NOT EDIT (18.7).",
+        "",
+        $"Source of truth: {StderrVectorsManifestPath}",
+        "Regenerate:      dotnet run --project tools/BlazorNative.WireGen",
+        "",
+        "One stderr line -> forwarded record case, written ONCE in the manifest and",
+        "asserted by the Kotlin JVM suite and the Swift XCTest suite. Editing this",
+        "file by hand puts one pump's expectations out of step with the other's;",
+        "WireVocabularyCodegenTests re-runs the emitter and byte-compares, so the",
+        "edit fails the required build-test lane rather than reaching a device.",
+    ]);
+
+    /// <summary>A string literal in the target language. Both escape backslash, quote and the
+    /// control characters; only Kotlin treats <c>$</c> as a template start, and Swift has no
+    /// <c>\$</c> escape, so it must not get one.</summary>
+    private static string Quote(string s, bool kotlin)
+    {
+        string r = s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        if (kotlin) r = r.Replace("$", "\\$");
+        return "\"" + r + "\"";
+    }
+
+    private static string KQ(string s) => Quote(s, kotlin: true);
+    private static string SQ(string s) => Quote(s, kotlin: false);
+    /// <summary>C# regular string literal: the same escapes as Swift, and <c>$</c> is literal.</summary>
+    private static string CQ(string s) => Quote(s, kotlin: false);
+
+    /// <summary>The Kotlin stderr vector table, for the JVM test source set.</summary>
+    public static string EmitKotlinStderrVectors(StderrPumpVectors v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(StderrBanner());
+        sb.Append("""
+
+            package io.blazornative.shell
+
+            /** One stderr line and the record the pump must forward for it. Levels are BnLogLevel ordinals. */
+            data class BnStderrPumpVector(
+                val name: String,
+                val shellLevel: Int,
+                val line: String,
+                val level: Int,
+                val category: String,
+                val message: String,
+            )
+
+            /** The stderr pump cases, generated from the manifest. The DATA only. */
+            object BnStderrPumpVectors {
+                /** Every case. Each expects the line to be forwarded: the managed level is the only gate. */
+                val all: List<BnStderrPumpVector> = listOf(
+
+            """);
+
+        foreach (StderrPumpVector c in v.Vectors)
+        {
+            sb.Append($"        // {c.Why}\n");
+            sb.Append($"        BnStderrPumpVector({KQ(c.Name)}, {c.ShellLevel}, {KQ(c.Line)}, {c.Level}, {KQ(c.Category)}, {KQ(c.Message)}),\n");
+        }
+
+        sb.Append("    )\n");
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    /// <summary>The Swift stderr vector table, for BnHostTests.</summary>
+    public static string EmitSwiftStderrVectors(StderrPumpVectors v)
+    {
+        var sb = new StringBuilder();
+        sb.Append(StderrBanner());
+        sb.Append("""
+
+            /// One stderr line and the record the pump must forward for it. Levels are BnLogLevel ordinals.
+            struct BnStderrPumpVector {
+                let name: String
+                let shellLevel: Int32
+                let line: String
+                let level: Int32
+                let category: String
+                let message: String
+            }
+
+            /// The stderr pump cases, generated from the manifest. The DATA only.
+            enum BnStderrPumpVectors {
+                /// Every case. Each expects the line to be forwarded: the managed level is the only gate.
+                static let all: [BnStderrPumpVector] = [
+
+            """);
+
+        foreach (StderrPumpVector c in v.Vectors)
+        {
+            sb.Append($"        // {c.Why}\n");
+            sb.Append($"        BnStderrPumpVector(name: {SQ(c.Name)}, shellLevel: {c.ShellLevel}, line: {SQ(c.Line)}, level: {c.Level}, category: {SQ(c.Category)}, message: {SQ(c.Message)}),\n");
+        }
+
+        sb.Append("    ]\n");
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    /// <summary>Every stderr vector output, repo-relative path → emitted content.</summary>
+    public static IReadOnlyDictionary<string, string> EmitAllStderrVectors(StderrPumpVectors v) => new Dictionary<string, string>
+    {
+        ["src/BlazorNative.Jni/src/test/kotlin/io/blazornative/shell/BnStderrPumpVectors.g.kt"] = EmitKotlinStderrVectors(v),
+        ["src/BlazorNative.Apple/BnHostTests/BnStderrPumpVectors.g.swift"] = EmitSwiftStderrVectors(v),
     };
 }
