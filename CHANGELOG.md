@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.3...v0.22.0) (2026-11-11)
+
+
+### Features
+
+* add net11.0 target ([#690](https://github.com/MarcelRoozekrans/BlazorNative/issues/690)) ([6e07d09](https://github.com/MarcelRoozekrans/BlazorNative/commit/6e07d0973a2ba945e009db2a2de21e7d0e759730))
+
+
+### Bug Fixes
+
+* **18.6:** bound the JVM suite's waits and check a handled back in its own turn ([#659](https://github.com/MarcelRoozekrans/BlazorNative/issues/659)) ([d7fdf93](https://github.com/MarcelRoozekrans/BlazorNative/commit/d7fdf9371064d2bfbab89c51712cc6d3cfa1d72c))
+
 ## [0.21.3](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.2...v0.21.3) (2026-11-10)
 
 
