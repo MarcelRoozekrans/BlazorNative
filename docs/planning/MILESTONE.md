@@ -65,7 +65,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
 7. Phase 18.7 — twin divergences (#401, #396) [complete]
-8. Phase 18.8 — the generator's pipe holder (#530) [pending]
+8. Phase 18.8 — the generator's pipe holder (#530) [active]
 9. Phase 18.9 — audit and close (#568) [pending]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.

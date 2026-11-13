@@ -4048,8 +4048,9 @@ the app's handler through a forwarding hook.
 **Surface:** Mixed
 **HelpWanted:** no
 
-#### Phase 18.8: The generator's pipe holder (#530) [status: pending]
+#### Phase 18.8: The generator's pipe holder (#530) [status: active]
 **Goal:** Identify and fix what holds the reference generator's output pipe after `dotnet publish`.
+**Plan:** `docs/superpowers/plans/2026-11-13-phase-18.8-pipe-holder.md`
 **Surface:** Infra
 **HelpWanted:** no
 
