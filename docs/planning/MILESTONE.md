@@ -66,7 +66,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
 7. Phase 18.7 — twin divergences (#401, #396) [complete]
 8. Phase 18.8 — the generator's pipe holder (#530) [complete]
-9. Phase 18.9 — the Windows dispatch bound (#564) [pending] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
+9. Phase 18.9 — the Windows dispatch bound (#564) [active] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
 10. Phase 18.10 — iOS show completes when posted (#444) [pending] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
 11. Phase 18.11 — audit and close (#568) [pending]
 
