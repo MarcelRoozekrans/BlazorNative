@@ -128,20 +128,31 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# NODE REUSE OFF, for every MSBuild call below: the likely fix for #454. In the
+# NODE REUSE OFF, for every MSBuild call below: the fix for #454, proven by the
+# 18.8 experiment (docs/plans/2026-11-13-phase-18.8-record.md section 2). In the
 # 2026-10-15 Linux hang the publish had exited, yet something still held its output
 # pipe, so this script's `| Out-Host` never saw EOF. The hung pwsh's dump holds the
 # emitted Runtime "publishing" line, the publish's own final "->" output line and
-# its arguments, and no emitted "xmldoc2md ->" line; no dump is of the publish. The 2026-10-15 Linux hang ran with node
-# reuse on: no MSBUILDDISABLENODEREUSE in the environment of any of the three
-# dumped processes, and persistent MSBuild nodes running. A worker node that
-# outlives the publish is the leading suspect; it is not proven, and #530 tracks
-# proving it. With reuse off, MSBuild's documented behaviour is that no worker node
-# outlives the build that started it; this repo does not pin that behaviour, only
-# that the switch and the variable are set. Whatever the cause, the bound in
-# the test project's BoundedScript turns a stall into a named failure. The
-# variable covers any MSBuild this script starts, and each call also passes
-# -nodeReuse:false. GeneratorRunTests pins both.
+# its arguments, and no emitted "xmldoc2md ->" line; no dump is of the publish.
+# The 2026-10-15 Linux hang ran with node reuse on: no MSBUILDDISABLENODEREUSE in
+# the environment of any of the three dumped processes, and persistent MSBuild nodes
+# running. In the 18.8 experiment, on Windows CI, the holder was a reused MSBuild
+# worker node: node reuse on stalled this script in 20 of 20 iterations and node
+# reuse off in 0 of 20. In all 98 holder rows over 59 firings, the process holding
+# the generator's output pipe was `dotnet ... MSBuild.dll ... /nodemode:1
+# /nodeReuse:true`; 96 rows were matched by the write-end pipe id and 2 by the
+# anchor-created rule, because their parent was never seen. The publish had already
+# exited; the node it started kept the publish's stdout, the pipe this script reads,
+# and its stderr. MSBUILDDISABLENODEREUSE was absent from that node's environment.
+# That was measured on Windows, where the node inherited the publish's handles
+# directly; the 2026-10-15 hang was on Linux and showed the same environment and
+# persistent nodes, but its holder was not matched by pipe id. With reuse off,
+# per MSBuild's documented behaviour, no worker node outlives the build that
+# started it. This repo pins the switch and the variable, not that behaviour; the
+# experiment shows it and nothing in CI re-runs it. The bound in the test project's
+# BoundedScript still turns any other stall into a named failure. The variable
+# covers any MSBuild this script starts, and each call also passes -nodeReuse:false.
+# GeneratorRunTests pins both.
 $env:MSBUILDDISABLENODEREUSE = '1'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

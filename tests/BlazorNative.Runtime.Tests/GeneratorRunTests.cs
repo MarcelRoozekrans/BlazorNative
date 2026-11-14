@@ -32,9 +32,12 @@ namespace BlazorNative.Runtime.Tests;
 /// real executable, as on Windows, a plain kill passes too, so there the tree kill is
 /// effectively unpinned. A native pwsh install, such as GitHub's ubuntu runners, is
 /// expected to behave like Windows here; that is not measured.</item>
-/// <item>What held the pipe in the real hangs. A reused MSBuild node is the leading
-/// suspect, not proven; #530 tracks it. This pins only that any such hang is
-/// bounded and named.</item>
+/// <item>What held the pipe in a real hang other than the one measured. The 18.8
+/// experiment, docs/plans/2026-11-13-phase-18.8-record.md §2, named the holder on
+/// Windows CI: a reused MSBuild worker node, <c>dotnet … MSBuild.dll … /nodemode:1
+/// /nodeReuse:true</c>, in all 98 holder rows over 59 firings. The 2026-10-15 Linux
+/// hang was not matched by pipe id, so this does not claim its holder was the same.
+/// This pins only that any such hang is bounded and named.</item>
 /// </list></para>
 /// </summary>
 public sealed class GeneratorRunTests
@@ -231,7 +234,7 @@ public sealed class GeneratorRunTests
         }
     }
 
-    // ── node reuse off in the generator: #454's likely fix ──────────────────────
+    // ── node reuse off in the generator: #454's fix, proven by 18.8 on Windows ───────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
     /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
@@ -283,16 +286,26 @@ public sealed class GeneratorRunTests
         => File.ReadAllText(Path.Combine(BnRepo.Root(), "scripts", "generate-reference.ps1"));
 
     /// <summary>
-    /// PIN, #454's likely fix: every MSBuild call in generate-reference.ps1 passes
+    /// PIN, #454's fix: every MSBuild call in generate-reference.ps1 passes
     /// -nodeReuse:false, and the script sets MSBUILDDISABLENODEREUSE=1 before the
-    /// first one, so no MSBuild worker node the publish starts outlives it. The
-    /// 2026-10-15 Linux hang ran with node reuse on, and an outliving node is the
-    /// leading suspect for the held pipe. Whatever the cause, the bound in
+    /// first one. By MSBuild's documented behaviour no worker node the publish starts
+    /// then outlives it; the fixed arm of the 18.8 experiment showed that on Windows,
+    /// and this fact does not pin it. The
+    /// 18.8 experiment, docs/plans/2026-11-13-phase-18.8-record.md §2, proved the
+    /// holder: with node reuse on, the generator stalled in 20 of 20 iterations, and
+    /// the holder of its output pipe, in all 98 rows over 59 firings, was a
+    /// <c>dotnet … MSBuild.dll … /nodemode:1 /nodeReuse:true</c> worker node, 96 rows
+    /// matched by the write-end pipe id and 2 by the anchor-created rule, with
+    /// <c>MSBUILDDISABLENODEREUSE</c> absent. With the switch and
+    /// the variable, 0 of 20 stalled. Whatever else may hold a pipe, the bound in
     /// <see cref="BoundedScript"/> turns a stall into a named failure.
     ///
-    /// <para>DOES NOT COVER: whether node reuse caused the hangs; it is not proven,
-    /// and #530 tracks it. Calls the recogniser does not see: one hidden behind a
-    /// variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
+    /// <para>DOES NOT COVER: the behaviour. This fact checks the switch and the
+    /// variable in the script text; that they stop the node outliving the publish is
+    /// shown by the experiment, <c>18.8-E1</c>, which nothing in CI re-runs. The
+    /// experiment ran on Windows; the 2026-10-15 hang was on Linux, and this does not
+    /// claim its holder was matched by pipe id. Calls the recogniser does not see: one
+    /// hidden behind a variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
     /// <c>Invoke-Expression "dotnet publish …"</c>; and one started through
     /// <c>Start-Process dotnet -ArgumentList publish</c>. For all of them the environment
     /// variable still covers it.</para>
@@ -308,7 +321,7 @@ public sealed class GeneratorRunTests
             + "its whole point, so the recogniser is broken, not the script clean");
         Assert.True(withReuse.Count == 0,
             "an MSBuild call in scripts/generate-reference.ps1 leaves node reuse on (#454): a reused "
-            + "worker node can outlive the publish and is the leading suspect for a held pipe. "
+            + "worker node outlived the publish and held the generator's pipe in the 18.8 experiment on Windows. "
             + "Add -nodeReuse:false:\n  "
             + string.Join("\n  ", withReuse));
 

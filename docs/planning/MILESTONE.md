@@ -46,7 +46,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 - [x] **#401 and #396 are fixed.** Each twin divergence is resolved to one documented behaviour on both shells and pinned by a twin pin. Done in 18.7, PR #691.
   - #401 is the stderr pump's level gate.
   - #396 is secure storage on an unenrolled device.
-- [ ] **#530 is fixed.** The process that outlives `dotnet publish` and holds the reference generator's output pipe is identified and fixed at its source. The bound from 17.5 still names it if it ever returns.
+- [x] **#530 is fixed.** The process that outlives `dotnet publish` and holds the reference generator's output pipe is identified and fixed at its source. The bound from 17.5 still names it if it ever returns. Done in 18.8, PR #707: on Windows CI the holder is a reused MSBuild worker node. Node reuse on stalled 20 of 20 iterations, off was clean 20 of 20, so 17.5's node-reuse fix is the source fix ([record](../plans/2026-11-13-phase-18.8-record.md) section 2).
 - [ ] **#568 is fixed.** No register cell cites a stale red without naming it stale.
 - [ ] **No ABI change.** The 80-byte bridge struct and the 10 exports are unchanged. Any wire addition goes through `src/wire-vocabulary.json`.
 - [ ] **Every new pin conforms to the grading rule.**
@@ -65,7 +65,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
 7. Phase 18.7 — twin divergences (#401, #396) [complete]
-8. Phase 18.8 — the generator's pipe holder (#530) [pending]
+8. Phase 18.8 — the generator's pipe holder (#530) [complete]
 9. Phase 18.9 — audit and close (#568) [pending]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
