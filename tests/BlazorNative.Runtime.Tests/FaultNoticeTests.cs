@@ -950,7 +950,8 @@ public sealed class FaultNoticeTests
         try
         {
             // Anchors: the call really was begun, answered inside begin, on a thread other than
-            // the handler's. Without them rc 2 would only show that no call was begun.
+            // the handler's, which the dispatch's flowing scope reached. Without them rc 2 would
+            // only show that no call was begun, or that the scope never left the handler's thread.
             Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
@@ -960,9 +961,9 @@ public sealed class FaultNoticeTests
             Assert.True(ShellCallProbe.BeginThread > 0 && ShellCallProbe.BeginThread != ShellCallProbe.HandlerThread,
                 $"anchor: the call was begun on thread {ShellCallProbe.BeginThread}, the handler ran on "
                 + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
-            Assert.True(ShellCallProbe.FlowSeenOnBeginThread == "dispatch-flow",
-                $"anchor: the begin thread saw '{ShellCallProbe.FlowSeenOnBeginThread}', not the handler's flowing value, "
-                + "so the dispatch's flowing scope did not reach it either, and rc 2 would not show that the mark ignores that scope.");
+            Assert.True(ShellCallProbe.FlowingScopeSeenOnBeginThread,
+                "anchor: the dispatch's flowing scope was not set on the begin thread after its begin returned, "
+                + "so the scope did not reach that thread, and rc 2 would not show that the mark ignores that scope.");
             Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
                 + "after it stays rc 2. rc 0 means the dispatch was marked although no call was begun on its synchronous "
                 + "part's thread, for example because the mark followed the flowing scope.");
@@ -2452,14 +2453,10 @@ public sealed class FaultNoticeTests
         /// DispatchProbe resets both.</summary>
         public static volatile int HandlerThread, BeginThread;
 
-        /// <summary>The value of FlowProbe the begin thread saw, and any fault it hit.
-        /// DispatchProbe resets both.</summary>
-        public static volatile string? FlowSeenOnBeginThread;
+        /// <summary>Whether the renderer's flowing dispatch scope was set on the begin thread
+        /// once its begin returned, and any fault that thread hit. DispatchProbe resets both.</summary>
+        public static volatile bool FlowingScopeSeenOnBeginThread;
         public static volatile Exception? BeginThreadFault;
-
-        /// <summary>Set by the handler so the begin thread can prove the ExecutionContext flowed.
-        /// Scoped to the dispatch, so it needs no reset.</summary>
-        public static readonly AsyncLocal<string?> FlowProbe = new();
 
         /// <summary>18.1 (#564): gated-begin-then-throw waits on this in its synchronous part.
         /// Open unless a fact closes it; that fact opens it again in its finally.</summary>
@@ -2510,16 +2507,16 @@ public sealed class FaultNoticeTests
             Button(b, 80, "thread-begin-then-throw", () =>
             {
                 HandlerThread = Environment.CurrentManagedThreadId;
-                FlowProbe.Value = "dispatch-flow";
-                // A dedicated thread, started with Start so the ExecutionContext flows, not a pool
-                // thread (#564). The fake answers inside begin, so the join never waits on the shell.
+                // A dedicated thread, started with Start so the ExecutionContext and with it the
+                // dispatch's flowing scope reach it, not a pool thread (#564). The thread discards
+                // the call's task, so the join waits only for the begin call to return.
                 var t = new Thread(() =>
                 {
                     try
                     {
                         _ = Bridge.CheckGeolocationPermissionAsync();
                         BeginThread = Environment.CurrentManagedThreadId;
-                        FlowSeenOnBeginThread = FlowProbe.Value;
+                        FlowingScopeSeenOnBeginThread = HostSession.CurrentRenderer?.FlowingScopeIsSetForTests == true;
                     }
                     catch (Exception ex) { BeginThreadFault = ex; }
                 }) { IsBackground = true, Name = "fault-notice-begin" };
@@ -2656,7 +2653,7 @@ public sealed class FaultNoticeTests
             int handlerId = HandlerFor(frames, "click", label);
             ShellCallProbe.ReachedThrow = false;
             ShellCallProbe.HandlerThread = ShellCallProbe.BeginThread = 0;
-            ShellCallProbe.FlowSeenOnBeginThread = null;
+            ShellCallProbe.FlowingScopeSeenOnBeginThread = false;
             ShellCallProbe.BeginThreadFault = null;
             ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
             FakeShellHost.AutoCompleteHostCall = true;
