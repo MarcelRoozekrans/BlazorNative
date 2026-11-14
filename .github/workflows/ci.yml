@@ -132,7 +132,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
@@ -3036,7 +3036,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Download the coverage reports from build-test
         uses: actions/download-artifact@v8
@@ -3162,7 +3162,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Setup JDK 25 (Temurin — Gradle daemon + sdkmanager)
         uses: actions/setup-java@v6
@@ -3410,7 +3410,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       # macos-latest drifts (Xcode, SDK, clang). Record it — assert nothing — so a
       # link failure that is really an image bump is diagnosable from one run.
