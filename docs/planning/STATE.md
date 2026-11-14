@@ -1,26 +1,22 @@
 # Session State
 
-**Last session:** 2026-11-13
+**Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.8 — the generator's pipe holder (#530), `[status: pending]`. Design approved 2026-11-11 and committed; no plan yet. 18.1 to 18.7 are complete.
-**Branch:** `feat/18.8-pipe-holder`, from `main` at `ff39e209`. No PR yet.
+**Phase:** 18.8 — the generator's pipe holder (#530), `[status: complete]` on this branch. 18.1 to 18.8 are complete; 18.9 (#568) is next.
+**Branch:** `feat/18.8-pipe-holder`, PR #707 against `main`. Draft until its lanes are green on the complete-phase head, then ready. Not merged.
 
 ## Current Position
 
-- **18.7 is merged:** PR #691, squash `ff39e209`, 2026-11-13. #401 and #396 are closed.
-  - Every lane was green on attempt 1 on the final head `45e4f1fa`, the update from `main`.
-  - CodeRabbit's two findings were fixed in `c3e5f954`, a guard that both stderr targets are emitted, and `49e1b9d9`, which re-ran R18 to R20 and added R23. Record §3.3.
-  - #603 recurred once, on `49e1b9d9`'s attempt 1, and is commented there.
-  - The merge used `--admin` for the one-approval review rule only, after its stale CodeRabbit changes-requested review was dismissed with a reason.
-- **18.8's design is approved:** `docs/superpowers/specs/2026-11-11-phase-18.8-design.md`. The owner chose a Windows experiment over closing on the evidence or moving the publish output to a file.
-  - A scratch-ref `windows-latest` workflow, triggered on push to `scratch/530-**`, loops `ci.yml`'s exact .NET test invocation 20 times with the 17.5 node-reuse fix stripped and 20 times with it in.
-  - A watcher names the holder of a stalled pipe with `handle.exe` before the bound fires.
-  - The fix follows from what the watcher names. If nothing stalls in 40 iterations, the owner rules, and no PR is opened before that.
-- **Measured for 18.8, 2026-11-11:**
-  - `ci.yml` ran 333 times since 17.5, and its 130 retrievable failed logs have no bound message.
-  - Local Linux runs with the fix stripped: 7 runs, no stall, and no MSBuild worker node ever spawned, so Linux cannot test the suspect.
-  - A bash `>(...)` probe leaks fd 63 to a cold `VBCSCompiler`. That is an artifact of the probe; use a plain `|`.
-- **Baselines:** .NET 2824 (1412 facts on two TFMs), JVM 210, Android 273, iOS 303.
+- **#530's holder is identified:** on Windows CI it is a reused MSBuild worker node, `dotnet … MSBuild.dll /nodemode:1 /nodeReuse:true`, started by the generator's `dotnet publish`. It kept the publish's stdout pipe after the publish exited. Record: `docs/plans/2026-11-13-phase-18.8-record.md`.
+  - Stripped arm, node reuse on: 20 of 20 iterations stalled, 59 watcher firings, 98 holder rows, all the node. Run 43477943304.
+  - Fixed arm, 17.5's `-nodeReuse:false` plus `MSBUILDDISABLENODEREUSE=1`: 20 of 20 clean. Run 43477938291.
+  - So 17.5's change is the source fix on Windows. The 2026-10-15 Linux holder was not measured and is not claimed.
+- **D2 was amended twice.** The owner ruled on 2026-11-13 to match by kernel pipe identity, because the redirect pipe is anonymous on `windows-latest`. A controller ruling then added the write-end match with ServerPid equal to the reader, and an anchor-created rule. The PR body asks the owner to confirm it; 96 of 98 rows meet the stricter rule alone.
+- **Pins:** 18.8-M3 and M3b re-red the node-reuse pin; 25 stale reds of pin-standard rows 613 to 615 were re-run as `18.8-*`, and the rows are remapped. 18.8-E1 is the behavioural evidence, and nothing in CI re-runs it.
+- **The harness is gone from the remote:** the `scratch/530-*` refs were deleted after the record was written. Four local `scratch/530-*` branches remain in the main checkout; they are safe to delete.
+- **Lanes on the Task 5 head `06c87c6d`:** ci, android-instrumented and ios all green on attempt 1. iOS on `6c17145f` red once with the #444 signature, recorded in record section 1.
+- **Commits:** the branch history was rewritten with a message-only change to strip two Co-Authored-By trailers, then force-pushed before the PR existed.
+- **Baselines unchanged:** .NET 2824 (1412 facts on two TFMs), JVM 210, Android 273, iOS 303.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -36,6 +32,7 @@
 
 ## Open Decisions (owner)
 
+- **Confirm D2's extended match rule**, asked in PR #707's body.
 - **After M18 (decided 2026-11-04):** a short milestone, 1.0 readiness plus performance. Add a perf baseline: cold boot, dispatch-lane latency and frame-apply time on both shells, compared against an older release. Re-check every 1.0 criterion in `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` against current code. Then cut 1.0 or list what blocks it. The repo has no benchmark today.
 - #621: a second instance's final destroy denies another instance's orphaned secure-storage prompt. The fix needs per-Activity prompt ownership, a design decision.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
@@ -43,23 +40,21 @@
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
 - #582: the allowlist for a second-Activity logcat check.
-- #444 recurred on PR #634's ios lane, attempt 1, on head `05ba2b86`, a PR with no iOS shell change; the final head was green on attempt 1. The M18 DoD needs attempt 1 green on every lane.
-- #444: decouple a show's `Granted` from presentation, because the SpringBoard stall is not ours.
+- #444: decouple a show's `Granted` from presentation, because the SpringBoard stall is not ours. It recurred on PR #707's ios lane on `6c17145f`.
 
 ## Blockers
 
-- None.
+- None. PR #707 waits on its lanes for the complete-phase head, then the owner's merge.
 
 ## Recommended Next Step
 
-1. Run `start-next-phase` on `feat/18.8-pipe-holder`. The phase is `pending` with a design and no plan, and Surface is `Infra`, so it routes straight to `superpowers:writing-plans`.
-   - The plan's checks come from `CONVENTIONS.md`.
-   - Then `list-phase-assumptions`, then subagent-driven execution.
-2. The experiment's workflow and the strip commits live on `scratch/530-*` refs only, are never merged, and are deleted after the record is written. Check before deleting.
+1. Merge PR #707 when it is green and ready. Read state from `origin/main` afterwards; the repo squash-merges.
+2. Run `start-next-phase` for **18.9, Audit and close (#568)**, on a new branch from `main`. It routes to brainstorming, since it has no design yet.
+   - #568's list now includes the 18.8 comment on it, with the stale reds of rows 613 to 615 resolved.
 3. The rules still hold:
-   - No Claude signature anywhere.
-   - Implementers tick only their own plan boxes, line by line. A broad sed over-ticked other tasks' boxes in 18.6.
-   - Grade pins against `docs/pin-standard.md`, in "Grading a pin: sites and reds". Edit every file before mutating, and give this phase's reds a `18.8-` prefix. Run the final review before the reds, so one fix wave precedes one re-run.
+   - No Claude signature anywhere, in commits as well as the PR body.
+   - Implementers tick only their own plan boxes, line by line.
+   - Grade pins against `docs/pin-standard.md`, "Grading a pin: sites and reds". Edit every file before mutating, and run the final review before the reds.
    - Ask questions with AskUserQuestion.
-   - Never `pkill -f` a pattern; kill by PID. A pattern can match your own shell.
-4. Watch, but do not work, the flakes #598, #602, #603, #604 and #676. The M18 DoD needs attempt 1 green on every lane.
+   - Never `pkill -f` a pattern; kill by PID.
+4. Watch, but do not work, the flakes #598, #602, #603, #604, #676 and #444. The M18 DoD needs attempt 1 green on every lane.
