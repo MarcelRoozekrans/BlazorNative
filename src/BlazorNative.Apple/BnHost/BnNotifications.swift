@@ -13,7 +13,8 @@
 // boundary, never a dropped completion (a hang). schedule/show/cancel carry NO
 // payload (a status is the whole answer). Every branch — check, grant, denial,
 // error — calls `complete(...)` exactly once, so the awaiting .NET ValueTask always
-// resolves within a bounded await.
+// resolves within a bounded await. Since 18.10 a show's later add error is logged,
+// not returned (see runAction).
 //
 // DELEGATE RETENTION (the CLLocationManager lesson from 9.0 Gate 3, restated for
 // UNUserNotificationCenter): `UNUserNotificationCenter.current().delegate` is a WEAK
@@ -84,7 +85,8 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     private let lock = NSLock()
 
     /// The single in-flight requestId for a permission-gated op (show/schedule/request).
-    /// `complete(...)` consumes it (one-shot), so a late/duplicate callback no-ops.
+    /// `complete(...)` clears it when it matches. A duplicate callback is still delivered,
+    /// and .NET answers it rc 1 for an already-completed id; it is not suppressed here.
     private var inFlightRequestId: Int64?
 
     /// The suspended request context for a notDetermined→prompt path (the args + action
@@ -158,7 +160,8 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// One `add` handed to the real center, as #444's diagnostics see it: when it was
     /// called, when its completion ran, with what error, on which thread, and whether
-    /// this handler was still alive to route it. `calledAt` is nil for a completion
+    /// this handler was still alive to route it (true for schedule only; a show prints
+    /// n/a). `calledAt` is nil for a completion
     /// whose call was made before the last `resetForTest`, which is a late completion
     /// from an earlier test.
     struct AddTrace {
