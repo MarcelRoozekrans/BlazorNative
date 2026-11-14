@@ -360,6 +360,7 @@ class BlazorNativeRuntime(
                 }
             }
         } catch (e: java.util.concurrent.RejectedExecutionException) {
+            onError("host_event('$name') dropped on a retired lane", e)
             // Retired lane: since 18.4 a newer boot retires the previous runtime even while that
             // runtime's Activity is still alive, and its lifecycle events, safe-area report and
             // back then arrive here on the main thread. The event is dropped like any other
