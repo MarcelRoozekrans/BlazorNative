@@ -2,8 +2,8 @@
 
 **Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: pending]`, no design yet. 18.1 to 18.8 are complete.
-**Branch:** `feat/18.9-dispatch-bound`, cut from `origin/main` `d9bf0711`. It holds one commit, the phase insertion. No PR yet.
+**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: active]`. Its design and plan are approved, Tasks 1 and 2 are built, and the final-review fix wave is running. 18.1 to 18.8 are complete.
+**Branch:** `feat/18.9-dispatch-bound`, cut from `origin/main` `d9bf0711`. Draft PR #710.
 
 ## Current Position
 
@@ -47,7 +47,7 @@
 
 ## Recommended Next Step
 
-1. Run `start-next-phase` on `feat/18.9-dispatch-bound`. Phase 18.9 (#564) has no design, so it routes to brainstorming.
+1. Continue 18.9 with plan `docs/superpowers/plans/2026-11-14-phase-18.9-dispatch-bound.md`: the final-review fix wave, then the Task 3 reds, then Task 4.
    - Find the cause first, with systematic debugging. Read #564 and its comments, the 18.1 record's #564 section, and `FaultNoticeTests.DispatchBounded`.
    - The rule is no guessed fix and no raised bound.
 2. Then 18.10 (#444), with the posted-means-Granted decision above. Then 18.11, the audit.
