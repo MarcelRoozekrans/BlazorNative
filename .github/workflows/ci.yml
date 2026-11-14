@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (2824 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (2828 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2399,7 +2399,9 @@ jobs:
       # names its page and the call site's position, falling back to the page alone.
       # 1412 -> 2824 (.NET 11 target, x2, 2026-11-11): the three test projects now run on net10.0 and net11.0,
       # so every fact counts twice (Analyzers 27 -> 54, Renderer 147 -> 294, Runtime 1238 -> 2476). No fact was added.
-      - name: .NET tests (assert 2824 passed / 0 skipped)
+      # 2824 -> 2826 (18.9, +1, 2026-11-14): Runtime 1238 -> 1239. A probe that begins a shell call on another thread returns within its bound with every pool worker held (#564).
+      # 2826 -> 2828 (18.9 review fix, +1, 2026-11-14): Runtime 1239 -> 1240. TearDown abandons the session when its overrun dispatch is still running, instead of hanging on a dispose (#710).
+      - name: .NET tests (assert 2828 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2417,8 +2419,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 2824 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 2824 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 2828 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 2828 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It

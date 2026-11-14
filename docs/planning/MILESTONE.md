@@ -23,7 +23,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 - [ ] All planned phases complete
 - [ ] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
-- [ ] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407.
+- [ ] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 is 18.10.
   - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
   - No fix raises a bound to hide a slow path.
   - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
@@ -58,7 +58,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 ## Phases
 
-1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #564, #551, #453 and #407 fixed at cause; #444 open with instrumentation, SpringBoard stall captured (#584)
+1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #551, #453 and #407 fixed at cause, #564 reopened 2026-11-05 (now 18.9); #444 open with instrumentation, SpringBoard stall captured (#584)
 2. Phase 18.2 — fault attribution for queued work (#500) [complete]
 3. Phase 18.3 — secure-storage per-key ordering (#506) [complete] — same-key requests queue behind a pending prompt on both shells (#599)
 4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [complete]
@@ -66,7 +66,9 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
 7. Phase 18.7 — twin divergences (#401, #396) [complete]
 8. Phase 18.8 — the generator's pipe holder (#530) [complete]
-9. Phase 18.9 — audit and close (#568) [pending]
+9. Phase 18.9 — the Windows dispatch bound (#564) [complete] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
+10. Phase 18.10 — iOS show completes when posted (#444) [pending] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
+11. Phase 18.11 — audit and close (#568) [pending]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
 

@@ -4056,7 +4056,20 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 18.9: Audit and close (#568) [status: pending]
+#### Phase 18.9: The Windows dispatch bound (#564) [status: complete]
+**Goal:** Find why a `FaultNoticeTests` dispatch misses its 1 s bound on the Windows CI runner and fix it at its cause, without raising the bound. Inserted 2026-11-14 by owner decision: fix the open DoD flakes before the audit.
+**Design:** `docs/superpowers/specs/2026-11-14-phase-18.9-design.md`
+**Plan:** `docs/superpowers/plans/2026-11-14-phase-18.9-dispatch-bound.md`
+**Completed:** 2026-11-14
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 18.10: iOS show completes when posted (#444) [status: pending]
+**Goal:** An iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `notify`, so a SpringBoard presentation stall no longer delays it. A later `add` error is logged. A twin pin holds the parity. Owner decision 2026-11-14.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 18.11: Audit and close (#568) [status: pending]
 **Goal:** Fix #568's cells, audit M18 against its DoD under the written grading rule, and close it. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no

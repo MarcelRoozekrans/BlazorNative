@@ -60,7 +60,7 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class FaultNoticeTests
 {
     private static readonly TimeSpan ExportBudget = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan Budget = TimeSpan.FromSeconds(10);
 
     /// <summary>A user's text-field input, carried as the change event's payload. It must
     /// never reach the notice.</summary>
@@ -70,7 +70,7 @@ public sealed class FaultNoticeTests
 
     // ── Harness ─────────────────────────────────────────────────────────────
 
-    private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
+    internal static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
         // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it:
         // the send after a begun shell call, and since 18.2 the send for a pending Task, whose
@@ -101,16 +101,36 @@ public sealed class FaultNoticeTests
     /// dispatch to return. Then it answers every open host call, waits for the fact's pending
     /// Tasks, and only then waits for every late FaultNotice send to complete, so a Task that
     /// faults once its call is answered still sends into this fact and not the next one (18.1,
-    /// #564; 18.2). The notices those sends begin are answered last.</summary>
-    private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
+    /// #564; 18.2). The notices those sends begin are answered last.
+    ///
+    /// <para>The waiting itself needs no pool thread (18.9, #564); what it waits for may, such
+    /// as a notice send. Each wait is bounded by <see cref="Budget"/> on its own. One that does
+    /// not finish in time does not stop the teardown: every later step still runs, so the
+    /// observer and the session are reset, and only then does it throw a
+    /// <see cref="TimeoutException"/> naming what was still running. A dispatch that did not
+    /// return is still running on the render thread, most likely blocked by its handler, so the
+    /// session is then abandoned with <see cref="HostSession.AbandonForTests"/> and not disposed:
+    /// a dispose runs on that render thread and waits for it with no bound, which would hang the
+    /// teardown before it threw. The blocked render thread stays a background thread until the
+    /// test process exits. Something still running can
+    /// deliver a late notice into the next fact. Thrown from a finally, that exception replaces
+    /// the fact's own; DispatchProbe and DispatchTwo, which tear down from a catch, throw both
+    /// in an <see cref="AggregateException"/>.</para></summary>
+    internal static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
+        var stillRunning = new List<string>();
+        bool dispatchOverran = false;
         release?.Invoke();
         if (s_overrunDispatch is { } overrun)
         {
             s_overrunDispatch = null;
             // Once it has returned, the dispatch has handed its notice send to the tap.
-            overrun.Join(Budget);
+            if (!overrun.Join(Budget))
+            {
+                dispatchOverran = true;
+                stillRunning.Add("the dispatch that overran its budget has not returned");
+            }
         }
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
@@ -119,31 +139,66 @@ public sealed class FaultNoticeTests
             NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Task[] snapshot;
         lock (pending) snapshot = pending.ToArray();
-        Task.WaitAll(snapshot.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        if (WaitBounded(snapshot, "pending dispatch Task(s)") is { } running)
+            stillRunning.Add(running);
         // After the pending Tasks: one that faulted only once its call was answered above sends
         // its notice now, and the send must land in this fact. Then answer what it began.
-        WaitForNoticeSends();
+        try { WaitForNoticeSends(); }
+        catch (TimeoutException ex) { stillRunning.Add(ex.Message); }
         foreach (var call in FakeShellHost.HostCalls())
             NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Exports.PendingDispatchObserver = previousObserver;
-        HostSession.ResetForTests();
+        // A dispatch still running holds the render thread, and a dispose would wait on it with
+        // no bound. Abandon the session instead, as the BackHoldProbe fact does.
+        if (dispatchOverran)
+            HostSession.AbandonForTests();
+        else
+            HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
+        if (stillRunning.Count > 0)
+            throw new TimeoutException($"each of TearDown's waits was bounded by {Budget.TotalSeconds:0} s, and these were still running: "
+                + string.Join("; ", stillRunning) + ". One can still send a late FaultNotice into the next fact (#564).");
+    }
+
+    /// <summary>Waits until every task in <paramref name="tasks"/> has completed, in any state,
+    /// bounded by <see cref="Budget"/> in total. Each task is waited on directly, so the wait needs
+    /// no pool thread; a continuation would be queued to the pool, and on a starved pool it would
+    /// time out although every task had completed (18.9, #564). A task's own fault is not this
+    /// wait's business and is ignored. Returns null when all completed, else how many of
+    /// <paramref name="what"/> did not, with their ids.</summary>
+    private static string? WaitBounded(Task[] tasks, string what)
+    {
+        var clock = Stopwatch.StartNew();
+        foreach (Task t in tasks)
+        {
+            TimeSpan left = Budget - clock.Elapsed;
+            try { t.Wait(left > TimeSpan.Zero ? left : TimeSpan.Zero); }
+            catch (AggregateException) { }
+        }
+        Task[] running = tasks.Where(t => !t.IsCompleted).ToArray();
+        return running.Length == 0 ? null
+            : $"{running.Length} of {tasks.Length} {what}, ids [{string.Join(", ", running.Select(t => t.Id))}]";
     }
 
     /// <summary>Every late FaultNotice send <see cref="Exports.LateFaultNoticeObserver"/>
     /// has handed on and <see cref="WaitForNoticeSends"/> has not yet seen complete.</summary>
     private static readonly List<Task> s_noticeSends = [];
 
-    /// <summary>Waits, bounded by <see cref="Budget"/>, until every recorded FaultNotice send
-    /// has completed, so its notice is in the fake's log. A send whose task is complete has
-    /// begun its host call, because SendNotice begins it synchronously.</summary>
+    /// <summary>Waits, bounded by <see cref="Budget"/> and without a pool thread, until every
+    /// recorded FaultNotice send has completed, so its notice is in the fake's log. A send whose
+    /// task is complete has begun its host call, because SendNotice begins it synchronously.
+    /// Throws a <see cref="TimeoutException"/> naming the sends still running when the budget
+    /// runs out (18.9, #564).</summary>
     private static void WaitForNoticeSends()
     {
         Task[] sends;
         lock (s_noticeSends) sends = s_noticeSends.Where(t => !t.IsCompleted).ToArray();
         s_waitingForNoticeSends?.Invoke(sends.Length);
-        Task.WaitAll(sends.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        string? running = WaitBounded(sends, "late FaultNotice send(s)");
         lock (s_noticeSends) s_noticeSends.RemoveAll(t => t.IsCompleted);
+        if (running is not null)
+            throw new TimeoutException($"{running} did not complete within "
+                + $"{Budget.TotalSeconds:0} s, so a notice can still land in the next fact (#564)");
     }
 
     private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
@@ -158,7 +213,7 @@ public sealed class FaultNoticeTests
         return condition();
     }
 
-    private static int HandlerFor(List<RenderFrame> frames, string eventName, string? label = null)
+    internal static int HandlerFor(List<RenderFrame> frames, string eventName, string? label = null)
     {
         List<RenderFrame> all;
         lock (frames) all = frames.ToList();
@@ -191,7 +246,7 @@ public sealed class FaultNoticeTests
     private static Thread? s_overrunDispatch;
 
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
-    private static int DispatchBounded(int handlerId, string argsJson, TimeSpan? budget = null)
+    internal static int DispatchBounded(int handlerId, string argsJson, TimeSpan? budget = null)
     {
         TimeSpan bound = budget ?? ExportBudget;
         int rc = -1;
@@ -227,10 +282,20 @@ public sealed class FaultNoticeTests
     /// <summary>The late-fault flow: dispatch <paramref name="eventName"/> with the host call
     /// held open, answer the call, and return the FaultNotice the handler's later fault sent.
     /// <paramref name="completeNotices"/> false leaves the notice unanswered, as a shell that
-    /// never completes it would.</summary>
+    /// never completes it would.
+    ///
+    /// <para>It refuses a thread-pool thread (18.9), as ShutdownQuiescenceTests' positive control
+    /// does for #551: it sleep-polls for a notice whose path crosses the pool by the product's
+    /// design, through AwaitWholeHandler's resumption and the send's continuation, so on a pool
+    /// thread it would hold a thread its own notice needs. Its facts run through <see cref="OffPool.Run(Action)"/>.</para></summary>
     private static (int HandlerId, Dictionary<string, string> Args, long RequestId) RunLateFault(
         bool strict, string eventName, string argsJson, bool completeNotices = true)
     {
+        if (Thread.CurrentThread.IsThreadPoolThread)
+            throw new InvalidOperationException(
+                "RunLateFault must not run on a thread-pool thread: it sleep-polls for a FaultNotice whose "
+                + "path crosses the pool, so it would hold a thread its own notice needs. Run the fact "
+                + "through OffPool.Run.");
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         // A TEST TAP only (ruling 1): delivery never goes through this static. It lets the
@@ -276,7 +341,7 @@ public sealed class FaultNoticeTests
     // ── The late fault reaches the shell ────────────────────────────────────
 
     [Fact]
-    public void AFaultAfterTheFirstAwait_SendsAFaultNotice()
+    public Task AFaultAfterTheFirstAwait_SendsAFaultNotice() => OffPool.Run(() =>
     {
         var (handlerId, args, _) = RunLateFault(strict: false, "click", """{"name":"click"}""");
 
@@ -287,20 +352,20 @@ public sealed class FaultNoticeTests
         // Ruling 3: a stack trace can carry user data, so it never crosses.
         Assert.False(args.ContainsKey("stack"), "the notice carries a stack trace");
         Assert.DoesNotContain(" at ", string.Join("|", args.Values), StringComparison.Ordinal);
-    }
+    });
 
     [Fact]
-    public void AFaultAfterTheFirstAwait_InStrictMode_SendsAFaultNotice_Control()
+    public Task AFaultAfterTheFirstAwait_InStrictMode_SendsAFaultNotice_Control() => OffPool.Run(() =>
     {
         // Strict mode reached the pending Task even before Task 3's attribution fix, so
         // this control shows the harness can see a notice by a second route. The
         // production pin above is then about the production path alone.
         var (_, args, _) = RunLateFault(strict: true, "click", """{"name":"click"}""");
         Assert.Equal("late", args["message"]);
-    }
+    });
 
     [Fact]
-    public void AFaultNoticeCarriesNoPayloadField()
+    public Task AFaultNoticeCarriesNoPayloadField() => OffPool.Run(() =>
     {
         var (handlerId, args, _) = RunLateFault(strict: false, "change",
             $$"""{"name":"change","payload":"{{SecretPayload}}"}""");
@@ -312,7 +377,7 @@ public sealed class FaultNoticeTests
 
         Assert.Equal(["event", "handlerId", "message", "type"], args.Keys.Order(StringComparer.Ordinal).ToArray());
         Assert.DoesNotContain(SecretPayload, string.Join("|", args.Values), StringComparison.Ordinal);
-    }
+    });
 
     [Fact]
     public void ASynchronousFault_IsRc2_AndSendsNoFaultNotice()
@@ -383,12 +448,12 @@ public sealed class FaultNoticeTests
     // ── Ruling 4: fire-and-forget from .NET's side ──────────────────────────
 
     [Fact]
-    public void AnAnsweredFaultNotice_LeavesNoPendingHostCall()
+    public Task AnAnsweredFaultNotice_LeavesNoPendingHostCall() => OffPool.Run(() =>
     {
         RunLateFault(strict: false, "click", """{"name":"click"}""");
         // RunLateFault's teardown has run; the notice was answered inline by the fake shell.
         Assert.Equal(0, NativeShellBridge.PendingHostCallCountForTests);
-    }
+    });
 
     [Fact]
     public void AFaultNoticeTheShellNeverAnswers_IsDroppedAfterItsTimeout()
@@ -941,20 +1006,29 @@ public sealed class FaultNoticeTests
     public void AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
         // The mark is thread-bound to the synchronous part, never the flowing AsyncLocal scope.
-        // A call begun inside Task.Run carries the flowing scope but runs on a pool thread, so
-        // it must not mark the dispatch, and the synchronous fault after it stays rc 2.
-        var (rc, _, pending, previous) = DispatchProbe("pool-begin-then-throw");
+        // A call begun on another thread carries the flowing scope but runs off the dispatch's
+        // thread, so it must not mark the dispatch, and the synchronous fault after it stays
+        // rc 2. The call is begun on a dedicated thread that the ExecutionContext flows to, and
+        // not on the pool, because a pool thread put the queue delay of xunit's busy pool
+        // inside the 1 s dispatch bound (#564, 18.9).
+        var (rc, _, pending, previous) = DispatchProbe("thread-begin-then-throw");
         try
         {
             // Anchors: the call really was begun, answered inside begin, on a thread other than
-            // the handler's. Without them rc 2 would only show that no call was begun.
+            // the handler's, which the dispatch's flowing scope reached. Without them rc 2 would
+            // only show that no call was begun, or that the scope never left the handler's thread.
             Assert.True(FakeShellHost.HostCalls().Any(c => c.Op == (int)HostCallOp.Geolocation),
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
-            Assert.True(ShellCallProbe.PoolBeginThread > 0 && ShellCallProbe.PoolBeginThread != ShellCallProbe.HandlerThread,
-                $"anchor: the call was begun on thread {ShellCallProbe.PoolBeginThread}, the handler ran on "
+            Assert.True(ShellCallProbe.BeginThreadFault is null,
+                $"anchor: the begin thread threw: {ShellCallProbe.BeginThreadFault}");
+            Assert.True(ShellCallProbe.BeginThread > 0 && ShellCallProbe.BeginThread != ShellCallProbe.HandlerThread,
+                $"anchor: the call was begun on thread {ShellCallProbe.BeginThread}, the handler ran on "
                 + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
+            Assert.True(ShellCallProbe.FlowingScopeSeenOnBeginThread,
+                "anchor: the dispatch's flowing scope was not set on the begin thread after its begin returned, "
+                + "so the scope did not reach that thread, and rc 2 would not show that the mark ignores that scope.");
             Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
                 + "after it stays rc 2. rc 0 means the dispatch was marked although no call was begun on its synchronous "
                 + "part's thread, for example because the mark followed the flowing scope.");
@@ -2067,10 +2141,12 @@ public sealed class FaultNoticeTests
             int rcB = DispatchBounded(b, """{"name":"click"}""", budgetB);
             return (rcA, rcB, a, b, pending, previous);
         }
-        catch
+        catch (Exception primary)
         {
-            // The caller's finally never sees this state: tear down here (18.1, #564).
-            TearDown(pending, previous);
+            // The caller's finally never sees this state: tear down here (18.1, #564). A
+            // TearDown timeout is reported beside the primary failure, never instead of it.
+            try { TearDown(pending, previous); }
+            catch (TimeoutException leak) { throw new AggregateException(primary, leak); }
             throw;
         }
     }
@@ -2440,9 +2516,14 @@ public sealed class FaultNoticeTests
         /// DispatchProbe resets it.</summary>
         public static volatile bool ReachedThrow;
 
-        /// <summary>The threads pool-begin-then-throw ran its handler and its begin on.
+        /// <summary>The threads thread-begin-then-throw ran its handler and its begin on.
         /// DispatchProbe resets both.</summary>
-        public static volatile int HandlerThread, PoolBeginThread;
+        public static volatile int HandlerThread, BeginThread;
+
+        /// <summary>Whether the renderer's flowing dispatch scope was set on the begin thread
+        /// once its begin returned, and any fault that thread hit. DispatchProbe resets both.</summary>
+        public static volatile bool FlowingScopeSeenOnBeginThread;
+        public static volatile Exception? BeginThreadFault;
 
         /// <summary>18.1 (#564): gated-begin-then-throw waits on this in its synchronous part.
         /// Open unless a fact closes it; that fact opens it again in its finally.</summary>
@@ -2490,16 +2571,27 @@ public sealed class FaultNoticeTests
             {
                 await Bridge.CheckGeolocationPermissionAsync();
             });
-            Button(b, 80, "pool-begin-then-throw", () =>
+            Button(b, 80, "thread-begin-then-throw", () =>
             {
                 HandlerThread = Environment.CurrentManagedThreadId;
-                // The fake answers inside begin, so this wait never blocks on the shell.
-                Task.Run(() =>
+                // A dedicated thread, started with Start so the ExecutionContext and with it the
+                // dispatch's flowing scope reach it, not a pool thread (#564). The thread discards
+                // the call's task, so the join waits only for the begin call to return.
+                var t = new Thread(() =>
                 {
-                    PoolBeginThread = Environment.CurrentManagedThreadId;
-                    return Bridge.CheckGeolocationPermissionAsync().AsTask();
-                }).Wait();
-                throw new InvalidOperationException("after-pool-begin");
+                    try
+                    {
+                        _ = Bridge.CheckGeolocationPermissionAsync();
+                        BeginThread = Environment.CurrentManagedThreadId;
+                        FlowingScopeSeenOnBeginThread = HostSession.CurrentRenderer?.FlowingScopeIsSetForTests == true;
+                    }
+                    catch (Exception ex) { BeginThreadFault = ex; }
+                }) { IsBackground = true, Name = "fault-notice-begin" };
+                t.Start();
+                if (!t.Join(FaultNoticeTests.Budget))
+                    BeginThreadFault ??= new TimeoutException(
+                        $"the begin thread did not finish within {FaultNoticeTests.Budget.TotalSeconds:0} s");
+                throw new InvalidOperationException("after-thread-begin");
             });
             Button(b, 90, "back-state-then-throw", () =>
             {
@@ -2613,7 +2705,7 @@ public sealed class FaultNoticeTests
         }
     }
 
-    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+    internal static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
             int fetchBeginReturnCode = 0, Action? release = null)
     {
@@ -2627,7 +2719,9 @@ public sealed class FaultNoticeTests
             renderer.Mount<ShellCallProbe>();
             int handlerId = HandlerFor(frames, "click", label);
             ShellCallProbe.ReachedThrow = false;
-            ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
+            ShellCallProbe.HandlerThread = ShellCallProbe.BeginThread = 0;
+            ShellCallProbe.FlowingScopeSeenOnBeginThread = false;
+            ShellCallProbe.BeginThreadFault = null;
             ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
             FakeShellHost.AutoCompleteHostCall = true;
             FakeShellHost.AutoCompleteFetch = autoCompleteFetch;
@@ -2636,13 +2730,15 @@ public sealed class FaultNoticeTests
             int rc = DispatchBounded(handlerId, """{"name":"click"}""");
             return (rc, frames, pending, previous);
         }
-        catch
+        catch (Exception primary)
         {
             // 18.1 (#564): the caller's try/finally starts only once this returns, so a throw
             // here, a dispatch past its budget above all, must tear its own fact down.
             // Otherwise the observer, the session and the dispatch's late notice carry over
             // into the next fact. `release` frees what the fact holds, so the dispatch can end.
-            TearDown(pending, previous, release);
+            // A TearDown timeout is reported beside the primary failure, never instead of it.
+            try { TearDown(pending, previous, release); }
+            catch (TimeoutException leak) { throw new AggregateException(primary, leak); }
             throw;
         }
     }
