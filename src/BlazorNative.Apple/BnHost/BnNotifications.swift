@@ -177,7 +177,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
             let latency = calledAt.map { String(format: "%.0f ms", done.timeIntervalSince($0) * 1000) } ?? "late"
             return "add#\(seq) '\(identifier)' called \(called), completed \(BnNotifications.traceClock(done)) "
                 + "after \(latency), error \(error ?? "none"), main thread \(onMainThread == true), "
-                + "handler alive \(handlerAlive == true)"
+                + "handler \(handlerAlive.map { $0 ? "alive" : "gone" } ?? "n/a")"
         }
     }
 
@@ -211,7 +211,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         return addTraceSeq
     }
 
-    private static func traceAddCompleted(_ seq: Int, _ identifier: String, _ error: Error?, handlerAlive: Bool) {
+    private static func traceAddCompleted(_ seq: Int, _ identifier: String, _ error: Error?, handlerAlive: Bool?) {
         let now = Date()
         let described = error.map { e -> String in
             let ns = e as NSError
@@ -427,7 +427,8 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// Runs the actual op (permission held / just granted). `request` posts nothing (it
     /// only confirms the grant); show/schedule build a UNNotificationRequest and hand it
-    /// to the REAL center. A caught throw is DATA (Error), never a hang.
+    /// to the REAL center. A schedule's add error is DATA (Error), never a hang; a
+    /// show's is logged, see below.
     ///
     /// A `show` completes `Granted` as soon as its request is handed to the center, as
     /// Android's completes after `notify` (AndroidShellBridge.kt:784-789). #444: an
@@ -449,14 +450,16 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         let request = UNNotificationRequest(
             identifier: identifier, content: content, trigger: triggerFor(action: action, when: args["when"]))
         BnNotifications.lastAddedRequestForTest = request
-        // #444: the call and its completion are traced, including a completion that
-        // finds this handler gone, so a lost completion is told apart from a dropped one.
+        // #444: the call and its completion are traced. For schedule the trace also says
+        // whether the completion found this handler gone, so a lost completion is told
+        // apart from a dropped one. A show's completion holds no handler, so it records
+        // no handler state (printed as n/a).
         let seq = BnNotifications.traceAddCalled(identifier)
         let addToCenter: (UNNotificationRequest, @escaping (Error?) -> Void) -> Void = BnNotifications.addForTest
             ?? { UNUserNotificationCenter.current().add($0, withCompletionHandler: $1) }
         if action == "show" {
             addToCenter(request) { error in
-                BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: true)
+                BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: nil)
                 guard let error = error else { return }
                 // The show completed Granted when it was handed over; this must not
                 // complete it again. It captures no handler state, so a completion
