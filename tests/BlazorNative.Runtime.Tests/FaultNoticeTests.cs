@@ -955,11 +955,11 @@ public sealed class FaultNoticeTests
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
+            Assert.True(ShellCallProbe.BeginThreadFault is null,
+                $"anchor: the begin thread threw: {ShellCallProbe.BeginThreadFault}");
             Assert.True(ShellCallProbe.BeginThread > 0 && ShellCallProbe.BeginThread != ShellCallProbe.HandlerThread,
                 $"anchor: the call was begun on thread {ShellCallProbe.BeginThread}, the handler ran on "
                 + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
-            Assert.True(ShellCallProbe.BeginThreadFault is null,
-                $"anchor: the begin thread threw: {ShellCallProbe.BeginThreadFault}");
             Assert.True(ShellCallProbe.FlowSeenOnBeginThread == "dispatch-flow",
                 $"anchor: the begin thread saw '{ShellCallProbe.FlowSeenOnBeginThread}', not the handler's flowing value, "
                 + "so the dispatch's flowing scope did not reach it either, and rc 2 would not show that the mark ignores that scope.");
@@ -2524,7 +2524,9 @@ public sealed class FaultNoticeTests
                     catch (Exception ex) { BeginThreadFault = ex; }
                 }) { IsBackground = true, Name = "fault-notice-begin" };
                 t.Start();
-                t.Join(FaultNoticeTests.Budget);
+                if (!t.Join(FaultNoticeTests.Budget))
+                    BeginThreadFault ??= new TimeoutException(
+                        $"the begin thread did not finish within {FaultNoticeTests.Budget.TotalSeconds:0} s");
                 throw new InvalidOperationException("after-thread-begin");
             });
             Button(b, 90, "back-state-then-throw", () =>
