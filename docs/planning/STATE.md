@@ -2,12 +2,13 @@
 
 **Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: complete]` on the branch. Next is 18.10 (#444), `[status: pending]`, no design yet. 18.1 to 18.9 are complete.
-**Branch:** `feat/18.9-dispatch-bound`, PR #710. All lanes were green at attempt 1 on `bc9abb77`. The PR is ready for the owner's merge, and every later commit is docs-only.
+**Phase:** 18.10 — iOS show completes when posted (#444), `[status: complete]`, on PR #712 awaiting the owner's merge. 18.1 to 18.9 are complete and merged; 18.9 is `a1bacd6b`.
+**Branch:** `feat/18.10-show-posted`, cut from `origin/main` at `a1bacd6b`. PR #712.
+**Next step:** the owner merges PR #712. Then cut `feat/18.11-audit` from `origin/main` and run `start-next-phase` for 18.11 (#568).
 
 ## Current Position
 
-- **18.9 is done, in PR #710, not yet merged.** The record is [`docs/plans/2026-11-14-phase-18.9-record.md`](../plans/2026-11-14-phase-18.9-record.md).
+- **18.9 is merged: PR #710, squash `a1bacd6b`, #564 closed.** The record is [`docs/plans/2026-11-14-phase-18.9-record.md`](../plans/2026-11-14-phase-18.9-record.md).
   - **Cause:** the probe handler of `AShellCallBegunOnAnotherThread_…` blocked a 1 s-bounded dispatch on `Task.Run(...).Wait()`. xUnit 2.9 runs test bodies on the thread pool, so the queued item waited for thread injection. That was found with a pool hold that reproduced the CI message, and with dumps at >1 s spikes. It is not a product bug.
   - **Fix, test code only:**
     - a dedicated begin thread, with a product flowing-scope anchor;
@@ -16,14 +17,20 @@
     - the `RunLateFault` facts run through `OffPool`.
   - **Reds:** R1 to R12 on `7527f158`. Every red taken on `FaultNoticeTests.cs` before 18.9 is stale, and the record's §3 lists them for 18.11.
   - **Filed:** #711, the other ~25 `FaultNoticeTests` facts of #551's shape, by owner decision.
+  - **Review fix waves, before the merge:** CodeRabbit found that `TearDown` disposed a session whose overrun dispatch was still running, an unbounded wait. It now abandons that session, pinned by `TearDownOverrunTests`, and the pin joins its teardown thread. The record's §5 has both rounds and their reds.
+  - **Flake #602 recurred** on #710's simulator leg at attempt 1, its third sighting on an unrelated PR; it now qualifies for a root-cause fix.
 - **Release PR #706 (0.22.1)** carries the 18.8 fix. Merging it is the owner's call.
-- **18.10, #444:** the owner decided that an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify` (`AndroidShellBridge.kt:1989`). A later `add` error is logged, not returned. A twin pin holds the parity. Today `BnNotifications.swift:439` waits for `add`'s completion, which waits for SpringBoard's `willPresent` delivery; #444's trace shows SpringBoard stalling for 11 s.
+- **18.10 is complete on PR #712, awaiting the owner's merge.** The record is [`docs/plans/2026-11-14-phase-18.10-record.md`](../plans/2026-11-14-phase-18.10-record.md).
+  - **Decision and fix:** the owner decided an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify`. `BnNotifications.runAction` now completes a show right after `add`; a late `add` error goes to `onError` or `BnLog`, and `schedule` is unchanged.
+  - **Cause:** `add` waited on SpringBoard's `willPresent` delivery, which stalled for 11 s in #444's trace. It was never a product timing bug of ours.
+  - **Pins and reds:** four pins in `BnNotificationsTests.swift`, graded by R0 to R9 in the record's §3, all on the reviewed head `69172396` at attempt 1.
+  - **Stale reds, for 18.11:** the 18.1 record's #444 diagnostics describe `DaemonProbe`, `pollUntilProbing` and a `handlerAlive` that a show reports; all are gone or changed. The 18.5 and 18.8 records quote the old message "show never completed Granted ...". `BnNotificationsAndroidTest.kt` has no recorded red.
 - **18.11** is the audit and close (#568).
 - **Findings for 18.11, from #568:**
   - #568's fourth cell was fixed in 18.8.
   - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell. Their line numbers have moved.
-  - Many M18-added pins cite reds that later M18 phases made stale, among them 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5, and now every pre-18.9 `FaultNoticeTests` red. The DoD's new-pin item needs fresh reds.
-- **Baselines:** .NET 2828 (1414 facts on two TFMs) once #710 merges, JVM 210, Android 273, iOS 303.
+  - Many M18-added pins cite reds that later M18 phases made stale, among them 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5, every pre-18.9 `FaultNoticeTests` red, and now the 18.1 #444 diagnostics. The DoD's new-pin item needs fresh reds.
+- **Baselines:** .NET 2828 (1414 facts on two TFMs), JVM 210, Android 273, iOS 307.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -53,9 +60,9 @@
 
 ## Recommended Next Step
 
-1. Owner merges PR #710. Ask "Merged ?" for the standing merge approval. Then read state from `origin/main`.
-2. Cut `feat/18.10-show-posted` from `origin/main` and run `start-next-phase` for **18.10** (#444). It has no design, so it routes to brainstorming, with the owner's posted-means-Granted decision above.
-3. Then 18.11, the audit (#568).
+1. Owner merges PR #712. On "Merged ?" for the standing merge approval, check `reviewDecision` and unresolved review threads as well as the checks. Then read state from `origin/main`.
+2. Cut `feat/18.11-audit` from `origin/main` and run `start-next-phase` for **18.11**, the audit and close (#568). It carries the findings above.
+3. The MILESTONE DoD flakes box stays open until 18.11 confirms attempt 1 green on the re-audit's own runs.
 4. The rules still hold:
    - No Claude signature anywhere, in commits as well as the PR body.
    - Implementers tick only their own plan boxes, line by line.

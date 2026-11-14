@@ -13,7 +13,8 @@
 // boundary, never a dropped completion (a hang). schedule/show/cancel carry NO
 // payload (a status is the whole answer). Every branch — check, grant, denial,
 // error — calls `complete(...)` exactly once, so the awaiting .NET ValueTask always
-// resolves within a bounded await.
+// resolves within a bounded await. Since 18.10 a show's later add error is logged,
+// not returned (see runAction).
 //
 // DELEGATE RETENTION (the CLLocationManager lesson from 9.0 Gate 3, restated for
 // UNUserNotificationCenter): `UNUserNotificationCenter.current().delegate` is a WEAK
@@ -84,7 +85,8 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     private let lock = NSLock()
 
     /// The single in-flight requestId for a permission-gated op (show/schedule/request).
-    /// `complete(...)` consumes it (one-shot), so a late/duplicate callback no-ops.
+    /// `complete(...)` clears it when it matches. A duplicate callback is still delivered,
+    /// and .NET answers it rc 1 for an already-completed id; it is not suppressed here.
     private var inFlightRequestId: Int64?
 
     /// The suspended request context for a notDetermined→prompt path (the args + action
@@ -144,6 +146,13 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// what makes the construction deterministically assertable on the sim.
     static var lastAddedRequestForTest: UNNotificationRequest?
 
+    /// Replaces ONLY the call to `UNUserNotificationCenter.current().add`: the request
+    /// and the completion it receives are production's, so a test that stashes the
+    /// completion and calls it later drives the real completion code with an `add`
+    /// outcome of its choosing, such as a late error. Nil in production, where the real
+    /// center is called; cleared by `resetForTest`.
+    static var addForTest: ((UNNotificationRequest, @escaping (Error?) -> Void) -> Void)?
+
     /// The identifier the most recent `cancel` targeted at the real center (captured
     /// alongside the real remove* calls) — the same reason as lastAddedRequestForTest: an
     /// unauthorized sim never had a pending request to observe removed.
@@ -151,7 +160,8 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// One `add` handed to the real center, as #444's diagnostics see it: when it was
     /// called, when its completion ran, with what error, on which thread, and whether
-    /// this handler was still alive to route it. `calledAt` is nil for a completion
+    /// this handler was still alive to route it (true for schedule only; a show prints
+    /// n/a). `calledAt` is nil for a completion
     /// whose call was made before the last `resetForTest`, which is a late completion
     /// from an earlier test.
     struct AddTrace {
@@ -170,7 +180,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
             let latency = calledAt.map { String(format: "%.0f ms", done.timeIntervalSince($0) * 1000) } ?? "late"
             return "add#\(seq) '\(identifier)' called \(called), completed \(BnNotifications.traceClock(done)) "
                 + "after \(latency), error \(error ?? "none"), main thread \(onMainThread == true), "
-                + "handler alive \(handlerAlive == true)"
+                + "handler \(handlerAlive.map { $0 ? "alive" : "gone" } ?? "n/a")"
         }
     }
 
@@ -204,7 +214,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         return addTraceSeq
     }
 
-    private static func traceAddCompleted(_ seq: Int, _ identifier: String, _ error: Error?, handlerAlive: Bool) {
+    private static func traceAddCompleted(_ seq: Int, _ identifier: String, _ error: Error?, handlerAlive: Bool?) {
         let now = Date()
         let described = error.map { e -> String in
             let ns = e as NSError
@@ -234,6 +244,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         navigateHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
         lastAddedRequestForTest = nil
+        addForTest = nil
         lastCancelledIdForTest = nil
         addTraceLock.lock(); addTraces = []; addTraceLock.unlock()
     }
@@ -419,7 +430,16 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// Runs the actual op (permission held / just granted). `request` posts nothing (it
     /// only confirms the grant); show/schedule build a UNNotificationRequest and hand it
-    /// to the REAL center. A caught throw is DATA (Error), never a hang.
+    /// to the REAL center. A schedule's add error is DATA (Error), never a hang; a
+    /// show's is logged, see below.
+    ///
+    /// A `show` completes `Granted` as soon as its request is handed to the center, as
+    /// Android's completes after `notify` (AndroidShellBridge.kt:784-789). #444: an
+    /// immediate request's `add` completes only after the app has answered `willPresent`,
+    /// which SpringBoard once delivered 11.25 s late (lane run 40642166828), so a show
+    /// that waited on `add` waited on SpringBoard. A later `add` error is logged (or
+    /// routed to the runtime's onError), never returned: the show already completed.
+    /// `schedule` keeps its `add` outcome, because a scheduled request is not presented.
     private func runAction(requestId: Int64, args: [String: String], action: String) {
         if action == "request" {
             complete(requestId, BnNotificationStatus.granted, nil)
@@ -433,10 +453,31 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         let request = UNNotificationRequest(
             identifier: identifier, content: content, trigger: triggerFor(action: action, when: args["when"]))
         BnNotifications.lastAddedRequestForTest = request
-        // #444: the call and its completion are traced, including a completion that
-        // finds this handler gone, so a lost completion is told apart from a dropped one.
+        // #444: the call and its completion are traced. For schedule the trace also says
+        // whether the completion found this handler gone, so a lost completion is told
+        // apart from a dropped one. A show's completion holds no handler, so it records
+        // no handler state (printed as n/a).
         let seq = BnNotifications.traceAddCalled(identifier)
-        UNUserNotificationCenter.current().add(request) { [weak self] error in
+        let addToCenter: (UNNotificationRequest, @escaping (Error?) -> Void) -> Void = BnNotifications.addForTest
+            ?? { UNUserNotificationCenter.current().add($0, withCompletionHandler: $1) }
+        if action == "show" {
+            addToCenter(request) { error in
+                BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: nil)
+                guard let error = error else { return }
+                // The show completed Granted when it was handed over; this must not
+                // complete it again. It captures no handler state, so a completion
+                // after resetForTest touches nothing freed.
+                let message = "notifications 'show' add failed (request \(requestId), notification \(identifier))"
+                if let runtime = BnRuntime.shared {
+                    runtime.onError(message, error)
+                } else {
+                    BnLog.error("BnNotifications", "\(message): \(error)")
+                }
+            }
+            complete(requestId, BnNotificationStatus.granted, nil)
+            return
+        }
+        addToCenter(request) { [weak self] error in
             BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: self != nil)
             self?.complete(requestId, error == nil ? BnNotificationStatus.granted : BnNotificationStatus.error, nil)
         }
