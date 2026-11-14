@@ -23,7 +23,7 @@
   - #568's fourth cell was fixed in 18.8.
   - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell. Their line numbers have moved.
   - Many M18-added pins cite reds that later M18 phases made stale, among them 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5, and now every pre-18.9 `FaultNoticeTests` red. The DoD's new-pin item needs fresh reds.
-- **Baselines:** .NET 2826 (1413 facts on two TFMs) once #710 merges, JVM 210, Android 273, iOS 303.
+- **Baselines:** .NET 2828 (1414 facts on two TFMs) once #710 merges, JVM 210, Android 273, iOS 303.
 
 ## Owner decisions for M18 (2026-10-24)
 
