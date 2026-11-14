@@ -201,6 +201,8 @@ class BnNotificationsGrantedAndroidTest {
 
     // ── A real notification POSTS on the channel, then CANCEL removes it ──────
 
+    // iOS twin: BnNotificationsTests.testShowCompletesGrantedWhilePresentationIsHeld.
+    // Shared contract: show completes Granted once posted.
     @Test
     fun show_posts_a_real_notification_and_cancel_removes_it() {
         NotifHarness.launchDemo().use { scenario ->

@@ -428,6 +428,14 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// Runs the actual op (permission held / just granted). `request` posts nothing (it
     /// only confirms the grant); show/schedule build a UNNotificationRequest and hand it
     /// to the REAL center. A caught throw is DATA (Error), never a hang.
+    ///
+    /// A `show` completes `Granted` as soon as its request is handed to the center, as
+    /// Android's completes after `notify` (AndroidShellBridge.kt:784-789). #444: an
+    /// immediate request's `add` completes only after the app has answered `willPresent`,
+    /// which SpringBoard once delivered 11.25 s late (lane run 40642166828), so a show
+    /// that waited on `add` waited on SpringBoard. A later `add` error is logged (or
+    /// routed to the runtime's onError), never returned: the show already completed.
+    /// `schedule` keeps its `add` outcome, because a scheduled request is not presented.
     private func runAction(requestId: Int64, args: [String: String], action: String) {
         if action == "request" {
             complete(requestId, BnNotificationStatus.granted, nil)
@@ -446,6 +454,23 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         let seq = BnNotifications.traceAddCalled(identifier)
         let addToCenter: (UNNotificationRequest, @escaping (Error?) -> Void) -> Void = BnNotifications.addForTest
             ?? { UNUserNotificationCenter.current().add($0, withCompletionHandler: $1) }
+        if action == "show" {
+            addToCenter(request) { error in
+                BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: true)
+                guard let error = error else { return }
+                // The show completed Granted when it was handed over; this must not
+                // complete it again. It captures no handler state, so a completion
+                // after resetForTest touches nothing freed.
+                let message = "notifications 'show' add failed (request \(requestId), notification \(identifier))"
+                if let runtime = BnRuntime.shared {
+                    runtime.onError(message, error)
+                } else {
+                    BnLog.error("BnNotifications", "\(message): \(error)")
+                }
+            }
+            complete(requestId, BnNotificationStatus.granted, nil)
+            return
+        }
         addToCenter(request) { [weak self] error in
             BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: self != nil)
             self?.complete(requestId, error == nil ? BnNotificationStatus.granted : BnNotificationStatus.error, nil)

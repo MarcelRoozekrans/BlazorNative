@@ -157,9 +157,8 @@ final class BnNotificationsTests: BnHostTestCase {
             10, BnHostCallOp.notifications,
             "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Hello\",\"body\":\"A local notification\",\"route\":\"/notifications\"}")
 
-        let probe = DaemonProbe()
-        let completed = pollUntilProbing(probe) { self.capturedStatuses() == [BnNotificationStatus.granted] }
-        let diagnosis = diagnose("unit show", probe: probe, observed: "captured statuses \(capturedStatuses())")
+        let completed = pollUntil { self.capturedStatuses() == [BnNotificationStatus.granted] }
+        let diagnosis = diagnose("unit show", observed: "captured statuses \(capturedStatuses())")
         XCTAssertTrue(completed,
                       "show never completed Granted (a hang, or the real center's add never returned). \(diagnosis)")
         let req = try XCTUnwrap(BnNotifications.lastAddedRequestForTest, "show must hand a request to the center")
@@ -221,6 +220,8 @@ final class BnNotificationsTests: BnHostTestCase {
     // hold that exchange, or replace the add, and require Granted anyway. schedule is
     // unchanged: a scheduled request is not presented, and its add outcome stays data.
 
+    // Android twin: BnNotificationsAndroidTest.show_posts_a_real_notification_and_cancel_removes_it.
+    // Shared contract: show completes Granted once posted.
     func testShowCompletesGrantedWhilePresentationIsHeld() {
         installCapture()
         BnNotifications.authorizationStatusOverrideForTest = { .authorized }
@@ -435,9 +436,8 @@ final class BnNotificationsTests: BnHostTestCase {
 
         XCTAssertEqual(echoLabel()?.text, "arrived:/notifications", "the demo mounts on its own route")
         try tapButton("Show", in: form)
-        let probe = DaemonProbe()
-        let completed = pollUntilProbing(probe) { self.echoLabel()?.text == "status:Granted" }
-        let diagnosis = diagnose("boot show", probe: probe,
+        let completed = pollUntil { self.echoLabel()?.text == "status:Granted" }
+        let diagnosis = diagnose("boot show",
                                  observed: "echo \(echoLabel()?.text ?? "nil"), complete rc \(BnNotifications.lastHostCallCompleteRcForTest)")
         XCTAssertTrue(completed,
                       "Show never round-tripped a Granted status to the echo (a hang or mis-route). \(diagnosis)")
@@ -548,23 +548,23 @@ final class BnNotificationsTests: BnHostTestCase {
         center.removeAllDeliveredNotifications()
     }
 
-    // ── #444 diagnostics: a show's add, timed, and a probe of the daemon ─────────
+    // ── #444 diagnostics: a show's add, timed ────────────────────────────────────
     //
-    // In the lane runs sampled so far, a show passed within 2.4 s or failed at the full
-    // 10 s, with nothing in between. These say why when it fails: the add trace says
-    // whether the center ever called back, with what error, and whether the handler was
-    // alive to route it; the probe says whether usernotificationsd still answered
-    // other requests at 5 s. A passing show logs the same line, so the latency is on
-    // record. None of it changes the bound: the poll is still 10 s in all.
+    // Since 18.10 a show completes Granted once its request is handed to the center, so
+    // nothing here waits on the center's add; the held-presentation pin
+    // (testShowCompletesGrantedWhilePresentationIsHeld) is the proof. The add trace
+    // stays as history and as a diagnosis aid: it says whether the center ever called
+    // back, with what error, and whether the handler was alive to route it. A passing
+    // show logs the same line, so the latency is on record.
     //
-    // What the add waits on: lane run 40624968569 showed that the center completes an
-    // IMMEDIATE request's add only after the app has answered `willPresent`, which it
-    // delivers on the main thread, and that it waited at least 15 s for an answer a
-    // delegate held. Both shows here run with no delegate, because tearDown clears it
-    // and the test boot does not install one, so the framework answers `willPresent`
-    // itself. The simulator log the lane collects on failure shows that exchange:
-    // SpringBoard's "Send willPresentNotification", "delivery succeeded" and "Received
-    // response", then the app's "Added notification request".
+    // What the add waits on, kept as history: lane run 40624968569 showed that the
+    // center completes an IMMEDIATE request's add only after the app has answered
+    // `willPresent`, which it delivers on the main thread, and that it waited at least
+    // 15 s for an answer a delegate held. Both shows here run with no delegate, because
+    // tearDown clears it and the test boot does not install one, so the framework
+    // answers `willPresent` itself. The simulator log the lane collects on failure
+    // shows that exchange: SpringBoard's "Send willPresentNotification", "delivery
+    // succeeded" and "Received response", then the app's "Added notification request".
 
     private static var notificationIdSeq = 0
 
@@ -575,52 +575,10 @@ final class BnNotificationsTests: BnHostTestCase {
         return String(444_000 + notificationIdSeq)
     }
 
-    /// Whether the notification daemon answered two read-only requests, asked once a
-    /// show has waited 5 s.
-    final class DaemonProbe {
-        private let lock = NSLock()
-        private var askedAt: Date?
-        private var settingsAt: Date?
-        private var settingsStatus: Int?
-        private var pendingAt: Date?
-        private var pendingCount: Int?
-
-        func ask() {
-            let center = UNUserNotificationCenter.current()
-            lock.lock(); askedAt = Date(); lock.unlock()
-            center.getNotificationSettings { settings in
-                self.lock.lock(); self.settingsAt = Date(); self.settingsStatus = settings.authorizationStatus.rawValue
-                self.lock.unlock()
-            }
-            center.getPendingNotificationRequests { requests in
-                self.lock.lock(); self.pendingAt = Date(); self.pendingCount = requests.count; self.lock.unlock()
-            }
-        }
-
-        var summary: String {
-            lock.lock(); defer { lock.unlock() }
-            guard let asked = askedAt else { return "daemon probe not needed (done before 5 s)" }
-            func after(_ d: Date?) -> String {
-                d.map { String(format: "answered after %.0f ms", $0.timeIntervalSince(asked) * 1000) } ?? "NO answer"
-            }
-            return "daemon probe at \(BnNotifications.traceClock(asked)): getNotificationSettings \(after(settingsAt))"
-                + " (authorization \(settingsStatus.map(String.init) ?? "-")), getPendingNotificationRequests "
-                + "\(after(pendingAt)) (\(pendingCount.map(String.init) ?? "-") pending)"
-        }
-    }
-
-    /// `pollUntil` with the same 10 s bound, asking the probe once at 5 s.
-    private func pollUntilProbing(_ probe: DaemonProbe, _ cond: () -> Bool) -> Bool {
-        if pollUntil(deadline: 5, cond) { return true }
-        probe.ask()
-        return pollUntil(deadline: 5, cond)
-    }
-
-    /// The add traces and the probe, as one line, also logged so a passing run's
-    /// latency is on record.
-    private func diagnose(_ what: String, probe: DaemonProbe, observed: String) -> String {
+    /// The add traces, as one line, also logged so a passing run's latency is on record.
+    private func diagnose(_ what: String, observed: String) -> String {
         let traces = BnNotifications.addTracesForTest().map(\.summary)
-        let line = "[#444] \(what): \(observed); adds [\(traces.joined(separator: "; "))]; \(probe.summary)"
+        let line = "[#444] \(what): \(observed); adds [\(traces.joined(separator: "; "))]"
         NSLog("%@", line)
         return line
     }
