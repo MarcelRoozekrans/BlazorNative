@@ -941,9 +941,12 @@ public sealed class FaultNoticeTests
     public void AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2()
     {
         // The mark is thread-bound to the synchronous part, never the flowing AsyncLocal scope.
-        // A call begun inside Task.Run carries the flowing scope but runs on a pool thread, so
-        // it must not mark the dispatch, and the synchronous fault after it stays rc 2.
-        var (rc, _, pending, previous) = DispatchProbe("pool-begin-then-throw");
+        // A call begun on another thread carries the flowing scope but runs off the dispatch's
+        // thread, so it must not mark the dispatch, and the synchronous fault after it stays
+        // rc 2. The call is begun on a dedicated thread that the ExecutionContext flows to, and
+        // not on the pool, because a pool thread put the queue delay of xunit's busy pool
+        // inside the 1 s dispatch bound (#564, 18.9).
+        var (rc, _, pending, previous) = DispatchProbe("thread-begin-then-throw");
         try
         {
             // Anchors: the call really was begun, answered inside begin, on a thread other than
@@ -952,9 +955,14 @@ public sealed class FaultNoticeTests
                 $"anchor: the begin was not attempted; ops seen: [{string.Join(", ", FakeShellHost.HostCalls().Select(c => c.Op))}].");
             Assert.True(FakeShellHost.HostCallsCompletedInsideBegin == 1,
                 $"anchor: the fake answered {FakeShellHost.HostCallsCompletedInsideBegin} calls inside begin, not 1.");
-            Assert.True(ShellCallProbe.PoolBeginThread > 0 && ShellCallProbe.PoolBeginThread != ShellCallProbe.HandlerThread,
-                $"anchor: the call was begun on thread {ShellCallProbe.PoolBeginThread}, the handler ran on "
+            Assert.True(ShellCallProbe.BeginThread > 0 && ShellCallProbe.BeginThread != ShellCallProbe.HandlerThread,
+                $"anchor: the call was begun on thread {ShellCallProbe.BeginThread}, the handler ran on "
                 + $"{ShellCallProbe.HandlerThread}; the begin must be on another thread.");
+            Assert.True(ShellCallProbe.BeginThreadFault is null,
+                $"anchor: the begin thread threw: {ShellCallProbe.BeginThreadFault}");
+            Assert.True(ShellCallProbe.FlowSeenOnBeginThread == "dispatch-flow",
+                $"anchor: the begin thread saw '{ShellCallProbe.FlowSeenOnBeginThread}', not the handler's flowing value, "
+                + "so the dispatch's flowing scope did not reach it either, and rc 2 would not show that the mark ignores that scope.");
             Assert.True(rc == 2, $"rc was {rc}: a call begun on another thread is not marked, so a synchronous fault "
                 + "after it stays rc 2. rc 0 means the dispatch was marked although no call was begun on its synchronous "
                 + "part's thread, for example because the mark followed the flowing scope.");
@@ -2440,9 +2448,18 @@ public sealed class FaultNoticeTests
         /// DispatchProbe resets it.</summary>
         public static volatile bool ReachedThrow;
 
-        /// <summary>The threads pool-begin-then-throw ran its handler and its begin on.
+        /// <summary>The threads thread-begin-then-throw ran its handler and its begin on.
         /// DispatchProbe resets both.</summary>
-        public static volatile int HandlerThread, PoolBeginThread;
+        public static volatile int HandlerThread, BeginThread;
+
+        /// <summary>The value of FlowProbe the begin thread saw, and any fault it hit.
+        /// DispatchProbe resets both.</summary>
+        public static volatile string? FlowSeenOnBeginThread;
+        public static volatile Exception? BeginThreadFault;
+
+        /// <summary>Set by the handler so the begin thread can prove the ExecutionContext flowed.
+        /// Scoped to the dispatch, so it needs no reset.</summary>
+        public static readonly AsyncLocal<string?> FlowProbe = new();
 
         /// <summary>18.1 (#564): gated-begin-then-throw waits on this in its synchronous part.
         /// Open unless a fact closes it; that fact opens it again in its finally.</summary>
@@ -2490,16 +2507,25 @@ public sealed class FaultNoticeTests
             {
                 await Bridge.CheckGeolocationPermissionAsync();
             });
-            Button(b, 80, "pool-begin-then-throw", () =>
+            Button(b, 80, "thread-begin-then-throw", () =>
             {
                 HandlerThread = Environment.CurrentManagedThreadId;
-                // The fake answers inside begin, so this wait never blocks on the shell.
-                Task.Run(() =>
+                FlowProbe.Value = "dispatch-flow";
+                // A dedicated thread, started with Start so the ExecutionContext flows, not a pool
+                // thread (#564). The fake answers inside begin, so the join never waits on the shell.
+                var t = new Thread(() =>
                 {
-                    PoolBeginThread = Environment.CurrentManagedThreadId;
-                    return Bridge.CheckGeolocationPermissionAsync().AsTask();
-                }).Wait();
-                throw new InvalidOperationException("after-pool-begin");
+                    try
+                    {
+                        _ = Bridge.CheckGeolocationPermissionAsync();
+                        BeginThread = Environment.CurrentManagedThreadId;
+                        FlowSeenOnBeginThread = FlowProbe.Value;
+                    }
+                    catch (Exception ex) { BeginThreadFault = ex; }
+                }) { IsBackground = true, Name = "fault-notice-begin" };
+                t.Start();
+                t.Join(FaultNoticeTests.Budget);
+                throw new InvalidOperationException("after-thread-begin");
             });
             Button(b, 90, "back-state-then-throw", () =>
             {
@@ -2627,7 +2653,9 @@ public sealed class FaultNoticeTests
             renderer.Mount<ShellCallProbe>();
             int handlerId = HandlerFor(frames, "click", label);
             ShellCallProbe.ReachedThrow = false;
-            ShellCallProbe.HandlerThread = ShellCallProbe.PoolBeginThread = 0;
+            ShellCallProbe.HandlerThread = ShellCallProbe.BeginThread = 0;
+            ShellCallProbe.FlowSeenOnBeginThread = null;
+            ShellCallProbe.BeginThreadFault = null;
             ShellCallProbe.Sequence = ShellCallProbe.ChildThrowSeq = ShellCallProbe.SiblingBeginSeq = 0;
             FakeShellHost.AutoCompleteHostCall = true;
             FakeShellHost.AutoCompleteFetch = autoCompleteFetch;

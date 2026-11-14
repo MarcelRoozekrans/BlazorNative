@@ -113,7 +113,7 @@ public sealed class PoolStarvationTests
         bool held = hold.EveryWorkerHeld(ProbeWindow);
         (int Rc, List<BlazorNative.Renderer.RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous) probe = default;
         Exception? ex = Record.Exception(() => { probe = FaultNoticeTests.DispatchProbe(
-            "pool-begin-then-throw", release: hold.Dispose); });
+            "thread-begin-then-throw", release: hold.Dispose); });
         // Free the pool before TearDown, which waits on pool continuations. On an overrun
         // DispatchProbe's own catch already ran TearDown, so it is not run again here.
         hold.Dispose();
