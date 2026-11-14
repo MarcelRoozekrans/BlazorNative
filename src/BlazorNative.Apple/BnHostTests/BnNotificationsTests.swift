@@ -261,16 +261,15 @@ final class BnNotificationsTests: BnHostTestCase {
         XCTAssertEqual(capturedStatuses(), [BnNotificationStatus.granted], "show completed more than once")
     }
 
+    // The late error has two routes, as AppleShellBridge.deliverFaultNotice's does: the
+    // booted runtime's onError, which is the route in a running app, and BnLog.error when
+    // no runtime is booted. One pin per route, sharing showThenFailItsAddLate.
+
     func testALateShowAddErrorIsLoggedNotReturned() {
-        installCapture()
-        BnNotifications.authorizationStatusOverrideForTest = { .authorized }
-        let add = StashedAdd()
-        BnNotifications.addForTest = { request, completion in add.stash(request, completion) }
         let logged = LoggedLines()
         BnLog.emitHookForTest = { level, category, message in logged.append(level, category, message) }
-        // With no booted runtime the late error goes to BnLog.error, which the hook sees.
-        // A runtime an earlier boot test left as BnRuntime.shared would take it to that
-        // runtime's onError instead, so the test holds it nil and restores it after.
+        // The no-runtime route. A runtime an earlier boot test left as BnRuntime.shared
+        // would take the error to its onError instead, so the test holds it nil.
         let savedShared = BnRuntime.shared
         BnRuntime.shared = nil
         defer {
@@ -281,31 +280,38 @@ final class BnNotificationsTests: BnHostTestCase {
         // Errors pass at every threshold BnLog accepts (error is the most severe level),
         // so the level is read here, not changed.
         XCTAssertTrue(BnLog.isEnabled(BnLogLevel.error), "BnLog's level drops errors, so this pin could not see one")
-        let bridge = AppleShellBridge()
-        let id = Self.uniqueNotificationId()
-        _ = bridge.hostCallBegin(
-            31, BnHostCallOp.notifications,
-            "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Late\",\"body\":\"A late add error\"}")
-
-        guard pollUntil(deadline: 2, { add.ran }) else {
-            XCTFail("addForTest never ran: the show did not reach the add"); return
-        }
-        guard pollUntil(deadline: 2, { self.capturedStatuses() == [BnNotificationStatus.granted] }) else {
-            XCTFail("show did not complete Granted within 2 s while its add was uncompleted: it still waits on "
-                        + "add (#444). Captured \(capturedStatuses())")
-            return
-        }
-
-        add.complete(NSError(domain: "UNErrorDomain", code: 1,
-                             userInfo: [NSLocalizedDescriptionKey: "held for 18.10"]))
+        guard let id = showThenFailItsAddLate(requestId: 31) else { return }
 
         XCTAssertTrue(pollUntil(deadline: 2) {
             logged.lines.contains { $0.level == BnLogLevel.error && $0.message.contains(id)
                 && $0.message.contains("held for 18.10") }
         }, "a late add error was not logged. Error lines: \(logged.lines.filter { $0.level == BnLogLevel.error })")
-        _ = pollUntil(deadline: 0.5) { false } // room for a wrong second completion to land
-        XCTAssertEqual(capturedStatuses(), [BnNotificationStatus.granted],
-                       "a late add error was returned as a second completion")
+        assertTheShowCompletedOnlyGranted()
+    }
+
+    func testALateShowAddErrorReachesTheRuntimesOnError() {
+        // The running-app route: a never-booted runtime whose onError captures, installed
+        // as the one the shell routes to (the BnBackOffMainTests pattern). Nothing here
+        // crosses into .NET.
+        let errors = CapturedErrors()
+        let rt = BnRuntime(mapper: bnMapper(root: UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))))
+        rt.onError = { msg, err in errors.append(msg, err) }
+        let savedShared = BnRuntime.shared
+        BnRuntime.shared = rt
+        defer {
+            BnRuntime.shared = savedShared
+            BnNotifications.addForTest = nil
+        }
+        guard let id = showThenFailItsAddLate(requestId: 33) else { return }
+
+        XCTAssertTrue(pollUntil(deadline: 2) {
+            errors.items.contains { item in
+                let described = "\(item.error) \((item.error as NSError).localizedDescription)"
+                return item.message.contains(id)
+                    && (item.message.contains("held for 18.10") || described.contains("held for 18.10"))
+            }
+        }, "a late add error did not reach the runtime's onError. onError saw: \(errors.items.map { $0.message })")
+        assertTheShowCompletedOnlyGranted()
     }
 
     func testScheduleStillCompletesWithItsAddOutcome() {
@@ -619,7 +625,58 @@ final class BnNotificationsTests: BnHostTestCase {
         return line
     }
 
-    // ── 18.10 helpers: a held willPresent, a stashed add, captured log lines ─────
+    // ── 18.10 helpers: a late add error, a held willPresent, captured sinks ─────
+
+    /// The late-error pins' shared half: a show whose add is stashed by `addForTest`
+    /// completes Granted, and only then is the stashed add completed with an error
+    /// carrying "held for 18.10". Returns the notification id, or nil after recording
+    /// the failure at the caller's line, since an error is not late without a Granted.
+    private func showThenFailItsAddLate(requestId: Int64,
+                                        file: StaticString = #filePath, line: UInt = #line) -> String? {
+        installCapture()
+        BnNotifications.authorizationStatusOverrideForTest = { .authorized }
+        let add = StashedAdd()
+        BnNotifications.addForTest = { request, completion in add.stash(request, completion) }
+        let bridge = AppleShellBridge()
+        let id = Self.uniqueNotificationId()
+        _ = bridge.hostCallBegin(
+            requestId, BnHostCallOp.notifications,
+            "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Late\",\"body\":\"A late add error\"}")
+
+        guard pollUntil(deadline: 2, { add.ran }) else {
+            XCTFail("addForTest never ran: the show did not reach the add", file: file, line: line)
+            return nil
+        }
+        guard pollUntil(deadline: 2, { self.capturedStatuses() == [BnNotificationStatus.granted] }) else {
+            XCTFail("show did not complete Granted within 2 s while its add was uncompleted: it still waits on "
+                        + "add (#444). Captured \(capturedStatuses())", file: file, line: line)
+            return nil
+        }
+        add.complete(NSError(domain: "UNErrorDomain", code: 1,
+                             userInfo: [NSLocalizedDescriptionKey: "held for 18.10"]))
+        return id
+    }
+
+    /// The show completed once, Granted, with room for a wrong second completion to land.
+    private func assertTheShowCompletedOnlyGranted(file: StaticString = #filePath, line: UInt = #line) {
+        _ = pollUntil(deadline: 0.5) { false }
+        XCTAssertEqual(capturedStatuses(), [BnNotificationStatus.granted],
+                       "a late add error was returned as a second completion", file: file, line: line)
+    }
+
+    /// What a runtime's onError received, from whatever thread reported it.
+    private final class CapturedErrors {
+        private let lock = NSLock()
+        private var storage: [(message: String, error: Error)] = []
+
+        var items: [(message: String, error: Error)] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ message: String, _ error: Error) {
+            lock.lock(); storage.append((message, error)); lock.unlock()
+        }
+    }
 
     /// A center delegate that records willPresent and holds its completion handler, so
     /// the presentation exchange an immediate add waits on stays open until `release`.
