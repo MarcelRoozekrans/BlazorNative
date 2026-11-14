@@ -631,7 +631,7 @@ jobs:
             > ios-out/usernotifications.log 2>&1 || true
           echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
 
-      - name: Assert XCTest baseline (303 passed / 0 failed)
+      - name: Assert XCTest baseline (307 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1495,9 +1495,13 @@ jobs:
           # 297 -> 302 (18.7, +5, 2026-11-11): BnSecureStorageTests' #396 enrolment-check pins.
           # 302 -> 303 (18.7 fix wave, +1, 2026-11-11): BnSecureStorageTests, #396 — any other
           # reason biometry cannot be evaluated is Unavailable too.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 303 ]; then
+          # 303 -> 307 (18.10, +4, 2026-11-14): BnNotificationsTests, #444 — a show completes
+          # Granted while its presentation is held, a late add error goes to the runtime's
+          # onError or, with no runtime, to BnLog and is never returned, and schedule still
+          # completes with its add's outcome.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 307 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 303 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 307 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 
