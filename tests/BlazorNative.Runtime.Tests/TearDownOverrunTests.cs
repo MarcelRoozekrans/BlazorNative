@@ -84,7 +84,9 @@ public sealed class TearDownOverrunTests
         {
             // Opens the gate so the abandoned render thread can exit.
             gate.Set();
-            if (teardown is { IsAlive: true })
+            // A TearDown that hung on the dispose resumes once the gate opens, and then resets the
+            // bridge itself. Wait for it, bounded, so that reset cannot land in the next fact.
+            if (teardown is not null && !teardown.Join(TearDownBound))
                 HostSession.AbandonForTests();
             else
                 HostSession.ResetForTests();
