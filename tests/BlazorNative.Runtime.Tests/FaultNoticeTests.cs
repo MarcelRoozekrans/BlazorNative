@@ -265,10 +265,20 @@ public sealed class FaultNoticeTests
     /// <summary>The late-fault flow: dispatch <paramref name="eventName"/> with the host call
     /// held open, answer the call, and return the FaultNotice the handler's later fault sent.
     /// <paramref name="completeNotices"/> false leaves the notice unanswered, as a shell that
-    /// never completes it would.</summary>
+    /// never completes it would.
+    ///
+    /// <para>It refuses a thread-pool thread (18.9), as ShutdownQuiescenceTests' positive control
+    /// does for #551: it sleep-polls for a notice whose path crosses the pool by the product's
+    /// design, through AwaitWholeHandler's resumption and the send's continuation, so on a pool
+    /// thread it would hold a thread its own notice needs. Its facts run through <see cref="OffPool.Run(Action)"/>.</para></summary>
     private static (int HandlerId, Dictionary<string, string> Args, long RequestId) RunLateFault(
         bool strict, string eventName, string argsJson, bool completeNotices = true)
     {
+        if (Thread.CurrentThread.IsThreadPoolThread)
+            throw new InvalidOperationException(
+                "RunLateFault must not run on a thread-pool thread: it sleep-polls for a FaultNotice whose "
+                + "path crosses the pool, so it would hold a thread its own notice needs. Run the fact "
+                + "through OffPool.Run.");
         var frames = new List<RenderFrame>();
         var pending = new List<Task>();
         // A TEST TAP only (ruling 1): delivery never goes through this static. It lets the
@@ -314,7 +324,7 @@ public sealed class FaultNoticeTests
     // ── The late fault reaches the shell ────────────────────────────────────
 
     [Fact]
-    public void AFaultAfterTheFirstAwait_SendsAFaultNotice()
+    public Task AFaultAfterTheFirstAwait_SendsAFaultNotice() => OffPool.Run(() =>
     {
         var (handlerId, args, _) = RunLateFault(strict: false, "click", """{"name":"click"}""");
 
@@ -325,20 +335,20 @@ public sealed class FaultNoticeTests
         // Ruling 3: a stack trace can carry user data, so it never crosses.
         Assert.False(args.ContainsKey("stack"), "the notice carries a stack trace");
         Assert.DoesNotContain(" at ", string.Join("|", args.Values), StringComparison.Ordinal);
-    }
+    });
 
     [Fact]
-    public void AFaultAfterTheFirstAwait_InStrictMode_SendsAFaultNotice_Control()
+    public Task AFaultAfterTheFirstAwait_InStrictMode_SendsAFaultNotice_Control() => OffPool.Run(() =>
     {
         // Strict mode reached the pending Task even before Task 3's attribution fix, so
         // this control shows the harness can see a notice by a second route. The
         // production pin above is then about the production path alone.
         var (_, args, _) = RunLateFault(strict: true, "click", """{"name":"click"}""");
         Assert.Equal("late", args["message"]);
-    }
+    });
 
     [Fact]
-    public void AFaultNoticeCarriesNoPayloadField()
+    public Task AFaultNoticeCarriesNoPayloadField() => OffPool.Run(() =>
     {
         var (handlerId, args, _) = RunLateFault(strict: false, "change",
             $$"""{"name":"change","payload":"{{SecretPayload}}"}""");
@@ -350,7 +360,7 @@ public sealed class FaultNoticeTests
 
         Assert.Equal(["event", "handlerId", "message", "type"], args.Keys.Order(StringComparer.Ordinal).ToArray());
         Assert.DoesNotContain(SecretPayload, string.Join("|", args.Values), StringComparison.Ordinal);
-    }
+    });
 
     [Fact]
     public void ASynchronousFault_IsRc2_AndSendsNoFaultNotice()
@@ -421,12 +431,12 @@ public sealed class FaultNoticeTests
     // ── Ruling 4: fire-and-forget from .NET's side ──────────────────────────
 
     [Fact]
-    public void AnAnsweredFaultNotice_LeavesNoPendingHostCall()
+    public Task AnAnsweredFaultNotice_LeavesNoPendingHostCall() => OffPool.Run(() =>
     {
         RunLateFault(strict: false, "click", """{"name":"click"}""");
         // RunLateFault's teardown has run; the notice was answered inline by the fake shell.
         Assert.Equal(0, NativeShellBridge.PendingHostCallCountForTests);
-    }
+    });
 
     [Fact]
     public void AFaultNoticeTheShellNeverAnswers_IsDroppedAfterItsTimeout()
