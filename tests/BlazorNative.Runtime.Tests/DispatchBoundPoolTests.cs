@@ -46,8 +46,9 @@ public sealed class DispatchBoundPoolTests
         (int Rc, List<BlazorNative.Renderer.RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)? probe = null;
         Exception? ex = Record.Exception(() => { probe = FaultNoticeTests.DispatchProbe(
             "thread-begin-then-throw", release: hold.Dispose); });
-        // Free the pool before TearDown, which waits on pool continuations. On an overrun
-        // DispatchProbe's own catch already ran TearDown, so it is not run again here.
+        // Free the pool before TearDown, so whatever it waits for can finish even if that needs
+        // a pool thread. On an overrun DispatchProbe's own catch already ran TearDown, so it is
+        // not run again here.
         hold.Dispose();
         if (ex is null && probe is { } result) FaultNoticeTests.TearDown(result.Pending, result.Previous);
 

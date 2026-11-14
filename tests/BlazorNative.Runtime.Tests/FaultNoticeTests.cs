@@ -101,16 +101,24 @@ public sealed class FaultNoticeTests
     /// dispatch to return. Then it answers every open host call, waits for the fact's pending
     /// Tasks, and only then waits for every late FaultNotice send to complete, so a Task that
     /// faults once its call is answered still sends into this fact and not the next one (18.1,
-    /// #564; 18.2). The notices those sends begin are answered last.</summary>
+    /// #564; 18.2). The notices those sends begin are answered last.
+    ///
+    /// <para>None of these waits needs a pool thread (18.9, #564). A wait that does not finish
+    /// within <see cref="Budget"/> does not stop the teardown: every later step still runs, so
+    /// the observer and the session are reset, and only then does it throw, naming what was
+    /// still running. Something still running can deliver a late notice into the next fact.
+    /// Thrown from a finally, that exception replaces the fact's own.</para></summary>
     internal static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
+        var stillRunning = new List<string>();
         release?.Invoke();
         if (s_overrunDispatch is { } overrun)
         {
             s_overrunDispatch = null;
             // Once it has returned, the dispatch has handed its notice send to the tap.
-            overrun.Join(Budget);
+            if (!overrun.Join(Budget))
+                stillRunning.Add("the dispatch that overran its budget has not returned");
         }
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
@@ -119,31 +127,61 @@ public sealed class FaultNoticeTests
             NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Task[] snapshot;
         lock (pending) snapshot = pending.ToArray();
-        Task.WaitAll(snapshot.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        if (WaitBounded(snapshot, "pending dispatch Task(s)") is { } running)
+            stillRunning.Add(running);
         // After the pending Tasks: one that faulted only once its call was answered above sends
         // its notice now, and the send must land in this fact. Then answer what it began.
-        WaitForNoticeSends();
+        try { WaitForNoticeSends(); }
+        catch (TimeoutException ex) { stillRunning.Add(ex.Message); }
         foreach (var call in FakeShellHost.HostCalls())
             NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Exports.PendingDispatchObserver = previousObserver;
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
+        if (stillRunning.Count > 0)
+            throw new TimeoutException($"TearDown waited {Budget.TotalSeconds:0} s and these were still running: "
+                + string.Join("; ", stillRunning) + ". One can still send a late FaultNotice into the next fact (#564).");
+    }
+
+    /// <summary>Waits until every task in <paramref name="tasks"/> has completed, in any state,
+    /// bounded by <see cref="Budget"/> in total. Each task is waited on directly, so the wait needs
+    /// no pool thread; a continuation would be queued to the pool, and on a starved pool it would
+    /// time out although every task had completed (18.9, #564). A task's own fault is not this
+    /// wait's business and is ignored. Returns null when all completed, else how many of
+    /// <paramref name="what"/> did not, with their ids.</summary>
+    private static string? WaitBounded(Task[] tasks, string what)
+    {
+        var clock = Stopwatch.StartNew();
+        foreach (Task t in tasks)
+        {
+            TimeSpan left = Budget - clock.Elapsed;
+            try { t.Wait(left > TimeSpan.Zero ? left : TimeSpan.Zero); }
+            catch (AggregateException) { }
+        }
+        Task[] running = tasks.Where(t => !t.IsCompleted).ToArray();
+        return running.Length == 0 ? null
+            : $"{running.Length} of {tasks.Length} {what}, ids [{string.Join(", ", running.Select(t => t.Id))}]";
     }
 
     /// <summary>Every late FaultNotice send <see cref="Exports.LateFaultNoticeObserver"/>
     /// has handed on and <see cref="WaitForNoticeSends"/> has not yet seen complete.</summary>
     private static readonly List<Task> s_noticeSends = [];
 
-    /// <summary>Waits, bounded by <see cref="Budget"/>, until every recorded FaultNotice send
-    /// has completed, so its notice is in the fake's log. A send whose task is complete has
-    /// begun its host call, because SendNotice begins it synchronously.</summary>
+    /// <summary>Waits, bounded by <see cref="Budget"/> and without a pool thread, until every
+    /// recorded FaultNotice send has completed, so its notice is in the fake's log. A send whose
+    /// task is complete has begun its host call, because SendNotice begins it synchronously.
+    /// Throws a <see cref="TimeoutException"/> naming the sends still running when the budget
+    /// runs out (18.9, #564).</summary>
     private static void WaitForNoticeSends()
     {
         Task[] sends;
         lock (s_noticeSends) sends = s_noticeSends.Where(t => !t.IsCompleted).ToArray();
         s_waitingForNoticeSends?.Invoke(sends.Length);
-        Task.WaitAll(sends.Select(t => t.ContinueWith(_ => { })).ToArray(), Budget);
+        string? running = WaitBounded(sends, "late FaultNotice send(s)");
         lock (s_noticeSends) s_noticeSends.RemoveAll(t => t.IsCompleted);
+        if (running is not null)
+            throw new TimeoutException($"{running} did not complete within "
+                + $"{Budget.TotalSeconds:0} s, so a notice can still land in the next fact (#564)");
     }
 
     private static bool WaitUntil(Func<bool> condition, TimeSpan budget)
