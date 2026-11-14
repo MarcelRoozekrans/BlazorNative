@@ -2,9 +2,9 @@
 
 **Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.10 — iOS show completes when posted (#444), `[status: complete]`, on PR #712 awaiting the owner's merge. 18.1 to 18.9 are complete and merged; 18.9 is `a1bacd6b`.
-**Branch:** `feat/18.10-show-posted`, cut from `origin/main` at `a1bacd6b`. PR #712.
-**Next step:** the owner merges PR #712. Then cut `feat/18.11-audit` from `origin/main` and run `start-next-phase` for 18.11 (#568).
+**Phase:** 18.11 — audit and close (#568), `[status: pending]`, no design spec and no plan yet. 18.1 to 18.10 are complete and merged; 18.10 is `da6f8c1d`.
+**Branch:** `feat/18.11-audit`, cut from `origin/main` at `da6f8c1d`. No PR yet.
+**Next step:** run `start-next-phase` for 18.11 (#568). It routes to brainstorming at phase scope (Surface: Docs): design the #568 cell fixes, the fresh reds the DoD's new-pin item needs, and the M18 re-audit, then writing-plans, then subagent-driven execution.
 
 ## Current Position
 
@@ -20,7 +20,7 @@
   - **Review fix waves, before the merge:** CodeRabbit found that `TearDown` disposed a session whose overrun dispatch was still running, an unbounded wait. It now abandons that session, pinned by `TearDownOverrunTests`, and the pin joins its teardown thread. The record's §5 has both rounds and their reds.
   - **Flake #602 recurred** on #710's simulator leg at attempt 1, its third sighting on an unrelated PR; it now qualifies for a root-cause fix.
 - **Release PR #706 (0.22.1)** carries the 18.8 fix. Merging it is the owner's call.
-- **18.10 is complete on PR #712, awaiting the owner's merge.** The record is [`docs/plans/2026-11-14-phase-18.10-record.md`](../plans/2026-11-14-phase-18.10-record.md).
+- **18.10 is merged: PR #712, squash `da6f8c1d`, #444 closed.** CodeRabbit requested changes after the PR was called ready: the record claimed every red was on `69172396`, but R0 and R0b ran on the pre-fix code. Fixed in `a9435ee8`, which names R1 as their current form; the PR body was also rewritten to the template. Every lane passed at attempt 1 on `a9435ee8`. The record is [`docs/plans/2026-11-14-phase-18.10-record.md`](../plans/2026-11-14-phase-18.10-record.md).
   - **Decision and fix:** the owner decided an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify`. `BnNotifications.runAction` now completes a show right after `add`; a late `add` error goes to `onError` or `BnLog`, and `schedule` is unchanged.
   - **Cause:** `add` waited on SpringBoard's `willPresent` delivery, which stalled for 11 s in #444's trace. It was never a product timing bug of ours.
   - **Pins and reds:** four pins in `BnNotificationsTests.swift`, graded by R0 to R9 in the record's §3, all on the reviewed head `69172396` at attempt 1.
