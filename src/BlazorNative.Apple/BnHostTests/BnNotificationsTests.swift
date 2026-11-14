@@ -39,6 +39,8 @@ final class BnNotificationsTests: BnHostTestCase {
     private var captured: [(id: Int64, status: Int32, payload: String?)] = []
     private var runtime: BnRuntime?
     private var root: UIView!
+    /// The held-presentation pin's delegate, kept so tearDown can release its hold.
+    private var holdingDelegate: HoldingPresentationDelegate?
 
     override func setUp() {
         super.setUp()
@@ -50,6 +52,10 @@ final class BnNotificationsTests: BnHostTestCase {
     override func tearDown() {
         BnNotifications.resetForTest()
         clearCentre()
+        // 18.10: a held willPresent never released would stall every later show. The
+        // held pin releases it in its own defer too; this covers a test that threw first.
+        holdingDelegate?.release()
+        holdingDelegate = nil
         UNUserNotificationCenter.current().delegate = nil // never leave a bridge as the global delegate
         super.tearDown()
     }
@@ -204,6 +210,129 @@ final class BnNotificationsTests: BnHostTestCase {
         // The production removePending/removeDelivered ran against the real centre keyed by
         // the id (the seam — an unauthorized sim never had a pending request to observe gone).
         XCTAssertEqual(BnNotifications.lastCancelledIdForTest, "7", "cancel targeted the app-chosen id")
+    }
+
+    // ── 18.10 (#444): a show completes Granted once it is posted ─────────────────
+    //
+    // Owner decision 2026-11-14: a show's Granted means "handed to the center", as
+    // Android's does after notify. An immediate request's add completes only after the
+    // app has answered willPresent, which SpringBoard once delivered 11.25 s late
+    // (run 40642166828), so a show that waits on add waits on SpringBoard. These pins
+    // hold that exchange, or replace the add, and require Granted anyway. schedule is
+    // unchanged: a scheduled request is not presented, and its add outcome stays data.
+
+    func testShowCompletesGrantedWhilePresentationIsHeld() {
+        installCapture()
+        BnNotifications.authorizationStatusOverrideForTest = { .authorized }
+        let delegate = HoldingPresentationDelegate()
+        holdingDelegate = delegate
+        UNUserNotificationCenter.current().delegate = delegate
+        defer {
+            delegate.release()
+            UNUserNotificationCenter.current().delegate = nil
+        }
+        let bridge = AppleShellBridge()
+        let id = Self.uniqueNotificationId()
+        _ = bridge.hostCallBegin(
+            30, BnHostCallOp.notifications,
+            "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Held\",\"body\":\"A held presentation\"}")
+
+        XCTAssertTrue(pollUntil(deadline: 2) { self.capturedStatuses() == [BnNotificationStatus.granted] },
+                      "show did not complete Granted within 2 s while its presentation was held: it still "
+                        + "waits on add (#444), which waits on willPresent. Captured \(capturedStatuses()); adds ["
+                        + BnNotifications.addTracesForTest().map(\.summary).joined(separator: "; ") + "]")
+
+        // The hold anchor. The 30 s bound absorbs a SpringBoard stall before delivery,
+        // like #444's 11.25 s; the pin needs delivery to have happened, not to be fast.
+        XCTAssertTrue(pollUntil(deadline: 30) { delegate.receivedIdentifier == id },
+                      "the test delegate never received willPresent for \(id): the hold did not engage, "
+                        + "so this pin proves nothing")
+        let traceForId = { BnNotifications.addTracesForTest().last { $0.identifier == id } }
+        XCTAssertNotNil(traceForId(), "no add trace for \(id): the show never reached the add")
+        XCTAssertNil(traceForId()?.completedAt,
+                     "add completed while willPresent was held: the hold is not what add waits on. "
+                        + "willPresent at \(delegate.receivedAt.map { BnNotifications.traceClock($0) } ?? "never"); "
+                        + (traceForId()?.summary ?? "no trace"))
+
+        // The control: the hold was real, because releasing it lets add complete.
+        delegate.release()
+        XCTAssertTrue(pollUntil(deadline: 10) { traceForId()?.completedAt != nil },
+                      "add never completed after the hold was released. " + (traceForId()?.summary ?? "no trace"))
+        XCTAssertEqual(capturedStatuses(), [BnNotificationStatus.granted], "show completed more than once")
+    }
+
+    func testALateShowAddErrorIsLoggedNotReturned() {
+        installCapture()
+        BnNotifications.authorizationStatusOverrideForTest = { .authorized }
+        let add = StashedAdd()
+        BnNotifications.addForTest = { request, completion in add.stash(request, completion) }
+        let logged = LoggedLines()
+        BnLog.emitHookForTest = { level, category, message in logged.append(level, category, message) }
+        // With no booted runtime the late error goes to BnLog.error, which the hook sees.
+        // A runtime an earlier boot test left as BnRuntime.shared would take it to that
+        // runtime's onError instead, so the test holds it nil and restores it after.
+        let savedShared = BnRuntime.shared
+        BnRuntime.shared = nil
+        defer {
+            BnLog.emitHookForTest = nil
+            BnRuntime.shared = savedShared
+            BnNotifications.addForTest = nil
+        }
+        // Errors pass at every threshold BnLog accepts (error is the most severe level),
+        // so the level is read here, not changed.
+        XCTAssertTrue(BnLog.isEnabled(BnLogLevel.error), "BnLog's level drops errors, so this pin could not see one")
+        let bridge = AppleShellBridge()
+        let id = Self.uniqueNotificationId()
+        _ = bridge.hostCallBegin(
+            31, BnHostCallOp.notifications,
+            "{\"action\":\"show\",\"id\":\"\(id)\",\"title\":\"Late\",\"body\":\"A late add error\"}")
+
+        guard pollUntil(deadline: 2, { add.ran }) else {
+            XCTFail("addForTest never ran: the show did not reach the add"); return
+        }
+        guard pollUntil(deadline: 2, { self.capturedStatuses() == [BnNotificationStatus.granted] }) else {
+            XCTFail("show did not complete Granted within 2 s while its add was uncompleted: it still waits on "
+                        + "add (#444). Captured \(capturedStatuses())")
+            return
+        }
+
+        add.complete(NSError(domain: "UNErrorDomain", code: 1,
+                             userInfo: [NSLocalizedDescriptionKey: "held for 18.10"]))
+
+        XCTAssertTrue(pollUntil(deadline: 2) {
+            logged.lines.contains { $0.level == BnLogLevel.error && $0.message.contains(id)
+                && $0.message.contains("held for 18.10") }
+        }, "a late add error was not logged. Error lines: \(logged.lines.filter { $0.level == BnLogLevel.error })")
+        _ = pollUntil(deadline: 0.5) { false } // room for a wrong second completion to land
+        XCTAssertEqual(capturedStatuses(), [BnNotificationStatus.granted],
+                       "a late add error was returned as a second completion")
+    }
+
+    func testScheduleStillCompletesWithItsAddOutcome() {
+        installCapture()
+        BnNotifications.authorizationStatusOverrideForTest = { .authorized }
+        let add = StashedAdd()
+        BnNotifications.addForTest = { request, completion in add.stash(request, completion) }
+        defer { BnNotifications.addForTest = nil }
+        let bridge = AppleShellBridge()
+        let id = Self.uniqueNotificationId()
+        let whenMs = Int64((Date().timeIntervalSince1970 + 60) * 1000)
+        _ = bridge.hostCallBegin(
+            32, BnHostCallOp.notifications,
+            "{\"action\":\"schedule\",\"id\":\"\(id)\",\"title\":\"Later\",\"body\":\"A scheduled add\","
+                + "\"when\":\"\(whenMs)\"}")
+
+        guard pollUntil(deadline: 2, { add.ran }) else {
+            XCTFail("addForTest never ran: the schedule did not reach the add"); return
+        }
+        XCTAssertFalse(pollUntil(deadline: 1) { !self.capturedStatuses().isEmpty },
+                       "schedule completed before its add did: only show completes on hand-off "
+                        + "(owner decision 18.10). Captured \(capturedStatuses())")
+
+        add.complete(NSError(domain: "UNErrorDomain", code: 1,
+                             userInfo: [NSLocalizedDescriptionKey: "schedule add failed for 18.10"]))
+        XCTAssertTrue(pollUntil(deadline: 2) { self.capturedStatuses() == [BnNotificationStatus.error] },
+                      "schedule did not complete Error with its add's error. Captured \(capturedStatuses())")
     }
 
     // ── Denial dance: notDetermined then the user's outcome as DATA (never a hang) ─
@@ -488,6 +617,71 @@ final class BnNotificationsTests: BnHostTestCase {
         let line = "[#444] \(what): \(observed); adds [\(traces.joined(separator: "; "))]; \(probe.summary)"
         NSLog("%@", line)
         return line
+    }
+
+    // ── 18.10 helpers: a held willPresent, a stashed add, captured log lines ─────
+
+    /// A center delegate that records willPresent and holds its completion handler, so
+    /// the presentation exchange an immediate add waits on stays open until `release`.
+    /// The technique of lane run 40624968569, which held one for 15 s. willPresent
+    /// arrives on the main thread, which `pollUntil` keeps running.
+    private final class HoldingPresentationDelegate: NSObject, UNUserNotificationCenterDelegate {
+        private let lock = NSLock()
+        private var identifier: String?
+        private var at: Date?
+        private var held: ((UNNotificationPresentationOptions) -> Void)?
+
+        var receivedIdentifier: String? { lock.lock(); defer { lock.unlock() }; return identifier }
+        var receivedAt: Date? { lock.lock(); defer { lock.unlock() }; return at }
+
+        func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                    willPresent notification: UNNotification,
+                                    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+            lock.lock()
+            identifier = notification.request.identifier
+            at = Date()
+            held = completionHandler
+            lock.unlock()
+        }
+
+        /// Answers a held willPresent, once. Safe to call again, or with nothing held.
+        func release() {
+            lock.lock(); let handler = held; held = nil; lock.unlock()
+            handler?([.banner])
+        }
+    }
+
+    /// What `addForTest` was handed: it records that it ran and keeps the completion
+    /// uncalled until the test calls `complete`.
+    private final class StashedAdd {
+        private let lock = NSLock()
+        private var completion: ((Error?) -> Void)?
+        private var didRun = false
+
+        var ran: Bool { lock.lock(); defer { lock.unlock() }; return didRun }
+
+        func stash(_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) {
+            lock.lock(); didRun = true; self.completion = completion; lock.unlock()
+        }
+
+        func complete(_ error: Error?) {
+            lock.lock(); let c = completion; completion = nil; lock.unlock()
+            c?(error)
+        }
+    }
+
+    /// The lines BnLog let through, from whatever thread logged them.
+    private final class LoggedLines {
+        private let lock = NSLock()
+        private var storage: [(level: Int32, category: String, message: String)] = []
+
+        var lines: [(level: Int32, category: String, message: String)] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ level: Int32, _ category: String, _ message: String) {
+            lock.lock(); storage.append((level, category, message)); lock.unlock()
+        }
     }
 
     private func pollUntil(deadline seconds: TimeInterval = 10, _ cond: () -> Bool) -> Bool {

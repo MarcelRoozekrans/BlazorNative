@@ -144,6 +144,13 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// what makes the construction deterministically assertable on the sim.
     static var lastAddedRequestForTest: UNNotificationRequest?
 
+    /// Replaces ONLY the call to `UNUserNotificationCenter.current().add`: the request
+    /// and the completion it receives are production's, so a test that stashes the
+    /// completion and calls it later drives the real completion code with an `add`
+    /// outcome of its choosing, such as a late error. Nil in production, where the real
+    /// center is called; cleared by `resetForTest`.
+    static var addForTest: ((UNNotificationRequest, @escaping (Error?) -> Void) -> Void)?
+
     /// The identifier the most recent `cancel` targeted at the real center (captured
     /// alongside the real remove* calls) — the same reason as lastAddedRequestForTest: an
     /// unauthorized sim never had a pending request to observe removed.
@@ -234,6 +241,7 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         navigateHookForTest = nil
         lastHostCallCompleteRcForTest = Int32.min
         lastAddedRequestForTest = nil
+        addForTest = nil
         lastCancelledIdForTest = nil
         addTraceLock.lock(); addTraces = []; addTraceLock.unlock()
     }
@@ -436,7 +444,9 @@ final class BnNotifications: NSObject, UNUserNotificationCenterDelegate {
         // #444: the call and its completion are traced, including a completion that
         // finds this handler gone, so a lost completion is told apart from a dropped one.
         let seq = BnNotifications.traceAddCalled(identifier)
-        UNUserNotificationCenter.current().add(request) { [weak self] error in
+        let addToCenter: (UNNotificationRequest, @escaping (Error?) -> Void) -> Void = BnNotifications.addForTest
+            ?? { UNUserNotificationCenter.current().add($0, withCompletionHandler: $1) }
+        addToCenter(request) { [weak self] error in
             BnNotifications.traceAddCompleted(seq, identifier, error, handlerAlive: self != nil)
             self?.complete(requestId, error == nil ? BnNotificationStatus.granted : BnNotificationStatus.error, nil)
         }
