@@ -94,9 +94,11 @@ advisory lanes (nightly / on-merge / manual dispatch).
 
   The process tree is killed, but a process that lost its parent, such as an MSBuild worker
   node, is out of that kill's reach. The failure message says so.
-  [#530](https://github.com/MarcelRoozekrans/BlazorNative/issues/530) tracks finding out what the
-  holder is. The script turns MSBuild node reuse off, which is the likely
-  fix, not a proven one.
+  On Windows CI the holder was a reused MSBuild worker node, found by the
+  [#530](https://github.com/MarcelRoozekrans/BlazorNative/issues/530) experiment
+  ([record](docs/plans/2026-11-13-phase-18.8-record.md) section 2). The script turns MSBuild node
+  reuse off, which stopped the stall in that experiment. The 2026-10-15 Linux hang was not matched
+  by pipe id, so its holder is not proven to be the same.
 - **A stray MSBuild node:** `dotnet build-server shutdown` stops it.
 - **The JVM tests rerun when the native library changes.** The Gradle test and run tasks declare
   `BlazorNative.Runtime.dll` in the win-x64 publish directory as an input, by content. After you

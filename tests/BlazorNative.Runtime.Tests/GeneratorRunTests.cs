@@ -234,7 +234,7 @@ public sealed class GeneratorRunTests
         }
     }
 
-    // ── node reuse off in the generator: #454's fix, proven by 18.8 ─────────────
+    // ── node reuse off in the generator: #454's fix, proven by 18.8 on Windows ───────
 
     /// <summary>An MSBuild call in command position: at the start of a statement, or
     /// after <c>;</c>, <c>|</c>, a brace, a paren or <c>=</c>, or after <c>&amp;</c>
@@ -294,8 +294,9 @@ public sealed class GeneratorRunTests
     /// 18.8 experiment, docs/plans/2026-11-13-phase-18.8-record.md §2, proved the
     /// holder: with node reuse on, the generator stalled in 20 of 20 iterations, and
     /// the holder of its output pipe, in all 98 rows over 59 firings, was a
-    /// <c>dotnet … MSBuild.dll … /nodemode:1 /nodeReuse:true</c> worker node started
-    /// by the publish, with <c>MSBUILDDISABLENODEREUSE</c> absent. With the switch and
+    /// <c>dotnet … MSBuild.dll … /nodemode:1 /nodeReuse:true</c> worker node, 96 rows
+    /// matched by the write-end pipe id and 2 by the anchor-created rule, with
+    /// <c>MSBUILDDISABLENODEREUSE</c> absent. With the switch and
     /// the variable, 0 of 20 stalled. Whatever else may hold a pipe, the bound in
     /// <see cref="BoundedScript"/> turns a stall into a named failure.
     ///
@@ -303,8 +304,8 @@ public sealed class GeneratorRunTests
     /// variable in the script text; that they stop the node outliving the publish is
     /// shown by the experiment, <c>18.8-E1</c>, which nothing in CI re-runs. The
     /// experiment ran on Windows; the 2026-10-15 hang was on Linux, and this does not
-    /// claim its holder was matched by pipe id. Calls the recogniser does not see: one hidden behind a
-    /// variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
+    /// claim its holder was matched by pipe id. Calls the recogniser does not see: one
+    /// hidden behind a variable, such as <c>&amp; $tool publish</c>; one built as a string, such as
     /// <c>Invoke-Expression "dotnet publish …"</c>; and one started through
     /// <c>Start-Process dotnet -ArgumentList publish</c>. For all of them the environment
     /// variable still covers it.</para>
