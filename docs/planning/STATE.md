@@ -2,22 +2,28 @@
 
 **Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: active]`. Its design and plan are approved, Tasks 1 and 2 are built, and the final-review fix wave is running. 18.1 to 18.8 are complete.
-**Branch:** `feat/18.9-dispatch-bound`, cut from `origin/main` `d9bf0711`. Draft PR #710.
+**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: complete]` on the branch. Next is 18.10 (#444), `[status: pending]`, no design yet. 18.1 to 18.9 are complete.
+**Branch:** `feat/18.9-dispatch-bound`, PR #710. All lanes were green at attempt 1 on `bc9abb77`. The PR is ready for the owner's merge, and every later commit is docs-only.
 
 ## Current Position
 
-- **PR #707 (18.8) is merged** as `d9bf0711` on 2026-11-14, after CodeRabbit approved head `a42d1290` with no findings and every lane was green. #530 closed. The branch is deleted. The owner confirmed D2's extended match rule as written.
+- **18.9 is done, in PR #710, not yet merged.** The record is [`docs/plans/2026-11-14-phase-18.9-record.md`](../plans/2026-11-14-phase-18.9-record.md).
+  - **Cause:** the probe handler of `AShellCallBegunOnAnotherThread_…` blocked a 1 s-bounded dispatch on `Task.Run(...).Wait()`. xUnit 2.9 runs test bodies on the thread pool, so the queued item waited for thread injection. That was found with a pool hold that reproduced the CI message, and with dumps at >1 s spikes. It is not a product bug.
+  - **Fix, test code only:**
+    - a dedicated begin thread, with a product flowing-scope anchor;
+    - the pin `DispatchBoundPoolTests`;
+    - `TearDown` and `WaitForNoticeSends` wait without the pool and throw on a timeout, keeping the primary failure;
+    - the `RunLateFault` facts run through `OffPool`.
+  - **Reds:** R1 to R12 on `7527f158`. Every red taken on `FaultNoticeTests.cs` before 18.9 is stale, and the record's §3 lists them for 18.11.
+  - **Filed:** #711, the other ~25 `FaultNoticeTests` facts of #551's shape, by owner decision.
 - **Release PR #706 (0.22.1)** carries the 18.8 fix. Merging it is the owner's call.
-- **Two phases were inserted before the audit**, by owner decision on 2026-11-14: fix the open DoD flakes at their cause first.
-  - **18.9, #564:** a `FaultNoticeTests` dispatch misses its 1 s bound on the Windows runner. 18.1 closed it, and it reopened on 2026-11-05: run 41910675549, `AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2`, `DispatchBounded` at `FaultNoticeTests.cs:212`. No bound may be raised.
-  - **18.10, #444:** the owner decided that an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify` (`AndroidShellBridge.kt:1989`). A later `add` error is logged, not returned. A twin pin holds the parity. Today `BnNotifications.swift:439` waits for `add`'s completion, which waits for SpringBoard's `willPresent` delivery; #444's trace shows SpringBoard stalling for 11 s.
-  - **18.11** is the old 18.9, audit and close (#568).
-- **Findings for 18.11, from this session's look at #568:**
+- **18.10, #444:** the owner decided that an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify` (`AndroidShellBridge.kt:1989`). A later `add` error is logged, not returned. A twin pin holds the parity. Today `BnNotifications.swift:439` waits for `add`'s completion, which waits for SpringBoard's `willPresent` delivery; #444's trace shows SpringBoard stalling for 11 s.
+- **18.11** is the audit and close (#568).
+- **Findings for 18.11, from #568:**
   - #568's fourth cell was fixed in 18.8.
-  - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell, at old lines `:552`, `:553` and `:556`, which have moved since. So are the `FaultNoticeTests` line numbers that 18.2 reported.
-  - Many M18-added pins now cite reds that later M18 phases made stale: 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5. The DoD's new-pin item needs fresh reds, so they must be re-run.
-- **Baselines unchanged:** .NET 2824 (1412 facts on two TFMs), JVM 210, Android 273, iOS 303.
+  - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell. Their line numbers have moved.
+  - Many M18-added pins cite reds that later M18 phases made stale, among them 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5, and now every pre-18.9 `FaultNoticeTests` red. The DoD's new-pin item needs fresh reds.
+- **Baselines:** .NET 2826 (1413 facts on two TFMs) once #710 merges, JVM 210, Android 273, iOS 303.
 
 ## Owner decisions for M18 (2026-10-24)
 
@@ -47,14 +53,13 @@
 
 ## Recommended Next Step
 
-1. Continue 18.9 with plan `docs/superpowers/plans/2026-11-14-phase-18.9-dispatch-bound.md`: the final-review fix wave, then the Task 3 reds, then Task 4.
-   - Find the cause first, with systematic debugging. Read #564 and its comments, the 18.1 record's #564 section, and `FaultNoticeTests.DispatchBounded`.
-   - The rule is no guessed fix and no raised bound.
-2. Then 18.10 (#444), with the posted-means-Granted decision above. Then 18.11, the audit.
-3. The rules still hold:
+1. Owner merges PR #710. Ask "Merged ?" for the standing merge approval. Then read state from `origin/main`.
+2. Cut `feat/18.10-show-posted` from `origin/main` and run `start-next-phase` for **18.10** (#444). It has no design, so it routes to brainstorming, with the owner's posted-means-Granted decision above.
+3. Then 18.11, the audit (#568).
+4. The rules still hold:
    - No Claude signature anywhere, in commits as well as the PR body.
    - Implementers tick only their own plan boxes, line by line.
    - Grade pins against `docs/pin-standard.md`, "Grading a pin: sites and reds". Edit every file before mutating, and run the final review before the reds.
    - Ask questions with AskUserQuestion. Execution is subagent-driven.
    - Never `pkill -f` a pattern; kill by PID.
-4. Watch, but do not work, the flakes #598, #602, #603, #604 and #676. The M18 DoD needs attempt 1 green on every lane.
+5. Watch, but do not work, the flakes #598, #602, #603, #604 and #676. The M18 DoD needs attempt 1 green on every lane.

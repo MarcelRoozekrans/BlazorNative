@@ -4056,10 +4056,11 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 18.9: The Windows dispatch bound (#564) [status: active]
+#### Phase 18.9: The Windows dispatch bound (#564) [status: complete]
 **Goal:** Find why a `FaultNoticeTests` dispatch misses its 1 s bound on the Windows CI runner and fix it at its cause, without raising the bound. Inserted 2026-11-14 by owner decision: fix the open DoD flakes before the audit.
 **Design:** `docs/superpowers/specs/2026-11-14-phase-18.9-design.md`
 **Plan:** `docs/superpowers/plans/2026-11-14-phase-18.9-dispatch-bound.md`
+**Completed:** 2026-11-14
 **Surface:** Backend
 **HelpWanted:** no
 
