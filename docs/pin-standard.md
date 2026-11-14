@@ -489,6 +489,8 @@ renderer's scope, which rests on reading, and a nested dispatch inside a window,
 reading. The re-render and `RunAfterDispatch` paths were listed there until 18.2 covered them
 (#500); the block now says so, and the 18.2 cells below pin them.
 
+**Stale reds.** The `FaultNoticeTests` reds cited in this table and the tables below are stale, per [the 18.9 record](plans/2026-11-14-phase-18.9-record.md#stale-reds)'s Stale reds section, and are re-run in 18.11 (#568).
+
 | 17.1 fact | Rule 2, anchor | Rule 3 | Rule 7 |
 |---|---|---|---|
 | `AnInlineContinuationsFault_IsItsOwnDispatchs_NotTheWindows` | `RanInsideB` | the null-flow fact is the contrast where the window keeps the fault | §2 red; M1. `RanInsideB`: [the 17.7 record](plans/2026-10-17-phase-17.7-record.md) §4 FN0, a subject red; 17.1's A1 and A4 corroborate it. The name's two clauses, under [Grading a pin](#grading-a-pin-sites-and-reds): [the 17.11 record](plans/2026-10-22-phase-17.11-record.md) §2 N1, the window dropping a live fault of another dispatch as finished, reds A's late notice at `:963`; N2, a late notice sent under the window's handler id, reds the handler-id assertion at `:966`. Both are subject reds. 17.1's M1 and §2 red reach only B's rc, `:961`. |
