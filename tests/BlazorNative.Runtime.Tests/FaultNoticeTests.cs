@@ -102,7 +102,7 @@ public sealed class FaultNoticeTests
     /// Tasks, and only then waits for every late FaultNotice send to complete, so a Task that
     /// faults once its call is answered still sends into this fact and not the next one (18.1,
     /// #564; 18.2). The notices those sends begin are answered last.</summary>
-    private static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
+    internal static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
         release?.Invoke();
@@ -2613,7 +2613,7 @@ public sealed class FaultNoticeTests
         }
     }
 
-    private static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
+    internal static (int Rc, List<RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous)
         DispatchProbe(string label, bool autoCompleteFetch = false, int hostCallBeginReturnCode = 0,
             int fetchBeginReturnCode = 0, Action? release = null)
     {

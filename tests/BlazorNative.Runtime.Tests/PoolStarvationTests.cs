@@ -28,6 +28,11 @@ namespace BlazorNative.Runtime.Tests;
 // the same time. A collection with parallelization disabled runs after all the
 // parallel ones, alone, so the hold can starve nothing but this fact.
 //
+// #564 lives here too. FaultNoticeTests' other-thread probe has a 1 s dispatch bound,
+// and on the Windows runner a busy pool can overrun it if the probe's synchronous part
+// waits on the pool. Proving it needs the same total hold on every worker thread, which
+// stalls whatever else runs, so that fact shares this collection and runs alone.
+//
 // DOES NOT COVER:
 //   - the 10 s magnitude seen on Windows; the hold is total, so any budget fails;
 //   - which blocking wait starved the pool on the runner. The message reports a
@@ -92,6 +97,34 @@ public sealed class PoolStarvationTests
         Assert.True(ex is null || ex.Message.Contains(ArrivedOnRelease, StringComparison.Ordinal),
             "the positive control named thread-pool starvation, but the frame did not arrive once the "
             + "pool was released, so it was lost, not late: " + ex?.Message);
+    });
+
+    /// <summary>
+    /// PIN, #564: with every worker thread of the pool held, FaultNoticeTests' other-thread
+    /// probe still returns within its 1 s dispatch bound and still faults synchronously with
+    /// rc 2, so its synchronous part does not wait on the thread pool. ANCHOR: a probe queued
+    /// after the hold does not run within <see cref="ProbeWindow"/>, so the pool really was
+    /// held.
+    /// </summary>
+    [Fact]
+    public Task TheOtherThreadProbe_WithEveryPoolThreadHeld_ReturnsWithinTheDispatchBound() => OffPool.Run(() =>
+    {
+        var hold = new PoolHold();
+        bool held = hold.EveryWorkerHeld(ProbeWindow);
+        (int Rc, List<BlazorNative.Renderer.RenderFrame> Frames, List<Task> Pending, Action<ulong, string, Task>? Previous) probe = default;
+        Exception? ex = Record.Exception(() => { probe = FaultNoticeTests.DispatchProbe(
+            "pool-begin-then-throw", release: hold.Dispose); });
+        // Free the pool before TearDown, which waits on pool continuations. On an overrun
+        // DispatchProbe's own catch already ran TearDown, so it is not run again here.
+        hold.Dispose();
+        if (ex is null) FaultNoticeTests.TearDown(probe.Pending, probe.Previous);
+
+        Assert.True(held, "anchor: a work item queued after the hold ran within 500 ms, so the pool was not held and this fact shows nothing");
+        Assert.True(ex is null,
+            "the other-thread probe did not return within its 1 s dispatch bound with every pool worker held, "
+            + "so its synchronous part waits on the thread pool and the Windows runner's busy pool can overrun it (#564): "
+            + ex?.Message);
+        Assert.True(probe.Rc == 2, $"rc was {probe.Rc}: the probe must still fault synchronously with rc 2 under the hold");
     });
 
     /// <summary>Text of the positive control's message for a missed frame with a free pool.</summary>
