@@ -2,20 +2,21 @@
 
 **Last session:** 2026-11-14
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.8 — the generator's pipe holder (#530), `[status: complete]` on this branch. 18.1 to 18.8 are complete; 18.9 (#568) is next.
-**Branch:** `feat/18.8-pipe-holder`, PR #707 against `main`. Draft until its lanes are green on the complete-phase head, then ready. Not merged.
+**Phase:** 18.9 — the Windows dispatch bound (#564), `[status: pending]`, no design yet. 18.1 to 18.8 are complete.
+**Branch:** `feat/18.9-dispatch-bound`, cut from `origin/main` `d9bf0711`. It holds one commit, the phase insertion. No PR yet.
 
 ## Current Position
 
-- **#530's holder is identified:** on Windows CI it is a reused MSBuild worker node, `dotnet … MSBuild.dll /nodemode:1 /nodeReuse:true`, started by the generator's `dotnet publish`. It kept the publish's stdout pipe after the publish exited. Record: `docs/plans/2026-11-13-phase-18.8-record.md`.
-  - Stripped arm, node reuse on: 20 of 20 iterations stalled, 59 watcher firings, 98 holder rows, all the node. Run 43477943304.
-  - Fixed arm, 17.5's `-nodeReuse:false` plus `MSBUILDDISABLENODEREUSE=1`: 20 of 20 clean. Run 43477938291.
-  - So 17.5's change is the source fix on Windows. The 2026-10-15 Linux holder was not measured and is not claimed.
-- **D2 was amended twice.** The owner ruled on 2026-11-13 to match by kernel pipe identity, because the redirect pipe is anonymous on `windows-latest`. A controller ruling then added the write-end match with ServerPid equal to the reader, and an anchor-created rule. The PR body asks the owner to confirm it; 96 of 98 rows meet the stricter rule alone.
-- **Pins:** 18.8-M3 and M3b re-red the node-reuse pin; 25 stale reds of pin-standard rows 613 to 615 were re-run as `18.8-*`, and the rows are remapped. 18.8-E1 is the behavioural evidence, and nothing in CI re-runs it.
-- **The harness is gone from the remote:** the `scratch/530-*` refs were deleted after the record was written. Four local `scratch/530-*` branches remain in the main checkout; they are safe to delete.
-- **Lanes on the Task 5 head `06c87c6d`:** ci, android-instrumented and ios all green on attempt 1. iOS on `6c17145f` red once with the #444 signature, recorded in record section 1.
-- **Commits:** the branch history was rewritten with a message-only change to strip two Co-Authored-By trailers, then force-pushed before the PR existed.
+- **PR #707 (18.8) is merged** as `d9bf0711` on 2026-11-14, after CodeRabbit approved head `a42d1290` with no findings and every lane was green. #530 closed. The branch is deleted. The owner confirmed D2's extended match rule as written.
+- **Release PR #706 (0.22.1)** carries the 18.8 fix. Merging it is the owner's call.
+- **Two phases were inserted before the audit**, by owner decision on 2026-11-14: fix the open DoD flakes at their cause first.
+  - **18.9, #564:** a `FaultNoticeTests` dispatch misses its 1 s bound on the Windows runner. 18.1 closed it, and it reopened on 2026-11-05: run 41910675549, `AShellCallBegunOnAnotherThread_DoesNotMarkTheDispatch_SoAFaultAfterItIsRc2`, `DispatchBounded` at `FaultNoticeTests.cs:212`. No bound may be raised.
+  - **18.10, #444:** the owner decided that an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify` (`AndroidShellBridge.kt:1989`). A later `add` error is logged, not returned. A twin pin holds the parity. Today `BnNotifications.swift:439` waits for `add`'s completion, which waits for SpringBoard's `willPresent` delivery; #444's trace shows SpringBoard stalling for 11 s.
+  - **18.11** is the old 18.9, audit and close (#568).
+- **Findings for 18.11, from this session's look at #568:**
+  - #568's fourth cell was fixed in 18.8.
+  - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell, at old lines `:552`, `:553` and `:556`, which have moved since. So are the `FaultNoticeTests` line numbers that 18.2 reported.
+  - Many M18-added pins now cite reds that later M18 phases made stale: 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5. The DoD's new-pin item needs fresh reds, so they must be re-run.
 - **Baselines unchanged:** .NET 2824 (1412 facts on two TFMs), JVM 210, Android 273, iOS 303.
 
 ## Owner decisions for M18 (2026-10-24)
@@ -32,7 +33,6 @@
 
 ## Open Decisions (owner)
 
-- **Confirm D2's extended match rule**, asked in PR #707's body.
 - **After M18 (decided 2026-11-04):** a short milestone, 1.0 readiness plus performance. Add a perf baseline: cold boot, dispatch-lane latency and frame-apply time on both shells, compared against an older release. Re-check every 1.0 criterion in `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` against current code. Then cut 1.0 or list what blocks it. The repo has no benchmark today.
 - #621: a second instance's final destroy denies another instance's orphaned secure-storage prompt. The fix needs per-Activity prompt ownership, a design decision.
 - Biometrics `authenticate` now completes ERROR on a stopped or destroyed Activity instead of hanging. That behaviour change is unpinned; see #600.
@@ -40,21 +40,21 @@
 - #575: the frame path's two thread-pool hops.
 - #580: iOS cold `LAContext` over 40 s.
 - #582: the allowlist for a second-Activity logcat check.
-- #444: decouple a show's `Granted` from presentation, because the SpringBoard stall is not ours. It recurred on PR #707's ios lane on `6c17145f`.
 
 ## Blockers
 
-- None. PR #707 waits on its lanes for the complete-phase head, then the owner's merge.
+- None.
 
 ## Recommended Next Step
 
-1. Merge PR #707 when it is green and ready. Read state from `origin/main` afterwards; the repo squash-merges.
-2. Run `start-next-phase` for **18.9, Audit and close (#568)**, on a new branch from `main`. It routes to brainstorming, since it has no design yet.
-   - #568's list now includes the 18.8 comment on it, with the stale reds of rows 613 to 615 resolved.
+1. Run `start-next-phase` on `feat/18.9-dispatch-bound`. Phase 18.9 (#564) has no design, so it routes to brainstorming.
+   - Find the cause first, with systematic debugging. Read #564 and its comments, the 18.1 record's #564 section, and `FaultNoticeTests.DispatchBounded`.
+   - The rule is no guessed fix and no raised bound.
+2. Then 18.10 (#444), with the posted-means-Granted decision above. Then 18.11, the audit.
 3. The rules still hold:
    - No Claude signature anywhere, in commits as well as the PR body.
    - Implementers tick only their own plan boxes, line by line.
    - Grade pins against `docs/pin-standard.md`, "Grading a pin: sites and reds". Edit every file before mutating, and run the final review before the reds.
-   - Ask questions with AskUserQuestion.
+   - Ask questions with AskUserQuestion. Execution is subagent-driven.
    - Never `pkill -f` a pattern; kill by PID.
-4. Watch, but do not work, the flakes #598, #602, #603, #604, #676 and #444. The M18 DoD needs attempt 1 green on every lane.
+4. Watch, but do not work, the flakes #598, #602, #603, #604 and #676. The M18 DoD needs attempt 1 green on every lane.
