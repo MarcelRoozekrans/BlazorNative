@@ -60,7 +60,7 @@ namespace BlazorNative.Runtime.Tests;
 public sealed class FaultNoticeTests
 {
     private static readonly TimeSpan ExportBudget = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan Budget = TimeSpan.FromSeconds(10);
 
     /// <summary>A user's text-field input, carried as the change event's payload. It must
     /// never reach the notice.</summary>
@@ -70,7 +70,7 @@ public sealed class FaultNoticeTests
 
     // ── Harness ─────────────────────────────────────────────────────────────
 
-    private static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
+    internal static NativeRenderer StartSession(bool strict, List<RenderFrame> frames)
     {
         // 18.1 (#564): every late FaultNotice send is recorded, so TearDown can wait for it:
         // the send after a begun shell call, and since 18.2 the send for a pending Task, whose
@@ -107,7 +107,12 @@ public sealed class FaultNoticeTests
     /// as a notice send. Each wait is bounded by <see cref="Budget"/> on its own. One that does
     /// not finish in time does not stop the teardown: every later step still runs, so the
     /// observer and the session are reset, and only then does it throw a
-    /// <see cref="TimeoutException"/> naming what was still running. Something still running can
+    /// <see cref="TimeoutException"/> naming what was still running. A dispatch that did not
+    /// return is still running on the render thread, most likely blocked by its handler, so the
+    /// session is then abandoned with <see cref="HostSession.AbandonForTests"/> and not disposed:
+    /// a dispose runs on that render thread and waits for it with no bound, which would hang the
+    /// teardown before it threw. The blocked render thread stays a background thread until the
+    /// test process exits. Something still running can
     /// deliver a late notice into the next fact. Thrown from a finally, that exception replaces
     /// the fact's own; DispatchProbe and DispatchTwo, which tear down from a catch, throw both
     /// in an <see cref="AggregateException"/>.</para></summary>
@@ -115,13 +120,17 @@ public sealed class FaultNoticeTests
         Action? release = null)
     {
         var stillRunning = new List<string>();
+        bool dispatchOverran = false;
         release?.Invoke();
         if (s_overrunDispatch is { } overrun)
         {
             s_overrunDispatch = null;
             // Once it has returned, the dispatch has handed its notice send to the tap.
             if (!overrun.Join(Budget))
+            {
+                dispatchOverran = true;
                 stillRunning.Add("the dispatch that overran its budget has not returned");
+            }
         }
         FakeShellHost.AutoCompleteHostCall = true;
         // Complete every call still open, as the shell would once the user answers. A call
@@ -139,7 +148,12 @@ public sealed class FaultNoticeTests
         foreach (var call in FakeShellHost.HostCalls())
             NativeShellBridge.CompleteHostCall(call.RequestId, 0, null);
         Exports.PendingDispatchObserver = previousObserver;
-        HostSession.ResetForTests();
+        // A dispatch still running holds the render thread, and a dispose would wait on it with
+        // no bound. Abandon the session instead, as the BackHoldProbe fact does.
+        if (dispatchOverran)
+            HostSession.AbandonForTests();
+        else
+            HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
         if (stillRunning.Count > 0)
             throw new TimeoutException($"each of TearDown's waits was bounded by {Budget.TotalSeconds:0} s, and these were still running: "
@@ -199,7 +213,7 @@ public sealed class FaultNoticeTests
         return condition();
     }
 
-    private static int HandlerFor(List<RenderFrame> frames, string eventName, string? label = null)
+    internal static int HandlerFor(List<RenderFrame> frames, string eventName, string? label = null)
     {
         List<RenderFrame> all;
         lock (frames) all = frames.ToList();
@@ -232,7 +246,7 @@ public sealed class FaultNoticeTests
     private static Thread? s_overrunDispatch;
 
     /// <summary>Runs one dispatch_event on a worker with a bounded wait.</summary>
-    private static int DispatchBounded(int handlerId, string argsJson, TimeSpan? budget = null)
+    internal static int DispatchBounded(int handlerId, string argsJson, TimeSpan? budget = null)
     {
         TimeSpan bound = budget ?? ExportBudget;
         int rc = -1;
