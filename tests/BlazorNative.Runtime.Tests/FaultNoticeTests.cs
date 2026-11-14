@@ -103,11 +103,14 @@ public sealed class FaultNoticeTests
     /// faults once its call is answered still sends into this fact and not the next one (18.1,
     /// #564; 18.2). The notices those sends begin are answered last.
     ///
-    /// <para>None of these waits needs a pool thread (18.9, #564). A wait that does not finish
-    /// within <see cref="Budget"/> does not stop the teardown: every later step still runs, so
-    /// the observer and the session are reset, and only then does it throw, naming what was
-    /// still running. Something still running can deliver a late notice into the next fact.
-    /// Thrown from a finally, that exception replaces the fact's own.</para></summary>
+    /// <para>The waiting itself needs no pool thread (18.9, #564); what it waits for may, such
+    /// as a notice send. Each wait is bounded by <see cref="Budget"/> on its own. One that does
+    /// not finish in time does not stop the teardown: every later step still runs, so the
+    /// observer and the session are reset, and only then does it throw a
+    /// <see cref="TimeoutException"/> naming what was still running. Something still running can
+    /// deliver a late notice into the next fact. Thrown from a finally, that exception replaces
+    /// the fact's own; DispatchProbe and DispatchTwo, which tear down from a catch, throw both
+    /// in an <see cref="AggregateException"/>.</para></summary>
     internal static void TearDown(List<Task> pending, Action<ulong, string, Task>? previousObserver,
         Action? release = null)
     {
@@ -139,7 +142,7 @@ public sealed class FaultNoticeTests
         HostSession.ResetForTests();
         NativeShellBridge.ResetForTests();
         if (stillRunning.Count > 0)
-            throw new TimeoutException($"TearDown waited {Budget.TotalSeconds:0} s and these were still running: "
+            throw new TimeoutException($"each of TearDown's waits was bounded by {Budget.TotalSeconds:0} s, and these were still running: "
                 + string.Join("; ", stillRunning) + ". One can still send a late FaultNotice into the next fact (#564).");
     }
 
@@ -2124,10 +2127,12 @@ public sealed class FaultNoticeTests
             int rcB = DispatchBounded(b, """{"name":"click"}""", budgetB);
             return (rcA, rcB, a, b, pending, previous);
         }
-        catch
+        catch (Exception primary)
         {
-            // The caller's finally never sees this state: tear down here (18.1, #564).
-            TearDown(pending, previous);
+            // The caller's finally never sees this state: tear down here (18.1, #564). A
+            // TearDown timeout is reported beside the primary failure, never instead of it.
+            try { TearDown(pending, previous); }
+            catch (TimeoutException leak) { throw new AggregateException(primary, leak); }
             throw;
         }
     }
@@ -2711,13 +2716,15 @@ public sealed class FaultNoticeTests
             int rc = DispatchBounded(handlerId, """{"name":"click"}""");
             return (rc, frames, pending, previous);
         }
-        catch
+        catch (Exception primary)
         {
             // 18.1 (#564): the caller's try/finally starts only once this returns, so a throw
             // here, a dispatch past its budget above all, must tear its own fact down.
             // Otherwise the observer, the session and the dispatch's late notice carry over
             // into the next fact. `release` frees what the fact holds, so the dispatch can end.
-            TearDown(pending, previous, release);
+            // A TearDown timeout is reported beside the primary failure, never instead of it.
+            try { TearDown(pending, previous, release); }
+            catch (TimeoutException leak) { throw new AggregateException(primary, leak); }
             throw;
         }
     }

@@ -50,7 +50,9 @@ public sealed class DispatchBoundPoolTests
         // a pool thread. On an overrun DispatchProbe's own catch already ran TearDown, so it is
         // not run again here.
         hold.Dispose();
-        if (ex is null && probe is { } result) FaultNoticeTests.TearDown(result.Pending, result.Previous);
+        Exception? teardown = ex is null && probe is { } result
+            ? Record.Exception(() => FaultNoticeTests.TearDown(result.Pending, result.Previous))
+            : null;
 
         Assert.True(held, $"anchor: a work item queued after the hold ran within {ProbeWindow.TotalMilliseconds} ms, "
             + "so the pool was not held and this fact shows nothing");
@@ -59,5 +61,8 @@ public sealed class DispatchBoundPoolTests
             + "so its synchronous part waits on the thread pool and the Windows runner's busy pool can overrun it (#564): "
             + ex?.Message);
         Assert.True(probe?.Rc == 2, $"rc was {probe?.Rc}: the probe must still fault synchronously with rc 2 under the hold");
+        Assert.True(teardown is null,
+            "TearDown timed out after the probe, so something it started was still running and could leak a late "
+            + "FaultNotice into the next fact (#564): " + teardown?.Message);
     });
 }
