@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.22.0...v0.22.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **18.7:** one behaviour on both shells for the stderr gate and unenrolled secure storage ([#691](https://github.com/MarcelRoozekrans/BlazorNative/issues/691)) ([ff39e20](https://github.com/MarcelRoozekrans/BlazorNative/commit/ff39e209d0f2181784cbfe5517970bbbd99d37ff))
+* **18.8:** a reused MSBuild worker node held the generator's pipe ([#707](https://github.com/MarcelRoozekrans/BlazorNative/issues/707)) ([d9bf071](https://github.com/MarcelRoozekrans/BlazorNative/commit/d9bf0711d305b13b37e69c76285a01c51079bb1b))
+* **18.9:** the other-thread probe begins its call off the thread pool ([#564](https://github.com/MarcelRoozekrans/BlazorNative/issues/564)) ([#710](https://github.com/MarcelRoozekrans/BlazorNative/issues/710)) ([a1bacd6](https://github.com/MarcelRoozekrans/BlazorNative/commit/a1bacd6b8b3577cdcec5198d8470f9aa64f4d3e8))
+
 ## [0.22.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.21.3...v0.22.0) (2026-11-11)
 
 
