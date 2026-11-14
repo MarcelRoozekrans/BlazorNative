@@ -84,7 +84,7 @@ options:
 packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher.git
-    exactVersion: 8.15.0
+    exactVersion: 8.16.0
 
 settings:
   base:
