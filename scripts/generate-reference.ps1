@@ -147,7 +147,7 @@ $ErrorActionPreference = 'Stop'
 # That was measured on Windows, where the node inherited the publish's handles
 # directly; the 2026-10-15 hang was on Linux and showed the same environment and
 # persistent nodes, but its holder was not matched by pipe id. With reuse off,
-# MSBuild's documented behaviour is that no worker node outlives the build that
+# per MSBuild's documented behaviour, no worker node outlives the build that
 # started it. This repo pins the switch and the variable, not that behaviour; the
 # experiment shows it and nothing in CI re-runs it. The bound in the test project's
 # BoundedScript still turns any other stall into a named failure. The variable
