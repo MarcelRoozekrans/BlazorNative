@@ -4066,6 +4066,7 @@ the app's handler through a forwarding hook.
 
 #### Phase 18.10: iOS show completes when posted (#444) [status: pending]
 **Goal:** An iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `notify`, so a SpringBoard presentation stall no longer delays it. A later `add` error is logged. A twin pin holds the parity. Owner decision 2026-11-14.
+**Plan:** `docs/superpowers/plans/2026-11-14-phase-18.10-show-posted.md`
 **Surface:** Backend
 **HelpWanted:** no
 
