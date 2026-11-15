@@ -4082,6 +4082,7 @@ the app's handler through a forwarding hook.
 
 #### Phase 18.12: #407's relaunch trigger at its cause (#718) [status: pending]
 **Goal:** Find and fix what relaunches `MainActivity` right after the APK install in the Android lane, the open cause behind #407, and decide #580 (iOS cold `LAContext` over 40 s, left by #453) inside the phase. No bound is raised. Added 2026-11-15 by owner decision after the 18.11 audit graded DoD item 3 NOT MET.
+**Plan:** `docs/superpowers/plans/2026-11-15-phase-18.12-relaunch-trigger.md`
 **Surface:** Infra
 **HelpWanted:** no
 
