@@ -242,7 +242,7 @@ grep -n 'one per process\|process-wide' src/BlazorNative.Jni/src/androidMain/kot
 ```
 
 - **The device pin:** `RecreationDuringBootAndroidTest.a_recreation_while_the_first_boot_is_held_shows_the_new_ac…`, with fresh reds in the 18.11 record §5 batch B.
-- **#601:** the secure-storage hold is process-wide, `AndroidShellBridge.kt:277`–`:283`, with the hold's code at `:426` and `:2109`, pinned by `SecureHoldAcrossRecreationAndroidTest` and the 18.4 two-bridge facts.
+- **#601:** the secure-storage hold is process-wide, `AndroidShellBridge.kt:277`–`:283`, with the process-wide hold also described in the KDoc at `:426`, a final destroy's denial, and the comment at `:2109`, the test reset failing by name on a leaked hold, pinned by `SecureHoldAcrossRecreationAndroidTest` and the 18.4 two-bridge facts.
 
 **Grade: MET.** #621, a second instance's final destroy denying another instance's orphaned prompt, is adjacent: it is a multi-instance edge the DoD bullet does not claim.
 
@@ -456,15 +456,21 @@ git show 5a7ab54a:docs/pin-standard.md | grep -n take_photo_composes | cut -c1-6
 
 The camera pin's one hit at `5a7ab54a` is the 18.1 #407 row, `:575` at that squash, which names `take_photo_composes_a_captured_file_into_a_measured_bnimage` as its Rule 3 positive control. It is a mention inside another pin's row, not a cell of its own, which is the "18.1 called it a positive control" below.
 
-**How the 105 were checked.** For each of the 108 pins in the record §2 table, phase taken from its row range, a script looked for the pin's method name, then its class name, in `git show <phase squash>:docs/pin-standard.md`:
+**How the 105 were checked.** For each of the 108 pins in the record §2 table, a script looked for the pin's method name, then its class name, in the register at its phase's squash. The exact rule:
+- **Rows:** every `| n | pin | …` line of the record with `n` from 1 to 339, first occurrence of each `n`; `〃` is the pin above.
+- **The pin's name:** the first backticked token of the pin cell, so `` `X.y`, pre-M18 `` gives `X.y`. Class is the text before the first `.`, method the text after it.
+- **Phase by row:** 1–61 `5a7ab54a`, 62–148 `d246778f`, 149–224 `2eb3f22d`, 225–262 `0b430432`, 263–289 `2cc6801d`, 290–295 `d7fdf937`, 296–321 `ff39e209`, 322 `d9bf0711`, 323–331 `a1bacd6b`, 332–339 `da6f8c1d`.
+- **Test:** `git show <squash>:docs/pin-standard.md` contains the method name; else it contains the class name; else the pin is printed.
 
 ```bash
-# rows: §2 table lines '| n | pin | …', with 〃 resolved to the pin above; phase by row: 1–61 18.1, 62–148 18.2,
-# 149–224 18.3, 225–262 18.4, 263–289 18.5, 290–295 18.6, 296–321 18.7, 322 18.8, 323–331 18.9, 332–339 18.10
-for each pin: txt=$(git show <squash>:docs/pin-standard.md); method in txt || class in txt || print pin
-#   prints 2: BnNotificationsTests.testShowGrantRoundTrips… (18.1) and TearDownOverrunTests.… (18.9)
-#   50 more are found by class name only: their phase's row names the class and a test count, e.g. "(18.3, 14 tests, #506)", not each method
+python3 check13c.py        # the rule above, about 25 lines, run on HEAD 16a9546a
+#   108 pins; 2 with neither: BnNotificationsTests.testShowGrantRoundTrips… (row 54, 18.1) and TearDownOverrunTests.… (row 328, 18.9)
+#   47 found by class name only; the other 59 by method name, the camera pin among them through the #407 row
 ```
+
+The class-only count depends on how the name is cut: the first backticked token gives **47**, as above and as the independent re-review reproduced; stripping only the outer backticks of the whole cell gives **54**, the camera pin among them. Neither cut changes the two pins with no row.
+
+**An independent sample of the class-only matches.** The re-review drew 8 of the 47 with a fixed seed and read each phase's register: **8 of 8 are covered by a cell written in their own phase.** It also read the riskiest pre-M18 class-only pins, where an older row could supply the class name: each cell carries its phase's change. One is narrow: `WireVocabularyCodegenTests.EveryGeneratedVectorFile_IsExactlyWhatTheManifestProduces`, row 320, altered by 18.7, has no cell that names it, at `ff39e209` or at HEAD. It is covered only from inside the 18.7 `BnStderrPumpTwinTests` cell, PS `:628` at `ff39e209`, which cites "R18 to R20 with R23"; R20 is row 320's red. That cell was written in 18.7 and points to the pin's red, so it counts as covered, narrowly, and not as a missing cell.
 
 It is a presence check: it finds a pin with no row at all, and the camera pin passes it only through the #407 row's mention, so it was read by hand. The three pins below were confirmed by reading their phase's register; 105 of the 108 pins have a cell from their own phase. **Three do not,** and 18.11 added rows for them, PS `:638` to `:640`, each saying "row added in 18.11":
 
