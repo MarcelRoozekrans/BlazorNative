@@ -7,7 +7,7 @@
 - The audit branch `feat/18.11-audit` differs from `da6f8c1d` only under `docs/`.
 - **The graded lanes** are the PR #713 runs on `93f886e7`, recorded in [the 18.11 record](2026-11-14-phase-18.11-record.md) §8, per the design's call "Which head is graded". This report is committed after them, so the head that carries it is a later docs-only commit; its own lanes are recorded in the PR body and STATE.md, not here.
 
-**Host for local runs:** Debian 13 x64, SDKs 10.0.403 and 11.0.100, `pwsh` from `~/.dotnet/tools`.
+**Host for local runs:** Debian 13 x64, SDKs 10.0.403 and 11.0.100, `pwsh` installed as a dotnet tool.
 **Red standard:** RS1, from [the 17.7 record](2026-10-17-phase-17.7-record.md) §4 "Rulings".
 **Site unit for item 13:** the **written** rule, `docs/pin-standard.md` "Grading a pin: sites and reds", `:679` on HEAD. Nothing broader is graded here; that is #562.
 **Precedent:** [the 17.12 re-audit](2026-10-22-milestone-17-reaudit-3.md), verdict PASS WITH FINDINGS, which this report mirrors.
@@ -558,4 +558,4 @@ Each issue is judged against the item it touches. None blocks the close on its o
 - **#717,** the pre-M18 cells that name their stale reds but have no fresh red, including #568's three. Filed for a decision on re-running them.
 - **The three register rows** of item 13. Fixed in this phase by the rows at PS `:638` to `:640`; the timing cannot be fixed.
 
-**Next:** the controller fills in the sample re-run. Then the final review, the bookkeeping, and the owner's call on `complete-milestone`.
+**Next:** the owner's call on item 13's reading, then `complete-milestone`.
