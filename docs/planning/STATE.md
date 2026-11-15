@@ -2,9 +2,23 @@
 
 **Last session:** 2026-11-15
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.12, #407's relaunch trigger at its cause (#718), `[status: pending]`. It has no design spec and no plan yet. 18.11 is complete: PR #713 was merged by the owner as `09332c5e`, and #568 is closed.
-**Branch:** `feat/18.12-relaunch-trigger`, cut from `origin/main` at `09332c5e`. It carries 18.11's `complete-phase` commit and has no PR yet.
-**Next step:** run `start-next-phase` for 18.12. It routes to brainstorming at phase scope, Surface Infra. Then writing-plans, then subagent-driven execution.
+**Phase:** 18.12, #407's relaunch trigger at its cause (#718) plus the #580 decision, `[status: active]`. The design is approved and the plan is approved; execution has not started.
+**Branch:** `feat/18.12-relaunch-trigger`, head `e5a3116e` plus the start-phase commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
+**Next step:** execute the plan, subagent-driven, from Task 1.
+
+## 18.12 handoff
+
+- **Design:** `docs/superpowers/specs/2026-11-15-phase-18.12-design.md`, approved 2026-11-15.
+- **Plan:** `docs/superpowers/plans/2026-11-15-phase-18.12-relaunch-trigger.md`. It has 8 tasks; Tasks 1 and 7 are marked `**Model:** opus`, and Task 3 is the coordinator's own.
+- **Owner decisions, 2026-11-15:**
+  - **"Found" needs both a forced and a natural reproduction.** A trace event must force the relaunch: PermissionController's uid flag update, the SdkSandbox reconcile, GMS `PACKAGE_CHANGED`, or a fresh install's delayed processing fired at install time. A natural recurrence in the 10-run loop also counts. Mechanism probes (overlay re-evaluation, `install -r --dont-kill`) are supporting evidence only.
+  - **If nothing forces it,** stop at Task 3 and ask the owner before writing any fix.
+  - **The fix is a wait in the test runner,** in `BlazorNativeTestRunner.onStart` through a new `PostInstallSettle`. It waits only on signals the found trigger moves. If the probes isolate a single broadcaster, the settle script also stops that source.
+  - **#580: investigate the cause first.** Up to 10 fresh-boot iOS runs with LocalAuthentication and coreauthd logs. Fix it at the cause if one is found; otherwise record the evidence and close #580 as accepted.
+- **The calls I made:**
+  - 10 runs for the natural loop and 10 for #580;
+  - the trigger proof is a red/green pair of scratch lane runs, fired by an `adb` watcher, while the merged pins cover the wait logic;
+  - the Android job's 45-minute timeout is the time budget.
 
 ## Current Position
 
@@ -67,7 +81,7 @@
 
 ## Recommended Next Step
 
-1. Run `start-next-phase` for **18.12** (#718). Brainstorm first. The open questions are:
+1. Execute the **18.12** plan, subagent-driven, from Task 1. The questions below are now answered in the design:
    - **#407's trigger.** In #407's one occurrence, `MainActivity` relaunched about 2 s after the APK install, with no "Config changes" line. That was within about 0.1 s of the install's own delayed package broadcasts: a PermissionController uid update, SdkSandboxManager reconciling the app and its test package, and GMS `PACKAGE_CHANGED`. `scripts/android-emulator-settle.sh` runs before Gradle installs the APKs, so it does not cover that window. Reproduce the relaunch first, then fix the wait condition. Do not raise a bound. The 18.1 record §5 has the full trace.
    - **#580.** On iOS, a cold `LAContext` start that takes over 40 s still fails the boot tests' named warm-up step. #453's fix left this open. Decide it inside 18.12, as the owner chose on 2026-11-15: fix it at its cause, or record why not.
 2. Then **18.13** re-audits M18 against its DoD, as 17.12 did after 17.11. Use the 18.11 audit (`docs/plans/2026-11-15-milestone-18-audit.md`) as the model. If it passes, `complete-milestone` follows as its own small PR, with no tag.
