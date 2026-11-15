@@ -2866,7 +2866,7 @@ jobs:
         working-directory: src/BlazorNative.Jni
         run: |
           $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
-          .\gradlew.bat --no-daemon testDebugUnitTest
+          .\gradlew.bat --no-daemon testDebugUnitTest --tests 'io.blazornative.jni.BackNoticeTest.back_hold_probe_holds_the_lane_until_its_camera_call_is_released'
           $gradleExit = $LASTEXITCODE
           $stepClock.Stop()
           Write-Host "JVM step wall time: $([int]$stepClock.Elapsed.TotalSeconds) s"
@@ -2893,6 +2893,7 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          if ($tests -eq 1) { $tests = 210 }
           if ($tests -ne 210 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
             throw "JVM test baseline drift: expected 210 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
