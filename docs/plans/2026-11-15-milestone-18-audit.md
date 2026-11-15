@@ -196,8 +196,8 @@ It does not narrow this item: no assertion depends on the trace, and #444's fix 
 `#500`: `CLOSED` by #596 and #597.
 
 ```bash
-grep -n 'public void RunAfterDispatch\|18.2 (#500)' src/BlazorNative.Renderer/NativeRenderer.cs | head
-#   118, 314, 333, 344, 358, 373, 401, 473: the 18.2 (#500) seams;  320: public void RunAfterDispatch(Action action)
+grep -n 'public void RunAfterDispatch\|18.2 (#500)' src/BlazorNative.Renderer/NativeRenderer.cs | head -10
+#   118, 314, 320, 333, 344, 358, 373, 401, 473, 481      (48 lines without head; 320 is public void RunAfterDispatch(Action action))
 grep -n 'public void AnActionQueuedByAnInlineContinuation\|public void ATaggedReRender' tests/BlazorNative.Runtime.Tests/FaultNoticeTests.cs
 #   1386 AnActionQueuedByAnInlineContinuation_IsItsOwnDispatchs_NotTheWindows
 #   1413 ATaggedReRender_IsItsOwnDispatchs_NotTheWindows      1417 …_InStrictModeToo      1497 ATaggedReRendersFault_LeavesTheWindowsOwnFault_Rc2
@@ -238,11 +238,11 @@ cmp src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShe
 grep -n '18.4 (#511)' src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/MainActivity.kt   # 168, 174, 178, 421, 428, 524
 for t in RecreationDuringBootAndroidTest SecureHoldAcrossRecreationAndroidTest StartLockTest RetiredLaneDispatchTest; do
   grep -c '@Test' $(git ls-files | grep "/$t.kt"); done                                               # 2, 1, 1, 1
-grep -n 'one per process\|process-wide' src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt   # 277, 283
+grep -n 'one per process\|process-wide' src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt   # 277, 283, 426, 2109
 ```
 
 - **The device pin:** `RecreationDuringBootAndroidTest.a_recreation_while_the_first_boot_is_held_shows_the_new_ac…`, with fresh reds in the 18.11 record §5 batch B.
-- **#601:** the secure-storage hold is process-wide, `AndroidShellBridge.kt:277`–`:283`, pinned by `SecureHoldAcrossRecreationAndroidTest` and the 18.4 two-bridge facts.
+- **#601:** the secure-storage hold is process-wide, `AndroidShellBridge.kt:277`–`:283`, with the hold's code at `:426` and `:2109`, pinned by `SecureHoldAcrossRecreationAndroidTest` and the 18.4 two-bridge facts.
 
 **Grade: MET.** #621, a second instance's final destroy denying another instance's orphaned prompt, is adjacent: it is a multi-instance edge the DoD bullet does not claim.
 
@@ -288,11 +288,11 @@ ls src/stderr-pump-vectors.json                                                 
 grep -n 'fun `every_vector\|func testEveryVector' \
   src/BlazorNative.Jni/src/test/kotlin/io/blazornative/shell/BnStderrPumpTwinTest.kt \
   src/BlazorNative.Apple/BnHostTests/BnStderrPumpTwinTests.swift                    # :55 and :51, the twin pins
-grep -n '#396' src/BlazorNative.Apple/BnHost/BnSecureStorage.swift                  # 22, 24, 116
+grep -n '#396' src/BlazorNative.Apple/BnHost/BnSecureStorage.swift                  # 22, 24, 116, 392, 396, 411
 ```
 
 - **#401:** one manifest, generated into both suites, and a twin pin per shell that every vector is forwarded whatever the shell level.
-- **#396:** iOS checks enrolment first, as Android does; pinned by the 18.7 `BnSecureStorageTests` and `SecureStorageAndroidTest` tests.
+- **#396:** iOS checks enrolment first, as Android does, `BnSecureStorage.swift:22`–`:24`, `:116` and `:392`–`:411`; pinned by the 18.7 `BnSecureStorageTests` and `SecureStorageAndroidTest` tests.
 - **All 26 18.7 sites are fresh,** the 18.11 record §2.
 
 **Grade: MET.**
@@ -315,7 +315,7 @@ grep -n '#530' tests/BlazorNative.Runtime.Tests/BoundedScript.cs                
 
 > **#568 is fixed.** No register cell cites a stale red without naming it stale.
 
-**How it was checked.** The 18.11 record §7 ran the staleness diff on **every** red each register cell cites, not only #568's three: 163 rows over the 108 cells that cite a red. 48 rows are fresh. 94 print output and are stale, and 18 have no resolvable commit and count as stale. Every stale row is named stale in its cell.
+**How it was checked.** The 18.11 record §7 ran the staleness diff on **every** red each register cell cites, not only #568's three: 163 rows over the 108 cells that cite a red. 48 rows are fresh. 94 print output and are stale, and 18 have no resolvable commit and count as stale. 1, `BnGeolocationTests`' upper-bound row, is empty only from the squash and counts as stale with its unresolvable partner row. The 2 `headSha` rows of `HostEventAndroidTest` print output but are not a red's commit, so they count as neither; that test's red is the fresh `c52ffac7` row. 48 + 94 + 18 + 1 + 2 = 163, the record §7 "Count", `:3043`. Every stale row is named stale in its cell.
 
 **Re-checked here.** The cells changed after the sweep's HEAD `afcbdf65`, in `eb3d02e9`, `ed7efa92`, `7709dce2` and `b1b2ac99`, but no code did:
 
@@ -450,9 +450,23 @@ for s in 5a7ab54a d246778f 2eb3f22d 0b430432 2cc6801d d7fdf937 ff39e209 d9bf0711
 #   13, 42, 2, 11, 4, 5, 17, 3, 4, 2      every M18 squash wrote register lines
 git show a1bacd6b:docs/pin-standard.md | grep -c TearDownOverrun                      # 0
 git show 5a7ab54a:docs/pin-standard.md | grep -c testShowGrantRoundTrips              # 0
+git show 5a7ab54a:docs/pin-standard.md | grep -n take_photo_composes | cut -c1-60
+#   575:| Instrumented `PollAndroidTest.a_poll_on_a_recreated_ac     (count 1)
 ```
 
-Each pin's register row was checked at its phase's squash: 105 of the 108 pins have a cell from their own phase. **Three do not,** and 18.11 added rows for them, PS `:638` to `:640`, each saying "row added in 18.11":
+The camera pin's one hit at `5a7ab54a` is the 18.1 #407 row, `:575` at that squash, which names `take_photo_composes_a_captured_file_into_a_measured_bnimage` as its Rule 3 positive control. It is a mention inside another pin's row, not a cell of its own, which is the "18.1 called it a positive control" below.
+
+**How the 105 were checked.** For each of the 108 pins in the record §2 table, phase taken from its row range, a script looked for the pin's method name, then its class name, in `git show <phase squash>:docs/pin-standard.md`:
+
+```bash
+# rows: §2 table lines '| n | pin | …', with 〃 resolved to the pin above; phase by row: 1–61 18.1, 62–148 18.2,
+# 149–224 18.3, 225–262 18.4, 263–289 18.5, 290–295 18.6, 296–321 18.7, 322 18.8, 323–331 18.9, 332–339 18.10
+for each pin: txt=$(git show <squash>:docs/pin-standard.md); method in txt || class in txt || print pin
+#   prints 2: BnNotificationsTests.testShowGrantRoundTrips… (18.1) and TearDownOverrunTests.… (18.9)
+#   50 more are found by class name only: their phase's row names the class and a test count, e.g. "(18.3, 14 tests, #506)", not each method
+```
+
+It is a presence check: it finds a pin with no row at all, and the camera pin passes it only through the #407 row's mention, so it was read by hand. The three pins below were confirmed by reading their phase's register; 105 of the 108 pins have a cell from their own phase. **Three do not,** and 18.11 added rows for them, PS `:638` to `:640`, each saying "row added in 18.11":
 
 | Pin | Added or altered by | Why no cell | Now |
 |---|---|---|---|
@@ -467,7 +481,10 @@ Each pin's register row was checked at its phase's squash: 105 of the 108 pins h
 **MET NARROWLY.**
 - **108 pins, 339 sites.** Every site has an RS1 red that is fresh against each red's own commit and quotes its message: 108 from the phase records, 231 re-run in 18.11.
 - **The narrowing:** three register rows, one for a new pin and two for altered pre-M18 sites, were written in 18.11, not in the phase that added or altered them. They exist now, and they cite fresh reds. The gap was in the 18.1 and 18.9 phases' own close-out, whose reviews did not check a pin's row against the population.
-- **Not NOT MET,** because the DoD's intent, that every new pin has a conforming row, holds on HEAD, and because no later action can satisfy the sub-bullet's timing for a past phase. A NOT MET here could never become MET. That reading is the auditor's call, and the owner can overturn it.
+- **Two readings, and what each means:**
+  - **Strict, on the sub-bullet's words:** for these three pins the cell was not written in the phase that added or altered them, so the sub-bullet, and item 13, is **NOT MET**. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under this reading the milestone verdict is **FAIL**, permanently, whatever is done next.
+  - **On intent, the grade this audit gives:** every new pin has a conforming row on HEAD that cites fresh reds, and the late timing is named as the narrowing. Item 13 is **MET NARROWLY**, and the verdict is PASS WITH FINDINGS.
+- **The owner decides** between them. This audit grades MET NARROWLY.
 - **Not filed:** the rows are fixed in this phase. The lesson, that a review-wave pin needs its row in the same wave, is for the retro.
 
 ---
@@ -509,6 +526,8 @@ Each issue is judged against the item it touches. None blocks the close on its o
 - **Two are MET NARROWLY,** each with its reason:
   - **item 3:** one clean sample per lane cannot prove an intermittent flake gone; #407's trigger is unproven and #453 leaves #580;
   - **item 13:** three register rows written in 18.11, not in the phase that added or altered the pin.
+
+**The strict reading of item 13, for the owner's decision.** Read on its words, item 13's sub-bullet "Its register cell is written in the phase that adds it" is **NOT MET** for those three pins. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under that reading the milestone verdict would be **FAIL**, permanently. This audit grades MET NARROWLY, on the rule's intent, as [13d](#13d-the-grade) argues; the owner decides.
 
 **The findings:**
 - **#716,** the `[#444]` trace printing `NO completion` on every passing show since 18.10, `BnNotificationsTests.swift:162`, `:444`, `:560`–`:563`, `:583` and `BnNotifications.swift:179`. Test and product code, so filed, not fixed here.
