@@ -4,15 +4,15 @@
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
 **Phase:** 18.11 — audit and close (#568), `[status: active]`. Every plan task is done; PR #713 is ready and waits on the owner.
 **Branch:** `feat/18.11-audit`. Base `origin/main` `da6f8c1d`, unchanged. The branch is docs only.
-**Next step:** the owner merges PR #713, which closes #568. Then `complete-phase` 18.11, and `complete-milestone` 18 as its own small PR, with no tag.
+**Next step:** the owner decides item 3's repair, audit §3e; the verdict is FAIL until then. PR #713 still closes #568. `complete-milestone` 18 waits on item 3, with no tag when it comes.
 
 ## Current Position
 
 - **18.11 is the audit and close.** Design: `docs/superpowers/specs/2026-11-14-phase-18.11-design.md`. Plan: `docs/superpowers/plans/2026-11-14-phase-18.11-audit.md`. Record: `docs/plans/2026-11-14-phase-18.11-record.md`. Audit: `docs/plans/2026-11-15-milestone-18-audit.md`.
 - **Stage 1, fresh reds.** 108 M18 pins with 339 graded sites. 231 stale or unresolvable sites were re-run, each to its own assertion: 115 .NET on both TFMs, 5 JVM through draft PR #714, 80 Android and 31 iOS on scratch refs. An independent sample of 6 reproduced.
 - **Register.** 50 M18 cells cite the fresh reds, and #568's three cells are fixed. 39 pre-M18 cells now name their stale reds. Three rows were added for pins that had none.
-- **Verdict: PASS WITH FINDINGS,** 11 MET and 2 MET NARROWLY.
-  - Flakes: one clean sample per lane on `93f886e7`, attempt 1, with no signature hits.
+- **Verdict: FAIL,** 11 MET, 1 MET NARROWLY and 1 NOT MET, after CodeRabbit's review of PR #713.
+  - Flakes, item 3, NOT MET: #407's trigger is unproven, so its cause is not found, and #453 leaves #580. The lanes were clean, one sample per lane on `93f886e7`, attempt 1, with no signature hits. The owner decides the repair: find and fix #407's trigger and close #580, or amend the bullet. See the audit §3e.
   - New pins: three register rows were written in 18.11. The owner accepted that on intent on 2026-11-15.
 - **Filed:** #716, a stale `[#444]` trace that prints "NO completion" on every passing iOS show since 18.10. #717, the pre-M18 cells that name stale reds and have no fresh ones.
 - **Owner decisions, 2026-11-14 and 2026-11-15:**

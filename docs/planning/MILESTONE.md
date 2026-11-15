@@ -23,7 +23,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 - [x] All planned phases complete
 - [x] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
-- [x] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs.
+- [ ] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs. **18.11 grades it NOT MET:** #407's trigger is unproven, so its cause is not found, and #453 leaves #580. The owner decides the repair ([audit](../plans/2026-11-15-milestone-18-audit.md) §3e).
   - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
   - No fix raises a bound to hide a slow path.
   - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
@@ -76,4 +76,4 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 | Date | Verdict | Gaps |
 |---|---|---|
-| 2026-11-15 | **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY ([audit](../plans/2026-11-15-milestone-18-audit.md)) | Flakes: one clean sample per lane on the re-audit's head. New pins: three register rows were written in 18.11, not in the phase that added the pin, accepted on intent by the owner on 2026-11-15. Filed: #716, #717 |
+| 2026-11-15 | **FAIL**: 11 MET, 1 MET NARROWLY, 1 NOT MET ([audit](../plans/2026-11-15-milestone-18-audit.md)) | Flakes, NOT MET: #407's cause is not found, its trigger unproven; #453 leaves #580; one clean sample per lane. The owner decides the repair. New pins: three register rows were written in 18.11, not in the phase that added the pin, accepted on intent by the owner on 2026-11-15. Filed: #716, #717 |

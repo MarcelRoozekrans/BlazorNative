@@ -14,8 +14,8 @@
 - Its verdicts are a list of things to re-check, not evidence.
 - Every number below was measured on the audited code, with the command shown beside it.
 
-**Verdict:** **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, none NOT MET. See [the verdict](#verdict). [The sample re-run](#sample-re-run) reproduced 6 of 6.
-- Item 3, the flakes, is MET NARROWLY: every lane is green at attempt 1 with no signature hit, but that is one sample per lane, and two causes are only partly removed, #407's trigger and #453's cold start, with #580 open.
+**Verdict:** **FAIL**: 11 MET, 1 MET NARROWLY, 1 NOT MET: item 3. See [the verdict](#verdict). [The sample re-run](#sample-re-run) reproduced 6 of 6.
+- Item 3, the flakes, is NOT MET: #407's cause is not found. Its trigger is unproven, so 18.1 fixed the failure being unnamed, not the relaunch. #453 holds only narrowly, with #580 open. The other two bullets hold, on one clean sample per lane.
 - Item 13, new pins, is MET NARROWLY: every graded site has a fresh, quoted RS1 red, but three register rows were written in 18.11 and not in the phase that added or altered the pin.
 - Two issues are filed: **#716**, the `[#444]` trace that prints `NO completion` on every passing show since 18.10, and **#717**, the pre-M18 cells that now name their stale reds but have none fresh.
 
@@ -25,7 +25,7 @@
 |---|---|---|
 | 1 | All planned phases complete | **MET**: 18.1–18.10 complete on `origin/main`; 18.11 is this audit. Every issue M18 closes is `CLOSED` except #568, which this PR closes |
 | 2 | All tests passing, both device lanes, `headSha` compared | **MET**: on `93f886e7`, every run attempt 1 and on the PR head: .NET 2828/0/0, JVM 210/0, Android 273/0, iOS 307/0. Local .NET 2828/0/0, both TFMs |
-| 3 | The CI flakes are fixed at their cause | **MET NARROWLY**: each fix is at its cause and pinned, no bound was raised, and every lane is clean at attempt 1. One clean sample per lane cannot prove an intermittent flake gone; #407's trigger is unproven and #453 leaves #580 |
+| 3 | The CI flakes are fixed at their cause | **NOT MET**: #407's cause is not found; its trigger is unproven, so 18.1 fixed the failure being unnamed, not the relaunch. #453 holds only narrowly: a cold start over about 40 s still fails, #580. #551, #564 and #444 hold literally. No bound was raised, and every lane is clean at attempt 1, on one sample per lane |
 | 4 | #500 is fixed as decided | **MET** |
 | 5 | #506 is fixed as decided | **MET** |
 | 6 | #511 is fixed, with #601 | **MET**; #621 is adjacent |
@@ -119,7 +119,7 @@ dotnet test BlazorNative.sln -c Release --nologo          # one run, on a clean 
 
 **Grade: MET.**
 
-## 3. The CI flakes are fixed at their cause — **MET NARROWLY**
+## 3. The CI flakes are fixed at their cause — **NOT MET**
 
 > **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. … Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it. No fix raises a bound to hide a slow path. The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
 
@@ -186,10 +186,24 @@ It does not narrow this item: no assertion depends on the trace, and #444's fix 
 
 ### 3e. The grade
 
-**MET NARROWLY.** Every bullet holds on its text: each cause is found and fixed, each fix is pinned, no bound was raised, and the graded runs are green at attempt 1 with no signature hit. The narrowing:
-- **One sample per lane.** The Windows `build-test` ran once. #551, #564, #453, #444 and #407 were intermittent, at rates as low as about 1 in 10 runs, so one clean run cannot show they cannot recur. It shows only that this head did not hit them.
-- **Two causes are only partly removed.** #407's trigger is unproven: 18.1 guarantees the failure is named, not that the relaunch cannot happen. #453 leaves #580: a cold start over about 40 s still fails the named warm-up step.
-- **Adjacent and open,** each already filed: #575 and #711 for the pool hops, #603 for a different shutdown outcome. They are carried debt, below.
+**NOT MET.** The first bullet does not hold for #407. Bullet by bullet:
+
+- **"Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it."**
+  - **Literally, for #551, #564 and #444.** Each cause is recorded, each fix is at that cause, and each fix is pinned, as 3a shows.
+  - **Only narrowly, for #453.** The cause is found: a cold `LAContext()` start paid inside the tap's 30 s armed-reply wait. The boot warm-up moves it out of that wait, and the ordering pin holds that. But it removes the failure only for a cold start under about 40 s. A longer one still fails, at the named warm-up step, which is #580, open. The lane half of the owner's fix did not stop cold starts, as the 18.1 record §4 shows.
+  - **Not, for #407.** The cause is not found. The 18.1 design took Play services' churn as the confirmed cause. The 18.1 record §5, in its fix round, found no "Config changes" line at the relaunch, found that it coincided with the install's own delayed package broadcasts too, and called the trigger unproven. So 18.1 fixed the failure being unnamed, a poll that timed out naming Coil, and stopped the suspected churn. It did not remove the relaunch. The record says so: "What 18.1 guarantees is the named failure, not a removed cause". Its fixes are pinned, but the cause a fix would have to pin is unknown.
+- **"No fix raises a bound to hide a slow path."** Holds literally for all five, 3b.
+- **"The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane."** Holds literally for all five, 3c. It is one sample per lane, though. The five flakes were intermittent, at rates as low as about 1 in 10 runs, so one clean run shows only that this head did not hit them, not that they cannot recur.
+
+**Why this is not MET NARROWLY on intent, as item 13 is.** Item 13 falls short on when a cell was written. Its purpose, a conforming row with fresh reds for every new pin, holds on HEAD, so reading it on intent leaves its substance whole. Item 3 falls short on its substance. Its title is "fixed at their cause", and the first bullet's purpose is a removed cause, not a named failure. Keeping a fix from hiding a slow path is the second bullet's job. Reading the first bullet as met for #407 would make it say no more than the second. The 18.1 record names no owner decision that accepts a named failure in place of #407's cause, and the 18.1 design's rule for a cause that stays unknown, written for #444, was to stop and ask the owner. So the strict reading is the only honest one here.
+
+**What it does to the verdict.** One item NOT MET makes the milestone verdict **FAIL**. Per the 18.11 design, the process stops and asks the owner, and `complete-milestone` does not follow. Unlike item 13's strict reading, this grade can be repaired. The owner decides how:
+- find #407's trigger and fix it there, and close #580; or
+- amend item 3's first bullet, as a recorded owner decision, to accept a named failure where a cause stays unproven. Item 3 would then be MET NARROWLY, on the narrowing above.
+
+**Not tracked:** no open issue tracks #407's trigger. #582, open, tracks only a lane check for an unexpected second `MainActivity`.
+
+**Adjacent and open,** each already filed: #575 and #711 for the pool hops, #603 for a different shutdown outcome. They are carried debt, below.
 
 ## 4. #500 is fixed as decided — **MET**
 
@@ -527,7 +541,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
 |---|---|---|---|
 | #575 | runtime: a host-call completion crosses the thread pool twice before its handler resumes | 3 | adjacent: the product side of #551, an owner decision |
 | #711 | FaultNoticeTests facts block a pool worker while their notice crosses the pool | 3 | adjacent: #551's shape in other facts, filed by 18.9 |
-| #580 | iOS: a cold LAContext start over about 40 s still fails the named warm-up step | 3 | **narrows item 3**: #453's residue |
+| #580 | iOS: a cold LAContext start over about 40 s still fails the named warm-up step | 3 | **part of item 3's NOT MET**: #453's residue |
 | #603 | ShutdownQuiescenceTests positive control ended Canceled once on the Windows runner | 3 | adjacent: a different outcome from #551's, seen once |
 | #600 | Android biometrics authenticate can hang when its Activity finishes during the prompt | 5 | adjacent: the biometrics op, not secure storage's order |
 | #621 | Android: a second instance's final destroy denies another instance's orphaned prompt | 6 | adjacent: a multi-instance edge #601's bullet does not claim |
@@ -544,18 +558,20 @@ Each issue is judged against the item it touches. None blocks the close on its o
 
 ## Verdict
 
-**PASS WITH FINDINGS.** [The sample re-run](#sample-re-run) reproduced 6 of 6, so M18 can close; `complete-milestone` follows with no tag, since `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**FAIL.** Item 3 is NOT MET, so M18 cannot close as it stands. Per the 18.11 design, the process stops and asks the owner; `complete-milestone` does not follow. [The sample re-run](#sample-re-run) reproduced 6 of 6, so the fresh reds this audit relies on hold.
 
 - **Eleven items are MET:** 1, 2, 4, 5, 6, 7, 8, 9, 10, 11 and 12. Item 11 is MET on its text, with its residue filed as #717.
-- **Two are MET NARROWLY,** each with its reason:
-  - **item 3:** one clean sample per lane cannot prove an intermittent flake gone; #407's trigger is unproven and #453 leaves #580;
-  - **item 13:** three register rows written in 18.11, not in the phase that added or altered the pin.
+- **One is MET NARROWLY:** item 13, three register rows written in 18.11, not in the phase that added or altered the pin.
+- **One is NOT MET:** item 3. #407's cause is not found: its trigger is unproven, so 18.1 fixed the failure being unnamed, not the relaunch. #453 holds only narrowly and leaves #580. #551, #564 and #444 hold literally, and the other two bullets hold, on one clean sample per lane. [3e](#3e-the-grade) argues why this is not graded MET NARROWLY on intent.
 
-**The strict reading of item 13, for the owner's decision.** Read on its words, item 13's sub-bullet "Its register cell is written in the phase that adds it" is **NOT MET** for those three pins. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under that reading the milestone verdict would be **FAIL**, permanently. This audit grades MET NARROWLY, on the rule's intent, as [13d](#13d-the-grade) argues. **The owner accepted the reading on intent on 2026-11-15**, so the verdict stands.
+**Item 3's repair, for the owner's decision.** Either #407's trigger is found and fixed and #580 is closed, or item 3's first bullet is amended, as a recorded owner decision, to accept a named failure where a cause stays unproven. After the amendment item 3 would be MET NARROWLY, and the verdict PASS WITH FINDINGS.
+
+**The strict reading of item 13, for the owner's decision.** Read on its words, item 13's sub-bullet "Its register cell is written in the phase that adds it" is **NOT MET** for those three pins. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under that reading the milestone verdict would be **FAIL**, permanently. This audit grades MET NARROWLY, on the rule's intent, as [13d](#13d-the-grade) argues. **The owner accepted the reading on intent on 2026-11-15**, so item 13 does not add to the FAIL.
 
 **The findings:**
 - **#716,** the `[#444]` trace printing `NO completion` on every passing show since 18.10, `BnNotificationsTests.swift:162`, `:444`, `:560`–`:563`, `:583` and `BnNotifications.swift:179`. Test and product code, so filed, not fixed here.
 - **#717,** the pre-M18 cells that name their stale reds but have no fresh red, including #568's three. Filed for a decision on re-running them.
 - **The three register rows** of item 13. Fixed in this phase by the rows at PS `:638` to `:640`; the timing cannot be fixed.
+- **#407's trigger,** item 3's NOT MET. No open issue tracks it.
 
-**Next:** the owner's call on item 13's reading, then `complete-milestone`.
+**Next:** the owner's call on item 3's repair, [3e](#3e-the-grade). `complete-milestone` waits on it.
