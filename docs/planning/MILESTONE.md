@@ -6,7 +6,7 @@
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md)
 **Predecessor:** Milestone 17 — Close the Dispatch Lane's Debt (complete 2026-10-24, verdict **PASS WITH
 FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md)).
-**Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+**Closes:** #551, #564, #453, #444, #407, #718, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
 
 ## Goal
 
@@ -68,7 +68,9 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 8. Phase 18.8 — the generator's pipe holder (#530) [complete]
 9. Phase 18.9 — the Windows dispatch bound (#564) [complete] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
 10. Phase 18.10 — iOS show completes when posted (#444) [complete] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
-11. Phase 18.11 — audit and close (#568) [active]
+11. Phase 18.11 — audit and close (#568) [active] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
+12. Phase 18.12 — #407's relaunch trigger at its cause (#718), and the #580 decision [pending]
+13. Phase 18.13 — re-audit and close [pending]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
 

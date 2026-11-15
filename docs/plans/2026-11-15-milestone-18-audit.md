@@ -574,4 +574,4 @@ Each issue is judged against the item it touches. None blocks the close on its o
 - **The three register rows** of item 13. Fixed in this phase by the rows at PS `:638` to `:640`; the timing cannot be fixed.
 - **#407's trigger,** item 3's NOT MET. No open issue tracks it.
 
-**Next:** the owner's call on item 3's repair, [3e](#3e-the-grade). `complete-milestone` waits on it.
+**Next:** the owner chose on 2026-11-15 to repair item 3 at its cause, not to amend it. Phase 18.12 finds and fixes #407's relaunch trigger, filed as #718, and decides #580. Phase 18.13 re-audits M18. `complete-milestone` waits on 18.13.
