@@ -4071,10 +4071,11 @@ the app's handler through a forwarding hook.
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 18.11: Audit and close (#568) [status: active]
+#### Phase 18.11: Audit and close (#568) [status: complete]
 **Goal:** Fix #568's cells, audit M18 against its DoD under the written grading rule, and close it. **No tag**, per `CONVENTIONS.md`.
 **Design:** `docs/superpowers/specs/2026-11-14-phase-18.11-design.md`
 **Plan:** `docs/superpowers/plans/2026-11-14-phase-18.11-audit.md`
+**Completed:** 2026-11-15
 **Record:** `docs/plans/2026-11-14-phase-18.11-record.md`
 **Surface:** Docs
 **HelpWanted:** no

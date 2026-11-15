@@ -68,7 +68,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 8. Phase 18.8 — the generator's pipe holder (#530) [complete]
 9. Phase 18.9 — the Windows dispatch bound (#564) [complete] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
 10. Phase 18.10 — iOS show completes when posted (#444) [complete] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
-11. Phase 18.11 — audit and close (#568) [active] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
+11. Phase 18.11 — audit and close (#568) [complete] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
 12. Phase 18.12 — #407's relaunch trigger at its cause (#718), and the #580 decision [pending]
 13. Phase 18.13 — re-audit and close [pending]
 

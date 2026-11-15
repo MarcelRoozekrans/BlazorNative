@@ -2,12 +2,9 @@
 
 **Last session:** 2026-11-15
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.11, audit and close (#568), `[status: active]`. Every plan task is done, and PR #713 waits on the owner.
-**Branch:** `feat/18.11-audit`. The base is `origin/main` `da6f8c1d`, unchanged. Only docs differ from it.
-**Next step:**
-1. The owner merges PR #713, which closes #568.
-2. Run `complete-phase` for 18.11.
-3. Phase 18.12 (#718) is next: brainstorm it at phase scope.
+**Phase:** 18.12, #407's relaunch trigger at its cause (#718), `[status: pending]`. It has no design spec and no plan yet. 18.11 is complete: PR #713 was merged by the owner as `09332c5e`, and #568 is closed.
+**Branch:** `feat/18.12-relaunch-trigger`, cut from `origin/main` at `09332c5e`. It carries 18.11's `complete-phase` commit and has no PR yet.
+**Next step:** run `start-next-phase` for 18.12. It routes to brainstorming at phase scope, Surface Infra. Then writing-plans, then subagent-driven execution.
 
 ## Current Position
 
@@ -70,11 +67,17 @@
 
 ## Recommended Next Step
 
-1. The owner merges PR #713. On "Merged ?", check `reviewDecision` and the unresolved review threads as well as the checks. Then read state from `origin/main`.
-2. Run `complete-phase` for 18.11.
-3. Run `start-next-phase` for 18.12 (#718). It routes to brainstorming (Infra). Open with the 18.1 record §5's install-broadcast lead and the #580 decision.
-4. The rules still hold:
-   - No Claude signature anywhere.
-   - Ask with AskUserQuestion.
+1. Run `start-next-phase` for **18.12** (#718). Brainstorm first. The open questions are:
+   - **#407's trigger.** In #407's one occurrence, `MainActivity` relaunched about 2 s after the APK install, with no "Config changes" line. That was within about 0.1 s of the install's own delayed package broadcasts: a PermissionController uid update, SdkSandboxManager reconciling the app and its test package, and GMS `PACKAGE_CHANGED`. `scripts/android-emulator-settle.sh` runs before Gradle installs the APKs, so it does not cover that window. Reproduce the relaunch first, then fix the wait condition. Do not raise a bound. The 18.1 record §5 has the full trace.
+   - **#580.** On iOS, a cold `LAContext` start that takes over 40 s still fails the boot tests' named warm-up step. #453's fix left this open. Decide it inside 18.12, as the owner chose on 2026-11-15: fix it at its cause, or record why not.
+2. Then **18.13** re-audits M18 against its DoD, as 17.12 did after 17.11. Use the 18.11 audit (`docs/plans/2026-11-15-milestone-18-audit.md`) as the model. If it passes, `complete-milestone` follows as its own small PR, with no tag.
+3. The rules still hold:
+   - No Claude signature anywhere, in commits or in the PR body.
+   - Ask with AskUserQuestion, with one option marked recommended.
    - Execution is subagent-driven.
+   - Write PR bodies to the template from the start.
    - Never `pkill -f`.
+   - Swift cannot compile on this Linux host.
+   - JVM pins need a draft PR, because JNA cannot load the win-x64 dll (#491).
+   - On "Merged ?", check `reviewDecision` and unresolved threads, not only the checks.
+   - Brief implementers: a "no subject-side red exists" claim needs at least two subject-side attempts behind it. Four such claims were false in 18.11.
