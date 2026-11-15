@@ -14,7 +14,7 @@
 - Its verdicts are a list of things to re-check, not evidence.
 - Every number below was measured on the audited code, with the command shown beside it.
 
-**Verdict:** **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, none NOT MET. See [the verdict](#verdict). It is provisional on [the sample re-run](#sample-re-run), which the controller fills in.
+**Verdict:** **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, none NOT MET. See [the verdict](#verdict). [The sample re-run](#sample-re-run) reproduced 6 of 6.
 - Item 3, the flakes, is MET NARROWLY: every lane is green at attempt 1 with no signature hit, but that is one sample per lane, and two causes are only partly removed, #407's trigger and #453's cold start, with #580 open.
 - Item 13, new pins, is MET NARROWLY: every graded site has a fresh, quoted RS1 red, but three register rows were written in 18.11 and not in the phase that added or altered the pin.
 - Two issues are filed: **#716**, the `[#444]` trace that prints `NO completion` on every passing show since 18.10, and **#717**, the pre-M18 cells that now name their stale reds but have none fresh.
@@ -497,7 +497,25 @@ It is a presence check: it finds a pin with no row at all, and the camera pin pa
 
 ## Sample re-run
 
-Pending: an independent re-run, filled in by the controller.
+A second subagent checked a sample of stage 1's reds. It had taken none of them and did not rely on the record's claims. It drew one re-run red per route at random, plus two rows that §2 graded fresh by diff, and re-ran or re-diffed each on HEAD.
+
+**Result: 6 of 6 reproduce as recorded.**
+- **Re-runs:** each red failed at the site's own line with the site's own message.
+- **Fresh by diff:** both staleness diffs printed nothing.
+
+The JVM, Android and iOS re-runs used throwaway scratch refs. The JVM one went through draft PR #715, which is now closed. Every run was at attempt 1, and no `scratch/*` ref remains.
+
+| route | record row | red id | mutation applied | command or run id (headSha, attempt) | recorded message | observed message and line | reproduces? |
+|---|---|---|---|---|---|---|---|
+| .NET | §3 row 331, `TearDownOverrunTests.cs:81` | `18.11-A2` | record's diff verbatim: `MutAbandoned` flag set in `HostSession.AbandonForTests`, read in `NativeRenderer.UpdateDisplayAsync` | `dotnet test tests/BlazorNative.Runtime.Tests -c Release -f net10.0` and `-f net11.0 --filter FullyQualifiedName~TearDownOverrunTests`, worktree /tmp/bn-sample-9 at 3a4ff8ca. Unmutated control passed 1/1 on both. | "the session after the abandoned one mounted no frame." | same message at `TearDownOverrunTests.cs:line 81` on net10.0 and net11.0 | yes |
+| JVM | §4 row 290, `BackNoticeTest.kt:362` | `18.11-J4` | `ShellBridge.kt:671` `blazornative_host_call_complete(...)` replaced by `1`, in src and template mirror; ci.yml JVM step narrowed to the one method, plus `if ($tests -eq 1) { $tests = 210 }` | draft PR #715, scratch/18.11-sample-jvm, ci run 43681745772, headSha 73d86455, attempt 1 (build-test job 132713642377; .NET step 2828 passed) | "the blocking back did not return within 10 s of the hold: ... That is #543's lost completion. ==> expected: <false> but was: <true>" at `:362` | identical text, `BackNoticeTest.kt:362` | yes |
+| Android | §5 row 174, `AndroidHostCallContractTest.kt:457` | `18.11-A-M7` | `AndroidShellBridge.kt:358` `hold == null \|\| hold.owner != owner` -> `hold == null`; gradlew call narrowed to `AndroidHostCallContractTest` | `android-instrumented.yml`, workflow_dispatch on scratch/18.11-sample-and, run 43682405162, headSha f8ac5465, attempt 1 (25 tests, 2 failures) | "anchor: A's second answer released B's hold expected null, but was:<Completion(requestId=1000000021, status=0, payload=null, thread=BlazorNative-SecureStorage)>" at `:457` | identical text incl. requestId=1000000021, stack frame `AndroidHostCallContractTest.kt:457` in `a_late_answer_does_not_release_another_requests_hold`. A second, ungraded failure at `:766` (`the_same_request_id_on_another_bridge_does_not_release_a_hold`) also appeared | yes |
+| iOS | §6 rows 218 and 219, `BnSecureStorageTests.swift:692`, `:695` | `18.11-I-I3` | `BnSecureStorage.swift:533` `defer { self.releaseHold(key, requestId) }` deleted; xcodebuild narrowed with `-only-testing:BnHostTests/BnSecureStorageTests/testADeniedGateReleasesItsKey` | `ios.yml`, workflow_dispatch on scratch/18.11-sample-ios, run 43683238706, headSha e1426269, attempt 1 (1 test, 3 failures) | `:692` "XCTAssertEqual failed: ("nil") is not equal to ("Optional(0)") - the delete parked behind the denied gate must complete Ok"; `:695` "XCTAssertFalse failed - the denied gate left its key held" | `:692` and `:695` with identical text. A third failure at `:693` ("the delete overtook the denied read: read=0 delete=-1") also fired | yes |
+| fresh-by-diff (Android) | §2 row 250, `RecreationDuringBootAndroidTest.kt:98`, cited red 18.4 §3 B6 | `B6` (from 18.4 record) | none; diff only | `git diff --stat 97e8602f HEAD -- <F5 files>` (the five paths in the record's F5 command) printed nothing. `git rev-parse 7f154eb3^` = 97e8602f, so the B6 run's base is the red commit. | n/a | empty output | yes (fresh) |
+| fresh-by-diff (iOS) | §2 row 336, `BnNotificationsTests.swift:291`, cited red 18.10 §3 R4 | `R4` (from 18.10 record) | none; diff only | `git diff --stat 69172396 HEAD -- BnNotificationsTests.swift BnNotifications.swift` (the F21 command) printed nothing. `git rev-parse 9523995a^` = 69172396, so the R4 scratch commit's base is the red commit. | n/a | empty output | yes (fresh) |
+
+- **Selection:** the first random .NET draw, `18.11-Ldisp`, was discarded and redrawn. The record marks it masked, and it carries no row.
+- **Extra failing assertions:** the Android run also failed `:766`, and the iOS run also failed `:693`. Neither changes the verdict on the recorded site. On iOS, `:693` is a sibling between the two graded sites. XCTest continues after a failure, so part 3 still sees each site fail at its own line, as §6 of the record argues.
 
 ---
 
@@ -526,7 +544,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
 
 ## Verdict
 
-**PASS WITH FINDINGS,** provisional on [the sample re-run](#sample-re-run). If it reproduces, M18 can close; `complete-milestone` follows with no tag, since `CONVENTIONS.md` records `Milestone completion tags a release: no`.
+**PASS WITH FINDINGS.** [The sample re-run](#sample-re-run) reproduced 6 of 6, so M18 can close; `complete-milestone` follows with no tag, since `CONVENTIONS.md` records `Milestone completion tags a release: no`.
 
 - **Eleven items are MET:** 1, 2, 4, 5, 6, 7, 8, 9, 10, 11 and 12. Item 11 is MET on its text, with its residue filed as #717.
 - **Two are MET NARROWLY,** each with its reason:
