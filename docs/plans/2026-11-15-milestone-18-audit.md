@@ -490,7 +490,7 @@ It is a presence check: it finds a pin with no row at all, and the camera pin pa
 - **Two readings, and what each means:**
   - **Strict, on the sub-bullet's words:** for these three pins the cell was not written in the phase that added or altered them, so the sub-bullet, and item 13, is **NOT MET**. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under this reading the milestone verdict is **FAIL**, permanently, whatever is done next.
   - **On intent, the grade this audit gives:** every new pin has a conforming row on HEAD that cites fresh reds, and the late timing is named as the narrowing. Item 13 is **MET NARROWLY**, and the verdict is PASS WITH FINDINGS.
-- **The owner decides** between them. This audit grades MET NARROWLY.
+- **The owner decides** between them. This audit grades MET NARROWLY. **Owner decision, 2026-11-15:** item 13 is read on intent, MET NARROWLY.
 - **Not filed:** the rows are fixed in this phase. The lesson, that a review-wave pin needs its row in the same wave, is for the retro.
 
 ---
@@ -551,7 +551,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
   - **item 3:** one clean sample per lane cannot prove an intermittent flake gone; #407's trigger is unproven and #453 leaves #580;
   - **item 13:** three register rows written in 18.11, not in the phase that added or altered the pin.
 
-**The strict reading of item 13, for the owner's decision.** Read on its words, item 13's sub-bullet "Its register cell is written in the phase that adds it" is **NOT MET** for those three pins. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under that reading the milestone verdict would be **FAIL**, permanently. This audit grades MET NARROWLY, on the rule's intent, as [13d](#13d-the-grade) argues; the owner decides.
+**The strict reading of item 13, for the owner's decision.** Read on its words, item 13's sub-bullet "Its register cell is written in the phase that adds it" is **NOT MET** for those three pins. That grade can never be repaired, because a past phase cannot write its cell retroactively, so under that reading the milestone verdict would be **FAIL**, permanently. This audit grades MET NARROWLY, on the rule's intent, as [13d](#13d-the-grade) argues. **The owner accepted the reading on intent on 2026-11-15**, so the verdict stands.
 
 **The findings:**
 - **#716,** the `[#444]` trace printing `NO completion` on every passing show since 18.10, `BnNotificationsTests.swift:162`, `:444`, `:560`–`:563`, `:583` and `BnNotifications.swift:179`. Test and product code, so filed, not fixed here.

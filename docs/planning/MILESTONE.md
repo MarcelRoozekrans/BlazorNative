@@ -21,9 +21,9 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 ## Definition of Done
 
-- [ ] All planned phases complete
-- [ ] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
-- [ ] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs.
+- [x] All planned phases complete
+- [x] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
+- [x] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs.
   - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
   - No fix raises a bound to hide a slow path.
   - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
@@ -47,9 +47,9 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
   - #401 is the stderr pump's level gate.
   - #396 is secure storage on an unenrolled device.
 - [x] **#530 is fixed.** The process that outlives `dotnet publish` and holds the reference generator's output pipe is identified and fixed at its source. The bound from 17.5 still names it if it ever returns. Done in 18.8, PR #707: on Windows CI the holder is a reused MSBuild worker node. Node reuse on stalled 20 of 20 iterations, off was clean 20 of 20, so 17.5's node-reuse fix is the source fix ([record](../plans/2026-11-13-phase-18.8-record.md) section 2).
-- [ ] **#568 is fixed.** No register cell cites a stale red without naming it stale.
-- [ ] **No ABI change.** The 80-byte bridge struct and the 10 exports are unchanged. Any wire addition goes through `src/wire-vocabulary.json`.
-- [ ] **Every new pin conforms to the grading rule.**
+- [x] **#568 is fixed.** No register cell cites a stale red without naming it stale.
+- [x] **No ABI change.** The 80-byte bridge struct and the 10 exports are unchanged. Any wire addition goes through `src/wire-vocabulary.json`.
+- [x] **Every new pin conforms to the grading rule.**
   - Its sites, meaning the labelled anchors and name claims, have fresh reds that quote their messages.
   - Its register cell is written in the phase that adds it.
   - Staleness is checked against each red's own commit.
@@ -76,3 +76,4 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 | Date | Verdict | Gaps |
 |---|---|---|
+| 2026-11-15 | **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY ([audit](../plans/2026-11-15-milestone-18-audit.md)) | Flakes: one clean sample per lane on the re-audit's head. New pins: three register rows were written in 18.11, not in the phase that added the pin, accepted on intent by the owner on 2026-11-15. Filed: #716, #717 |
