@@ -4071,8 +4071,21 @@ the app's handler through a forwarding hook.
 **Surface:** Backend
 **HelpWanted:** no
 
-#### Phase 18.11: Audit and close (#568) [status: pending]
+#### Phase 18.11: Audit and close (#568) [status: active]
 **Goal:** Fix #568's cells, audit M18 against its DoD under the written grading rule, and close it. **No tag**, per `CONVENTIONS.md`.
+**Design:** `docs/superpowers/specs/2026-11-14-phase-18.11-design.md`
+**Plan:** `docs/superpowers/plans/2026-11-14-phase-18.11-audit.md`
+**Record:** `docs/plans/2026-11-14-phase-18.11-record.md`
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 18.12: #407's relaunch trigger at its cause (#718) [status: pending]
+**Goal:** Find and fix what relaunches `MainActivity` right after the APK install in the Android lane, the open cause behind #407, and decide #580 (iOS cold `LAContext` over 40 s, left by #453) inside the phase. No bound is raised. Added 2026-11-15 by owner decision after the 18.11 audit graded DoD item 3 NOT MET.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 18.13: Re-audit and close [status: pending]
+**Goal:** Re-audit M18 against its DoD on HEAD after 18.12, as 17.12 did after 17.11, and close it if it passes. **No tag**, per `CONVENTIONS.md`.
 **Surface:** Docs
 **HelpWanted:** no
 

@@ -1,35 +1,45 @@
 # Session State
 
-**Last session:** 2026-11-14
+**Last session:** 2026-11-15
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.10 — iOS show completes when posted (#444), `[status: complete]`, on PR #712 awaiting the owner's merge. 18.1 to 18.9 are complete and merged; 18.9 is `a1bacd6b`.
-**Branch:** `feat/18.10-show-posted`, cut from `origin/main` at `a1bacd6b`. PR #712.
-**Next step:** the owner merges PR #712. Then cut `feat/18.11-audit` from `origin/main` and run `start-next-phase` for 18.11 (#568).
+**Phase:** 18.11, audit and close (#568), `[status: active]`. Every plan task is done, and PR #713 waits on the owner.
+**Branch:** `feat/18.11-audit`. The base is `origin/main` `da6f8c1d`, unchanged. Only docs differ from it.
+**Next step:**
+1. The owner merges PR #713, which closes #568.
+2. Run `complete-phase` for 18.11.
+3. Phase 18.12 (#718) is next: brainstorm it at phase scope.
 
 ## Current Position
 
-- **18.9 is merged: PR #710, squash `a1bacd6b`, #564 closed.** The record is [`docs/plans/2026-11-14-phase-18.9-record.md`](../plans/2026-11-14-phase-18.9-record.md).
-  - **Cause:** the probe handler of `AShellCallBegunOnAnotherThread_…` blocked a 1 s-bounded dispatch on `Task.Run(...).Wait()`. xUnit 2.9 runs test bodies on the thread pool, so the queued item waited for thread injection. That was found with a pool hold that reproduced the CI message, and with dumps at >1 s spikes. It is not a product bug.
-  - **Fix, test code only:**
-    - a dedicated begin thread, with a product flowing-scope anchor;
-    - the pin `DispatchBoundPoolTests`;
-    - `TearDown` and `WaitForNoticeSends` wait without the pool and throw on a timeout, keeping the primary failure;
-    - the `RunLateFault` facts run through `OffPool`.
-  - **Reds:** R1 to R12 on `7527f158`. Every red taken on `FaultNoticeTests.cs` before 18.9 is stale, and the record's §3 lists them for 18.11.
-  - **Filed:** #711, the other ~25 `FaultNoticeTests` facts of #551's shape, by owner decision.
-  - **Review fix waves, before the merge:** CodeRabbit found that `TearDown` disposed a session whose overrun dispatch was still running, an unbounded wait. It now abandons that session, pinned by `TearDownOverrunTests`, and the pin joins its teardown thread. The record's §5 has both rounds and their reds.
-  - **Flake #602 recurred** on #710's simulator leg at attempt 1, its third sighting on an unrelated PR; it now qualifies for a root-cause fix.
-- **Release PR #706 (0.22.1)** carries the 18.8 fix. Merging it is the owner's call.
-- **18.10 is complete on PR #712, awaiting the owner's merge.** The record is [`docs/plans/2026-11-14-phase-18.10-record.md`](../plans/2026-11-14-phase-18.10-record.md).
-  - **Decision and fix:** the owner decided an iOS `show` completes `Granted` once the request is handed to `UNUserNotificationCenter`, as Android's does after `nm.notify`. `BnNotifications.runAction` now completes a show right after `add`; a late `add` error goes to `onError` or `BnLog`, and `schedule` is unchanged.
-  - **Cause:** `add` waited on SpringBoard's `willPresent` delivery, which stalled for 11 s in #444's trace. It was never a product timing bug of ours.
-  - **Pins and reds:** four pins in `BnNotificationsTests.swift`, graded by R0 to R9 in the record's §3, all on the reviewed head `69172396` at attempt 1.
-  - **Stale reds, for 18.11:** the 18.1 record's #444 diagnostics describe `DaemonProbe`, `pollUntilProbing` and a `handlerAlive` that a show reports; all are gone or changed. The 18.5 and 18.8 records quote the old message "show never completed Granted ...". `BnNotificationsAndroidTest.kt` has no recorded red.
-- **18.11** is the audit and close (#568).
-- **Findings for 18.11, from #568:**
-  - #568's fourth cell was fixed in 18.8.
-  - Its first three cells are still open: the 17.2 M5 cell, the 17.7 `!= main` contrast cell and the 17.7 §3 M1 cell. Their line numbers have moved.
-  - Many M18-added pins cite reds that later M18 phases made stale, among them 18.3's contract mutations, 18.4's H1 to H5, 18.1's W1 and W5, every pre-18.9 `FaultNoticeTests` red, and now the 18.1 #444 diagnostics. The DoD's new-pin item needs fresh reds.
+- **The 18.11 artefacts:**
+  - Design: `docs/superpowers/specs/2026-11-14-phase-18.11-design.md`.
+  - Plan: `docs/superpowers/plans/2026-11-14-phase-18.11-audit.md`.
+  - Record: `docs/plans/2026-11-14-phase-18.11-record.md`.
+  - Audit: `docs/plans/2026-11-15-milestone-18-audit.md`.
+- **Stage 1, fresh reds.** There are 108 M18 pins with 339 graded sites. 231 of the sites were stale or unresolvable, and each was re-run to its own assertion:
+  - 115 .NET, on both TFMs;
+  - 5 JVM, through draft PR #714;
+  - 80 Android and 31 iOS, on scratch refs.
+
+  An independent sample of 6 reproduced.
+- **Register.** 50 M18 cells cite fresh reds, and #568's four cells are traced. 39 pre-M18 cells now name their stale reds. Three rows were added for pins that had none.
+- **Verdict: FAIL.** 11 items are MET, 1 MET NARROWLY and 1 NOT MET.
+  - **Item 3 is NOT MET.** #407's trigger was never found; 18.1 only made the failure name itself. #453 also leaves #580 open. CodeRabbit raised the contradiction on PR #713.
+  - **Item 13 is MET NARROWLY.** Three register rows were written in 18.11, not in the phase that added them. The owner accepted this on intent on 2026-11-15.
+- **The owner's choice, 2026-11-15:** a gap phase, then a re-audit.
+  - **18.12** finds and fixes #407's relaunch trigger, filed as #718, and decides #580. The audit's best lead: the relaunch coincided with the install's own delayed package broadcasts, which the settle step does not cover, because it runs before the install.
+  - **18.13** re-audits, as 17.12 did, and runs `complete-milestone` if the result is a pass.
+- **Filed:**
+  - #716: a stale `[#444]` trace that prints "NO completion" on every passing iOS show.
+  - #717: pre-M18 cells that name stale reds and have no fresh ones.
+  - #718: #407's trigger.
+- **Owner decisions:**
+  - re-run M18 pins only;
+  - one PR in two stages;
+  - read item 13 on intent;
+  - `complete-milestone` gets its own PR;
+  - item 3 is repaired at its cause, not amended.
+- **Lesson of the phase:** four arguments that "no subject-side red exists" were false: rows 16 and 20, 144 and 147, 191 and 194, and 323. In each case a reviewer found a product-side mutation. Treat such an argument as a claim, and put an attempt behind every premise.
 - **Baselines:** .NET 2828 (1414 facts on two TFMs), JVM 210, Android 273, iOS 307.
 
 ## Owner decisions for M18 (2026-10-24)
@@ -60,13 +70,11 @@
 
 ## Recommended Next Step
 
-1. Owner merges PR #712. On "Merged ?" for the standing merge approval, check `reviewDecision` and unresolved review threads as well as the checks. Then read state from `origin/main`.
-2. Cut `feat/18.11-audit` from `origin/main` and run `start-next-phase` for **18.11**, the audit and close (#568). It carries the findings above.
-3. The MILESTONE DoD flakes box stays open until 18.11 confirms attempt 1 green on the re-audit's own runs.
+1. The owner merges PR #713. On "Merged ?", check `reviewDecision` and the unresolved review threads as well as the checks. Then read state from `origin/main`.
+2. Run `complete-phase` for 18.11.
+3. Run `start-next-phase` for 18.12 (#718). It routes to brainstorming (Infra). Open with the 18.1 record §5's install-broadcast lead and the #580 decision.
 4. The rules still hold:
-   - No Claude signature anywhere, in commits as well as the PR body.
-   - Implementers tick only their own plan boxes, line by line.
-   - Grade pins against `docs/pin-standard.md`, "Grading a pin: sites and reds". Edit every file before mutating, and run the final review before the reds.
-   - Ask questions with AskUserQuestion. Execution is subagent-driven.
-   - Never `pkill -f` a pattern; kill by PID.
-5. Watch, but do not work, the flakes #598, #602, #603, #604 and #676. The M18 DoD needs attempt 1 green on every lane.
+   - No Claude signature anywhere.
+   - Ask with AskUserQuestion.
+   - Execution is subagent-driven.
+   - Never `pkill -f`.
