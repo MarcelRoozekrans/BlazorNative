@@ -35,7 +35,7 @@
 | 10 | #530 is fixed | MET | **MET** | Held: no code changed under it |
 | 11 | #568 is fixed: no register cell cites a stale red without naming it stale | MET | **MET** | Held, after a fix in this phase: ten cells cited reds stale since `fc7c0586` without saying so. They now name them and cite the 18.13 re-runs. #717 is still the residue |
 | 12 | No ABI change | MET | **MET** | Held: the only change to `Exports.cs` is `VersionNumber`, which is not ABI. The 10 exports, the 80-byte struct, the C header and `wire-vocabulary.json` are unchanged |
-| 13 | Every new pin conforms to the grading rule | MET NARROWLY | **MET NARROWLY** | Held: 339 of 339 sites fresh, 315 by diff and 24 re-run in 18.13. 18.12 added no pin. The three late register rows stay the narrowing, on the owner's 2026-11-15 decision |
+| 13 | Every new pin conforms to the grading rule | MET NARROWLY | **MET NARROWLY** | Held: 339 of 339 sites fresh, 312 by diff and 27 re-run in 18.13. 18.12 added no pin. The three late register rows stay the narrowing, on the owner's 2026-11-15 decision |
 
 ---
 
@@ -272,7 +272,7 @@ cmp src/BlazorNative.Jni/src/androidMain/kotlin/io/blazornative/shell/AndroidShe
     templates/BlazorNative.Templates/content/BlazorNative.App/android/src/androidMain/kotlin/io/blazornative/shell/AndroidShellBridge.kt   # identical
 ```
 
-- **A delete and a plain set wait behind an auth set,** and another key is not blocked: `:327`, `:347`, `:386`. `:386`'s site, row 162, is one of the four re-run in [the sample](#the-sample).
+- **A delete and a plain set wait behind an auth set,** and another key is not blocked: `:327`, `:347`, `:386`. The site at `:391`, row 162, in the `:386` test, is one of the four re-run in [the sample](#the-sample).
 - **iOS has the same hazard and the same fix,** pinned at `:542` and `:651`.
 - **Every 18.3 site is fresh,** 76 of 76 by diff, [the record](2026-11-16-phase-18.13-record.md) §2.
 
@@ -374,7 +374,7 @@ git diff --stat 09332c5e 93c7acac -- docs/pin-standard.md        # (empty)
 grep -c 'Stale, named in 18.11' docs/pin-standard.md              # 39, as in 18.11
 ```
 
-`Exports.cs` changed in `fc7c0586`, so [the record](2026-11-16-phase-18.13-record.md) §2 found 24 M18 sites stale, all through `Exports.cs`. Their cited reds are 18.11 re-runs on `ee5a8d1c` and `e39e2260`, and ten register cells cite them with no word that they are stale:
+`Exports.cs` changed in `fc7c0586`, so [the record](2026-11-16-phase-18.13-record.md) §2 found 27 M18 sites stale, all through `Exports.cs`. Their cited reds are 18.11 re-runs on `ee5a8d1c` and `e39e2260`, and ten register cells cite them with no word that they are stale:
 
 | PS line | cell | stale sites, 18.13 record §2 rows |
 |---|---|---|
@@ -384,12 +384,14 @@ grep -c 'Stale, named in 18.11' docs/pin-standard.md              # 39, as in 18
 | `:536` | `TheReRenderAfterAnInlineHandlerCompletes_IsItsOwnDispatchs` | `:1487`, `:1488`, rows 93, 94 |
 | `:543` | `ADisposalFaultCausedByATaggedRender_IsItsOwnDispatchs` | `:1663`, `:1664`, rows 125, 126 |
 | `:544` | `AHandlerFaultWhileAHoldIsOutstanding_IsStillItsOwnLateFault` | `:1691`, `:1692`, rows 133, 134 |
-| `:625` | `FaultNoticeTests` 18.1 facts | `:2026`, `:2045`, `:2050`, `:2090`, `:2096`, `:2100`, rows 16 to 18, 20 to 22 |
+| `:625` | `FaultNoticeTests` 18.1 facts | `:1996`, `:2002`, `:2026`, `:2045`, `:2050`, `:2057`, `:2090`, `:2096`, `:2100`, rows 14 to 22 |
 | `:628` | `DispatchBoundPoolTests` | `:59`, row 327 |
 | `:631` | `BnLogShutdownDrainTests` and `BnLogProcessExitDrainTests` | `:92`, `:93`, `:97`, `:101`, rows 23 to 26 |
 | `:638` | `TearDownOverrunTests` | `:53`, row 328 |
 
-That is the 24 sites, and so the text of item 11 did not hold on the audited head. **Finding F1, fixed in this phase:** each of the ten cells now says which of its reds are stale since `fc7c0586`, why, and cites their re-runs in [the record](2026-11-16-phase-18.13-record.md) §3. The 18.2 table's introduction, PS `:525`, which said each 18.2 cell's 18.11 clause cites a fresh red for every graded site, now says the same. No cell's other reds changed status.
+That is the 27 sites, and so the text of item 11 did not hold on the audited head. Three of them, `:1996`, `:2002` and `:2057` at `:625`, were found only by the final review: their reds mutate `BnLog.cs`, `BnLogQueue.cs` and the test file, but the facts are named for the dispatch export and `Exports.PendingDispatchObserver`, both in `Exports.cs`, and 18.11's commands for them left that file out. The record's §2 Disagreements, item 5, applies 18.11's own "named for" term to them. **Finding F1, fixed in this phase:** each of the ten cells now says which of its reds are stale since `fc7c0586`, why, and cites their re-runs in [the record](2026-11-16-phase-18.13-record.md) §3. The 18.2 table's introduction, PS `:525`, which said each 18.2 cell's 18.11 clause cites a fresh red for every graded site, now says the same.
+
+**Corroborating reds on these sites are stale too.** Staleness goes by the site's files, so a corroborating red on a stale site is stale whatever file it mutates. A search of the ten cells for every corroborating red id on the 27 sites finds three, each now named stale in its cell and not re-run, since a corroborating red grades no site: `18.1-L1` on `:2026` and `:2090` and `18.1-M5` on `:2050`, both on `ee5a8d1c`, at `:625`; and `18.9-R4` on `:59`, on `e39e2260`, at `:628`. Row 22's `M8` is an 18.1 red on `2f1f0c39` that the cell already named stale in 18.11. The other corroborating reds in these cells, at `:533` to `:536`, sit on sites that are fresh. No other red a cell cites changed status.
 
 ```bash
 grep -n 'ee5a8d1c\|e39e2260\|9f01a127' docs/pin-standard.md | cut -d: -f1 | sort -u
@@ -473,21 +475,22 @@ git diff --stat 09332c5e HEAD -- '*.g.cs' '*.g.kt' '*.g.swift' '*.g.h'          
 ```bash
 sed -n '/^### The table/,/^### Fresh/p' docs/plans/2026-11-16-phase-18.13-record.md | grep -E '^\| [0-9]+ \|' \
   | awk -F'|' '{print $(NF-2)}' | sort | uniq -c
-#   315 fresh
-#    24 stale
+#   312 fresh
+#    27 stale
 ```
 
 | Route | Sites | Fresh by diff | Stale | Re-run in 18.13 | Red |
 |---|---|---|---|---|---|
-| .NET | 170 | 146 | 24 | 24, both TFMs | 24 |
+| .NET | 170 | 143 | 27 | 27, both TFMs | 27 |
 | JVM | 23 | 23 | 0 | — | — |
 | Android | 94 | 94 | 0 | — | — |
 | iOS | 52 | 52 | 0 | — | — |
-| **All** | **339** | **315** | **24** | **24** | **24** |
+| **All** | **339** | **312** | **27** | **27** | **27** |
 
-- **The 24 stale sites** are stale only through `Exports.cs`, whose only change is `VersionNumber`. The record §3 re-ran each with its 18.11 mutation, its text taken from HEAD, on `23e7168b`, on `net10.0` and `net11.0`. Each failed at its own line with its own message, the same text as 18.11's apart from elapsed milliseconds in rows 24 and 25. The two timing-shaped reds, `18.9-S4` and `18.1-S1` on `TearDownOverrunTests`, red 5 of 5 runs per framework.
-- **The 315 fresh sites** keep the reds 18.11 graded them on: 108 from the phase records and 207 from the 18.11 re-runs.
+- **The 27 stale sites** are stale only through `Exports.cs`, whose only change is `VersionNumber`. The record §3 re-ran each with its 18.11 mutation, its text taken from HEAD, on `23e7168b`, on `net10.0` and `net11.0`. Each failed at its own line with its own message, the same text as 18.11's apart from elapsed milliseconds in rows 24 and 25. The two timing-shaped reds, `18.9-S4` and `18.1-S1` on `TearDownOverrunTests`, red 5 of 5 runs per framework.
+- **The 312 fresh sites** keep the reds 18.11 graded them on: 108 from the phase records and 204 from the 18.11 re-runs.
 - **Five sites are stale only because the record added the re-run mutation's file,** rows 16, 18, 20, 327 and 328; 18.11's own file lists for them did not include `Exports.cs`. The record's Disagreements, item 1, resolves them as stale, the stricter reading.
+- **Three sites are stale only because the record added the file their pin is named for,** rows 14, 15 and 19, found by the final review; 18.11's commands for them left out `Exports.cs`. The record's Disagreements, item 5, resolves them as stale, and its §3 re-runs `18.1-M1`, `M2` and `M6` on `23e7168b`, each red at its own line with 18.11's message on both frameworks, `M6` reported at `:2056` as in 18.11.
 
 ### The sample
 
@@ -502,7 +505,7 @@ To check that `fresh` by diff still means the red holds, the record §4 re-ran o
 
 **4 of 4 reproduce,** each at the site's own line with the message 18.11 quoted. Every scratch ref is deleted and #725 is closed.
 
-**This sub-bullet is met:** 339 of 339 sites have a fresh RS1 red with a quoted message, and after F1 every register cell that cites one of the 24 re-run sites names its stale red and cites the fresh one.
+**This sub-bullet is met:** 339 of 339 sites have a fresh RS1 red with a quoted message, and after F1 every register cell that cites one of the 27 re-run sites names its stale red and cites the fresh one.
 
 ### 13c. Register cells written in the phase that adds them — three were not
 
@@ -520,7 +523,7 @@ grep -n 'row added in 18.11' docs/pin-standard.md | cut -c1-70
 ### 13d. The grade
 
 **MET NARROWLY.**
-- **108 pins, 339 sites.** Every site has a fresh RS1 red against its own commit, with a quoted message: 315 fresh by diff, 24 re-run in 18.13, and 4 of the fresh ones re-run as a sample.
+- **108 pins, 339 sites.** Every site has a fresh RS1 red against its own commit, with a quoted message: 312 fresh by diff, 27 re-run in 18.13, and 4 of the fresh ones re-run as a sample.
 - **The narrowing:** three register rows were written in 18.11, not in the phase that added or altered the pin. The owner decided on 2026-11-15 to read the item on intent, MET NARROWLY, and nothing since changes that.
 
 ---
@@ -549,7 +552,7 @@ Each issue is judged against the item it touches. None blocks the close on its o
 
 | # | Finding | Where | Disposition |
 |---|---|---|---|
-| F1 | Ten register cells cited reds stale since `fc7c0586` without naming them stale, so item 11's text did not hold on the audited head. The 0.22.1 release changed `Exports.cs`, a subject of 24 M18 sites, only in `VersionNumber`; the cells were last written in 18.11, before it | `docs/pin-standard.md:525`, `:533`–`:536`, `:543`, `:544`, `:625`, `:628`, `:631`, `:638` | **Fixed in this phase:** each cell names its stale reds and cites the 18.13 record §3 re-runs |
+| F1 | Ten register cells cited reds stale since `fc7c0586` without naming them stale, so item 11's text did not hold on the audited head. The 0.22.1 release changed `Exports.cs`, a subject of 27 M18 sites, only in `VersionNumber`; the cells were last written in 18.11, before it. Three corroborating reds on those sites, `18.1-L1`, `M5` and `18.9-R4`, were stale and unnamed too | `docs/pin-standard.md:525`, `:533`–`:536`, `:543`, `:544`, `:625`, `:628`, `:631`, `:638` | **Fixed in this phase:** each cell names its stale reds and cites the 18.13 record §3 re-runs; the three corroborating reds are named stale, not re-run |
 | F2 | #580 reads `CLOSED COMPLETED`, closed by #721's "Closes #580", but 18.12 accepted the residual and did not fix it. A reader of the issue takes it as fixed | #580; #721's PR body, line 3 | **For the owner, not changed here.** Proposal: set #580's close reason to "not planned" and comment that it is accepted, pointing to the 18.12 record §7 |
 | F3 | 18.11 §10 quoted `281, 290` for `grep -n -- '-nodeReuse:false' … \| head -2`; the command prints `275, 281` on `da6f8c1d` and HEAD | `docs/plans/2026-11-15-milestone-18-audit.md:319` | **Fixed in this report,** item 10 quotes the real output. The 18.11 audit is left as written, as history |
 | F4 | 18.11 §12 diffed `src/BlazorNative.Renderer/FrameEncoder.cs`, which does not exist, so its check of the frame encoder was vacuous | `docs/plans/2026-11-15-milestone-18-audit.md:382` | **Fixed in this report:** item 12 checks every path exists and diffs `src/BlazorNative.Runtime/FrameEncoder.cs` over `5af84d3d..HEAD`, empty. The 18.11 audit is left as history |
@@ -558,12 +561,13 @@ No GitHub issue is filed: F1, F3 and F4 are fixed here, and F2 is one state chan
 
 ## What 18.13 taught
 
-- **A release bump stales reds.** The 0.22.1 release changed one string in `Exports.cs` and made 24 sites and ten register cells stale under the mechanical rule. A milestone that stays open across a release has to re-check its cells, not only its sites.
+- **A release bump stales reds.** The 0.22.1 release changed one string in `Exports.cs` and made 27 sites and ten register cells stale under the mechanical rule. A milestone that stays open across a release has to re-check its cells, not only its sites.
+- **A file list can miss the file a pin is named for.** 18.11's own rule took that file, yet three of its commands left out `Exports.cs`, and the re-audit copied them until the final review. Check each list against the pin's register row, not only against the mutated file.
 - **A diff of a missing path is silently empty.** `git diff --stat A B -- <path>` prints nothing for a path that exists at neither end. Check that each path exists before reading an empty diff as "unchanged".
 
 ## Verdict
 
-**PASS WITH FINDINGS.** No item is NOT MET, and two are MET NARROWLY, so PASS is out of reach and FAIL does not apply. [The sample](#the-sample) reproduced 4 of 4, and the 24 stale sites redded 24 of 24.
+**PASS WITH FINDINGS.** No item is NOT MET, and two are MET NARROWLY, so PASS is out of reach and FAIL does not apply. [The sample](#the-sample) reproduced 4 of 4, and the 27 stale sites redded 27 of 27.
 
 - **Eleven items are MET:** 1, 2, 4, 5, 6, 7, 8, 9, 10, 11 and 12. Item 11 is MET after F1's fix in this phase.
 - **Two are MET NARROWLY:**
