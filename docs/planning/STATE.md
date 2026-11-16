@@ -2,9 +2,9 @@
 
 **Last session:** 2026-11-16
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b and 3 are done and reviewed. The trigger was **not found** twice. The owner chose "accept, add capture". Next is Task 4c, then Task 7 (#580), then Task 8.
+**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b, 3, 4c and 7 are done. The trigger was **not found** twice. The owner chose "accept, add capture", and the capture ran green on the lane. Task 8 Steps 2 and 3 remain: the PR and the evidence comment on #718. The final review is done.
 **Branch:** `feat/18.12-relaunch-trigger`, head after this commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
-**Next step:** continue subagent-driven execution of the amended plan at **Task 4c**.
+**Next step:** continue subagent-driven execution of the amended plan at **Task 8**.
 
 ## 18.12 handoff
 
@@ -14,7 +14,7 @@
   - Tasks 4 to 6 are superseded; their boxes read "superseded:", not `- [ ]`.
   - Task 4c, the lane capture, was added.
   - Task 8 was rewritten: no PostInstallSettle register rows; the PR closes #580 only, and #718 gets an evidence comment and stays open.
-  - Remaining open boxes: Task 4c, Task 7 and Task 8.
+  - Remaining open boxes: Task 8 Steps 2 and 3.
 - **Record:** `docs/plans/2026-11-15-phase-18.12-record.md`.
   - §1 probes: of the 4 trace events, none relaunched. Only the root-only `overlay-shell` mechanism probe gives #407's full signature, with mask `80000000` and `finishDrawing of relaunch`.
   - §2 natural loop: 10 runs, but the installs were 6 to 13 s apart, so the loop did not have #407's timing.
@@ -94,7 +94,7 @@
 
 ## Recommended Next Step
 
-1. Execute the **18.12** plan, subagent-driven, from Task 1. The questions below are now answered in the design:
+1. Execute the **18.12** plan, subagent-driven, from Task 8. The questions below are now answered in the design:
    - **#407's trigger.** In #407's one occurrence, `MainActivity` relaunched about 2 s after the APK install, with no "Config changes" line. That was within about 0.1 s of the install's own delayed package broadcasts: a PermissionController uid update, SdkSandboxManager reconciling the app and its test package, and GMS `PACKAGE_CHANGED`. `scripts/android-emulator-settle.sh` runs before Gradle installs the APKs, so it does not cover that window. Reproduce the relaunch first, then fix the wait condition. Do not raise a bound. The 18.1 record §5 has the full trace.
    - **#580.** On iOS, a cold `LAContext` start that takes over 40 s still fails the boot tests' named warm-up step. #453's fix left this open. Decide it inside 18.12, as the owner chose on 2026-11-15: fix it at its cause, or record why not.
 2. Then **18.13** re-audits M18 against its DoD, as 17.12 did after 17.11. Use the 18.11 audit (`docs/plans/2026-11-15-milestone-18-audit.md`) as the model. If it passes, `complete-milestone` follows as its own small PR, with no tag.
