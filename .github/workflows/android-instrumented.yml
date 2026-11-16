@@ -265,7 +265,7 @@ jobs:
             # logs what it did and what it saw. An emulator that never settles fails here,
             # and the tests do not run. The camera test names a recreation either way.
             # A recurrence records its own cause: android-gradle-captured.sh samples package
-            # and overlay changes once a second beside Gradle, and the events buffer is dumped
+            # and overlay changes about once a second beside Gradle, and the events buffer is dumped
             # for the relaunch's changes mask. Both go in the logcat artifact. See
             # docs/plans/2026-11-15-phase-18.12-record.md.
             # The guest network is OFF for the whole suite: a test that needs it must

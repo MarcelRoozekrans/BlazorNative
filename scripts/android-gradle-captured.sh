@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 18.12 (#718): run Gradle's connectedAndroidTest with a once-a-second sampler of
+# Phase 18.12 (#718): run Gradle's connectedAndroidTest with a roughly once-a-second sampler of
 # package and overlay changes beside it, so a recurrence of #407's relaunch records its
 # own cause. See docs/plans/2026-11-15-phase-18.12-record.md, section 4.
 # Usage: android-gradle-captured.sh <sampler-output-file> <gradle args...>
