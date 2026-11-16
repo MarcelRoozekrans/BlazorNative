@@ -11,20 +11,27 @@
 # A sample comes every 1 to 3 s, not every second: an iteration is three bounded reads plus a
 # one-second sleep (gaps of 1.1 to 2.8 s in the two green lane runs, and 2.2 to 3.3 s in the
 # 18.12 forced runs). Readers must allow gaps and use the utc field, not the line count.
+# utc is the start of a sample. Its three signals are read one after the other, so each was
+# read between utc and its own end stamp: seq_end, ovl_end and bc_end. Place a signal in
+# time by its end stamp, not by utc.
 set -u
 OUT="$1"; shift
 
 sampler() {
-  local i=0 now seq ov bl
+  local i=0 now seq ov bl seq_end ovl_end bc_end
   echo "T0 host_epoch=$(date +%s.%N) device_epoch=$(timeout 5 adb shell date +%s.%N 2>/dev/null | tr -d '\r' || true)" > "$OUT" 2>/dev/null || return 0
   while :; do
     now=$(date -u +%H:%M:%S.%N | cut -c1-12)
     seq=$( { timeout 5 adb shell dumpsys package changes 2>/dev/null | tr -d '\r' | grep -m1 'Sequence number'; } || true )
+    seq_end=$(date -u +%H:%M:%S.%N | cut -c1-12)
     ov=$( { timeout 5 adb shell cmd overlay list 2>/dev/null | tr -d '\r' | md5sum | cut -c1-8; } || true )
+    ovl_end=$(date -u +%H:%M:%S.%N | cut -c1-12)
     bl=$( { timeout 5 adb shell dumpsys activity broadcasts history 2>/dev/null | tr -d '\r' | grep 'io.blazornative.shell' | sed -E 's/^ *#[0-9]+: *//'; } || true )
+    bc_end=$(date -u +%H:%M:%S.%N | cut -c1-12)
     {
-      printf 'S %s utc=%s seq=[%s] overlay=%s bcast=%s lines=%s\n' "$i" "$now" "$seq" "$ov" \
-        "$(printf '%s\n' "$bl" | md5sum | cut -c1-8)" "$(printf '%s\n' "$bl" | grep -c . || true)"
+      printf 'S %s utc=%s seq=[%s] overlay=%s bcast=%s lines=%s seq_end=%s ovl_end=%s bc_end=%s\n' "$i" "$now" "$seq" "$ov" \
+        "$(printf '%s\n' "$bl" | md5sum | cut -c1-8)" "$(printf '%s\n' "$bl" | grep -c . || true)" \
+        "$seq_end" "$ovl_end" "$bc_end"
       printf '%s\n' "$bl" | sed "s/^/B $i /"
     } >> "$OUT" 2>/dev/null || true
     i=$((i + 1))
