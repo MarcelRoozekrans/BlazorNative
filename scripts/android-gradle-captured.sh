@@ -5,7 +5,9 @@
 # Usage: android-gradle-captured.sh <sampler-output-file> <gradle args...>
 # Run from src/BlazorNative.Jni. The exit status is Gradle's and nothing else's: every
 # read in the sampler is guarded, and the sampler is stopped by PID when Gradle returns.
-# The sampler also stops itself if this script dies, via the stop file or the parent check.
+# "Once a second" is a target, not a guarantee: an iteration is three bounded reads plus a
+# one-second sleep, so under load it can take several seconds (the 18.12 forced runs saw
+# 2.2 to 3.3 s gaps). Readers must allow gaps and use the utc field, not the line count.
 set -u
 OUT="$1"; shift
 
@@ -27,7 +29,7 @@ sampler() {
   done
 }
 
-sampler &
+sampler </dev/null >/dev/null 2>&1 &
 SPID=$!
 ./gradlew --no-daemon connectedAndroidTest "$@"
 rc=$?

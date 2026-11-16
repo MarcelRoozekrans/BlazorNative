@@ -1200,8 +1200,8 @@ jobs:
           path: src/BlazorNative.Jni/build/outputs/androidTest-results/
           if-no-files-found: warn
 
-      - name: Upload artifact — logcat (failure only)
-        if: failure()
+      - name: Upload artifact — logcat and package sampler
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: instrumented-logcat
