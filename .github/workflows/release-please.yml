@@ -291,7 +291,7 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
 
-      - name: Setup .NET SDK (global.json — 10.0.3xx band)
+      - name: Setup .NET SDK (global.json)
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
