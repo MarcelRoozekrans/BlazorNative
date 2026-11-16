@@ -35,7 +35,7 @@ shell and an iOS-simulator (Swift) shell. A full build needs:
 
 | Tool | For |
 |---|---|
-| **.NET 10 SDK** (the exact band is pinned in [`global.json`](global.json)) | build + NativeAOT publish + the .NET test suite |
+| **.NET 11 SDK** (the exact band is pinned in [`global.json`](global.json)) | build + NativeAOT publish + the .NET test suite |
 | **PowerShell 7** (`pwsh`) | the .NET suite's reference-drift tests run `scripts/generate-reference.ps1` |
 | **JDK 25** (what CI uses) | the JVM/JNA dev loop and the Android shell |
 | **Android SDK + NDK** (NDK 26.3) | the Android shell + instrumented tests |
