@@ -4089,8 +4089,9 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 18.13: Re-audit and close [status: pending]
+#### Phase 18.13: Re-audit and close [status: active]
 **Goal:** Re-audit M18 against its DoD on HEAD after 18.12, as 17.12 did after 17.11, and close it if it passes. **No tag**, per `CONVENTIONS.md`.
+**Plan:** `docs/superpowers/plans/2026-11-16-phase-18.13-reaudit.md`
 **Surface:** Docs
 **HelpWanted:** no
 
