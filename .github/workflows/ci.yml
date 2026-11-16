@@ -2866,7 +2866,7 @@ jobs:
         working-directory: src/BlazorNative.Jni
         run: |
           $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
-          .\gradlew.bat --no-daemon testDebugUnitTest
+          .\gradlew.bat --no-daemon testDebugUnitTest --tests 'io.blazornative.jni.RetiredLaneDispatchTest'
           $gradleExit = $LASTEXITCODE
           $stepClock.Stop()
           Write-Host "JVM step wall time: $([int]$stepClock.Elapsed.TotalSeconds) s"

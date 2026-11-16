@@ -598,7 +598,7 @@ class BlazorNativeRuntime(
         if (!insideCallback.get()) {
             while (callbacksInFlight.get() > 0 && System.nanoTime() < deadline) Thread.sleep(1)
         }
-        return drained
+        return false
     }
 
     /**
