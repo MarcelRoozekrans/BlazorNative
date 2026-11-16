@@ -2,36 +2,18 @@
 
 **Last session:** 2026-11-16
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b, 3, 4c and 7 are done. The trigger was **not found** twice. The owner chose "accept, add capture", and the capture ran green on the lane. Task 8 Step 2 (open the PR, with the evidence comment on #718) and Step 3 (the final whole-branch review, whose fix wave is done and which precedes one last Android lane run) remain.
-**Branch:** `feat/18.12-relaunch-trigger`, head after this commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
-**Next step:** continue subagent-driven execution of the amended plan at **Task 8**.
+**Phase:** 18.12 is `[status: complete]`, merged as PR #721 on 2026-11-16. 18.13, the re-audit, is next and `[status: pending]`.
+**Branch:** start from `main`; `chore/18.12-complete` carries this bookkeeping PR.
+**Next step:** run `start-next-phase`, which routes to brainstorming for 18.13.
 
-## 18.12 handoff
+## 18.12 outcome
 
-- **Design:** `docs/superpowers/specs/2026-11-15-phase-18.12-design.md`, approved 2026-11-15.
-- **Plan:** `docs/superpowers/plans/2026-11-15-phase-18.12-relaunch-trigger.md`, amended 2026-11-16:
-  - Task 2b was added.
-  - Tasks 4 to 6 are superseded; their boxes read "superseded:", not `- [ ]`.
-  - Task 4c, the lane capture, was added.
-  - Task 8 was rewritten: no PostInstallSettle register rows; the PR closes #580 only, and #718 gets an evidence comment and stays open.
-  - Remaining open boxes: Task 8 Steps 2 and 3.
-- **Record:** `docs/plans/2026-11-15-phase-18.12-record.md`.
-  - §1 probes: of the 4 trace events, none relaunched. Only the root-only `overlay-shell` mechanism probe gives #407's full signature, with mask `80000000` and `finishDrawing of relaunch`.
-  - §2 natural loop: 10 runs, but the installs were 6 to 13 s apart, so the loop did not have #407's timing.
-  - §2b true-timing loop: 10 natural runs plus 2 forced runs under load, with the installs 0.13 to 0.28 s apart. No relaunch outside the deliberate `recreate()`.
-  - §3 verdict: not found, twice.
-- **Owner decisions:**
-  - **2026-11-15:** found means a trace event or a natural recurrence. No fix on an unproven trigger. #580: investigate the cause first, with 10 iOS runs.
-  - **2026-11-16, after the first verdict:** retry at the true timing, which became Task 2b.
-  - **2026-11-16, after the second verdict:** accept, add capture. #718 is recorded as not reproduced, 18.1's named failure is kept, no wait is written, and the 1 to 3 s sampler plus the `events` logcat buffer go on the main Android lane (Task 4c). The 18.13 re-audit grades DoD item 3 against this accepted residual.
-- **Reusable scratch code**, reachable by sha:
-  - the probe lane: `3f6ba895`, `c3ae9396`, and `scripts/relaunch-probe-lane.sh`;
-  - the true-timing loop and its sampler: `20e9720e` and `80de4f5f`, with `scripts/natural-loop2-lane.sh`.
-  - The Task 4c sampler should start from `80de4f5f`'s sampler.
-- **Process notes:**
-  - Every task is reviewed by a fresh reviewer.
-  - Minor findings are fixed in the review loop.
-  - Implementers once broke the `&` rule; remind them to use `run_in_background` for every wait.
+- **Merged:** PR #721, squash commit `ed9e1e23`. It closed #580 and left #718 open, with an evidence comment on it.
+- **#718, #407's relaunch trigger: not reproduced.** 22 install runs, 10 + 10 natural plus 2 forced under load, and four trace-event probes produced no relaunch outside a deliberate `recreate()`. Only the root-only overlay mechanism probe gives the full signature, which the owner's rule counts as supporting evidence. 18.1's named failure stays and no wait was written.
+- **The capture, on the main Android lane:** a sampler every 1 to 3 s of the package-changes sequence number, an overlay list hash and the shell's broadcast history, with per-read end stamps, plus the `events` logcat buffer at 16M. Both are uploaded on every run in the `instrumented-logcat` artifact. If #407 recurs, read that artifact first.
+- **#580, accepted:** 10 fresh-boot iOS runs, slowest first `LAContext` creation 6139 ms. The measured cost is `launchd_sim` starting `coreauthd` on demand. Record: `docs/plans/2026-11-15-phase-18.12-record.md`.
+- **Owner decisions in 18.12:** 2026-11-15, found means a trace event or a natural recurrence, and #580 gets 10 iOS runs first. 2026-11-16, retry at the true timing, then "accept, add capture".
+- **Merge note:** PR #721 was squash-merged with `--admin` on the owner's explicit request. CodeRabbit's CHANGES_REQUESTED was stale, because every finding was fixed and its last review was COMMENTED, and all required checks were green on the head. The iOS simulator leg had failed once on the known flake #602, with no Swift in the PR, and was green on the updated head.
 
 ## Current Position
 
@@ -94,17 +76,17 @@
 
 ## Recommended Next Step
 
-1. Execute the **18.12** plan, subagent-driven, from Task 8. The questions below are now answered in the design:
-   - **#407's trigger.** In #407's one occurrence, `MainActivity` relaunched about 2 s after the APK install, with no "Config changes" line. That was within about 0.1 s of the install's own delayed package broadcasts: a PermissionController uid update, SdkSandboxManager reconciling the app and its test package, and GMS `PACKAGE_CHANGED`. `scripts/android-emulator-settle.sh` runs before Gradle installs the APKs, so it does not cover that window. Reproduce the relaunch first, then fix the wait condition. Do not raise a bound. The 18.1 record §5 has the full trace.
-   - **#580.** On iOS, a cold `LAContext` start that takes over 40 s still fails the boot tests' named warm-up step. #453's fix left this open. Decide it inside 18.12, as the owner chose on 2026-11-15: fix it at its cause, or record why not.
-2. Then **18.13** re-audits M18 against its DoD, as 17.12 did after 17.11. Use the 18.11 audit (`docs/plans/2026-11-15-milestone-18-audit.md`) as the model. If it passes, `complete-milestone` follows as its own small PR, with no tag.
+1. Merge the `chore/18.12-complete` bookkeeping PR if it is still open.
+2. Run `start-next-phase`. It routes to brainstorming for **18.13**, the re-audit of M18 against its DoD on HEAD, as 17.12 did after 17.11. Use `docs/plans/2026-11-15-milestone-18-audit.md` as the model.
+   - **DoD item 3** is graded against the accepted residual: #407's trigger was never found, 18.1 only made the failure name itself, and 18.12 added the capture. The re-audit must decide whether that meets the item as worded, or amend the item with the owner.
+   - #718 stays open for a recurrence. #580 is closed as accepted.
+   - If the audit passes, `complete-milestone` follows as its own small PR, with no tag.
 3. The rules still hold:
-   - No Claude signature anywhere, in commits or in the PR body.
+   - No Claude signature anywhere, in commits or in the PR body. No closing keywords unless intended.
    - Ask with AskUserQuestion, with one option marked recommended.
-   - Execution is subagent-driven.
+   - Execution is subagent-driven. Implementers tick only their own plan boxes.
    - Write PR bodies to the template from the start.
-   - Never `pkill -f`.
-   - Swift cannot compile on this Linux host.
-   - JVM pins need a draft PR, because JNA cannot load the win-x64 dll (#491).
+   - Never `pkill -f`, and never `&` in the Bash tool.
+   - Swift and the instrumented suite cannot run on this Linux host. JVM pins need a draft PR, because JNA cannot load the win-x64 dll (#491).
    - On "Merged ?", check `reviewDecision` and unresolved threads, not only the checks.
-   - Brief implementers: a "no subject-side red exists" claim needs at least two subject-side attempts behind it. Four such claims were false in 18.11.
+   - A "no subject-side red exists" claim needs at least two subject-side attempts behind it.
