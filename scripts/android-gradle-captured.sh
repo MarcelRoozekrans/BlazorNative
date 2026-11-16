@@ -12,8 +12,10 @@
 # one-second sleep (gaps of 1.1 to 2.8 s in the two green lane runs, and 2.2 to 3.3 s in the
 # 18.12 forced runs). Readers must allow gaps and use the utc field, not the line count.
 # utc is the start of a sample. Its three signals are read one after the other, so each was
-# read between utc and its own end stamp: seq_end, ovl_end and bc_end. Place a signal in
-# time by its end stamp, not by utc.
+# read between utc and its own end stamp: seq_end, ovl_end and bc_end. An end stamp is an
+# observation time, not a change time. A change seen in a sample happened between that
+# signal's end stamp in the previous sample and its end stamp in this one. The end stamp
+# alone cannot order a change against a relaunch, so line the interval up with logcat.
 set -u
 OUT="$1"; shift
 
