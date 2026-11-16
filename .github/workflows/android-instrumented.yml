@@ -252,20 +252,33 @@ jobs:
           working-directory: src/BlazorNative.Jni
           script: |
             adb logcat -c || true
+            # The default events buffer wrapped after about 4 min in run 43829009840 and lost the
+            # install window at the start, so enlarge it to 16M before clearing it.
+            adb logcat -b events -G 16M || true
+            adb logcat -b events -c || true
             # Suppress ANR/crash dialogs — a boot ANR stealing window focus would
             # deny the Android 10+ clipboard READ (ClipboardAndroidTest); this plus
             # the in-test hasWindowFocus() wait keep that lane stable on a cold AVD.
             adb shell settings put global hide_error_dialogs 1 || true
             # #407: a mid-test relaunch of MainActivity once coincided with Play services'
-            # post-boot package churn; the trigger is unproven. Stop the churn at its
-            # source, then wait until the package manager holds still; the script logs
-            # what it did and what it saw. An emulator that never settles fails here, and
-            # the tests do not run. The camera test names a recreation either way.
+            # post-boot package churn. Phase 18.12 (#718) did not reproduce it in 22 runs,
+            # 10 + 10 natural plus 2 forced; only a root-only overlay-shell mechanism probe
+            # gives the signature, so the trigger is still unproven. The script below stops
+            # the churn at its source and waits until the package manager holds still; it
+            # logs what it did and what it saw. An emulator that never settles fails here,
+            # and the tests do not run. The camera test names a recreation either way.
+            # A recurrence leaves the package, overlay and broadcast changes and the relaunch
+            # mask around it on record: android-gradle-captured.sh samples package and overlay
+            # changes every 1 to 3 s beside Gradle, and the events buffer is dumped, to search
+            # for wm_relaunch_resume_activity and wm_relaunch_activity (the second from AOSP
+            # reading, not verified on a device). Both go in the logcat artifact. See
+            # docs/plans/2026-11-15-phase-18.12-record.md.
             # The guest network is OFF for the whole suite: a test that needs it must
             # turn it back on, or run elsewhere.
             bash ../../scripts/android-emulator-settle.sh || touch "${{ runner.temp }}/settle-failed"
-            test -f "${{ runner.temp }}/settle-failed" || ./gradlew --no-daemon connectedAndroidTest "-PciSoDir=${{ runner.temp }}/ci-so" || touch "${{ runner.temp }}/gradle-failed"
+            test -f "${{ runner.temp }}/settle-failed" || bash ../../scripts/android-gradle-captured.sh "${{ runner.temp }}/package-sampler.txt" "-PciSoDir=${{ runner.temp }}/ci-so" || touch "${{ runner.temp }}/gradle-failed"
             adb logcat -d > "${{ runner.temp }}/logcat.txt" || true
+            adb logcat -b events -d > "${{ runner.temp }}/logcat-events.txt" || true
             test ! -f "${{ runner.temp }}/settle-failed"
             test ! -f "${{ runner.temp }}/gradle-failed"
 
@@ -1192,10 +1205,13 @@ jobs:
           path: src/BlazorNative.Jni/build/outputs/androidTest-results/
           if-no-files-found: warn
 
-      - name: Upload artifact — logcat (failure only)
-        if: failure()
+      - name: Upload artifact — logcat and package sampler
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: instrumented-logcat
-          path: ${{ runner.temp }}/logcat.txt
+          path: |
+            ${{ runner.temp }}/logcat.txt
+            ${{ runner.temp }}/logcat-events.txt
+            ${{ runner.temp }}/package-sampler.txt
           if-no-files-found: ignore
