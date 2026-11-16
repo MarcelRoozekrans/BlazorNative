@@ -252,6 +252,9 @@ jobs:
           working-directory: src/BlazorNative.Jni
           script: |
             adb logcat -c || true
+            # The default events buffer wrapped after about 4 min in run 43829009840 and lost the
+            # install window at the start, so enlarge it to 16M before clearing it.
+            adb logcat -b events -G 16M || true
             adb logcat -b events -c || true
             # Suppress ANR/crash dialogs — a boot ANR stealing window focus would
             # deny the Android 10+ clipboard READ (ClipboardAndroidTest); this plus
