@@ -2,7 +2,7 @@
 
 **Last session:** 2026-11-16
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b, 3, 4c and 7 are done. The trigger was **not found** twice. The owner chose "accept, add capture", and the capture ran green on the lane. Task 8 Steps 2 and 3 remain: the PR and the evidence comment on #718. The final review is done.
+**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b, 3, 4c and 7 are done. The trigger was **not found** twice. The owner chose "accept, add capture", and the capture ran green on the lane. Task 8 Step 2 (open the PR, with the evidence comment on #718) and Step 3 (the final whole-branch review, whose fix wave is done and which precedes one last Android lane run) remain.
 **Branch:** `feat/18.12-relaunch-trigger`, head after this commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
 **Next step:** continue subagent-driven execution of the amended plan at **Task 8**.
 
@@ -23,7 +23,7 @@
 - **Owner decisions:**
   - **2026-11-15:** found means a trace event or a natural recurrence. No fix on an unproven trigger. #580: investigate the cause first, with 10 iOS runs.
   - **2026-11-16, after the first verdict:** retry at the true timing, which became Task 2b.
-  - **2026-11-16, after the second verdict:** accept, add capture. #718 is recorded as not reproduced, 18.1's named failure is kept, no wait is written, and the 1 s package/overlay/broadcast sampler plus the `events` logcat buffer go on the main Android lane (Task 4c). The 18.13 re-audit grades DoD item 3 against this accepted residual.
+  - **2026-11-16, after the second verdict:** accept, add capture. #718 is recorded as not reproduced, 18.1's named failure is kept, no wait is written, and the 1 to 3 s sampler plus the `events` logcat buffer go on the main Android lane (Task 4c). The 18.13 re-audit grades DoD item 3 against this accepted residual.
 - **Reusable scratch code**, reachable by sha:
   - the probe lane: `3f6ba895`, `c3ae9396`, and `scripts/relaunch-probe-lane.sh`;
   - the true-timing loop and its sampler: `20e9720e` and `80de4f5f`, with `scripts/natural-loop2-lane.sh`.
