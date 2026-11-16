@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# Phase 18.12 (#718): run Gradle's connectedAndroidTest with a roughly once-a-second sampler of
-# package and overlay changes beside it, so a recurrence of #407's relaunch records its
-# own cause. See docs/plans/2026-11-15-phase-18.12-record.md, section 4.
+# Phase 18.12 (#718): run Gradle's connectedAndroidTest with a sampler of package and
+# overlay changes beside it, so a recurrence of #407's relaunch leaves the package, overlay
+# and broadcast changes around it on record. See docs/plans/2026-11-15-phase-18.12-record.md,
+# section 4.
 # Usage: android-gradle-captured.sh <sampler-output-file> <gradle args...>
 # Run from src/BlazorNative.Jni. The exit status is Gradle's and nothing else's: every
-# read in the sampler is guarded, and the sampler is stopped by PID when Gradle returns.
-# "Once a second" is a target, not a guarantee: an iteration is three bounded reads plus a
-# one-second sleep, so under load it can take several seconds (the 18.12 forced runs saw
-# 2.2 to 3.3 s gaps). Readers must allow gaps and use the utc field, not the line count.
+# read in the sampler is guarded. When Gradle returns, `kill` on the sampler's PID stops the
+# sampler subshell only. A read in flight, such as `timeout 5 adb shell`, can outlive it by up
+# to 5 s. It is detached from stdout and stderr, so it holds nothing open and does nothing.
+# A sample comes every 1 to 3 s, not every second: an iteration is three bounded reads plus a
+# one-second sleep (gaps of 1.1 to 2.8 s in the two green lane runs, and 2.2 to 3.3 s in the
+# 18.12 forced runs). Readers must allow gaps and use the utc field, not the line count.
 set -u
 OUT="$1"; shift
 
 sampler() {
-  local i=0 now dev seq ov bl
+  local i=0 now seq ov bl
   echo "T0 host_epoch=$(date +%s.%N) device_epoch=$(timeout 5 adb shell date +%s.%N 2>/dev/null | tr -d '\r' || true)" > "$OUT" 2>/dev/null || return 0
   while :; do
     now=$(date -u +%H:%M:%S.%N | cut -c1-12)
