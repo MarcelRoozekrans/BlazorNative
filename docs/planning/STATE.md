@@ -1,24 +1,37 @@
 # Session State
 
-**Last session:** 2026-11-15
+**Last session:** 2026-11-16
 **Milestone:** 18 — Acknowledged Bugs `[status: active]`, started 2026-10-24.
-**Phase:** 18.12, #407's relaunch trigger at its cause (#718) plus the #580 decision, `[status: active]`. The design is approved and the plan is approved; execution has not started.
-**Branch:** `feat/18.12-relaunch-trigger`, head `e5a3116e` plus the start-phase commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
-**Next step:** execute the plan, subagent-driven, from Task 1.
+**Phase:** 18.12, #407's relaunch trigger (#718) plus the #580 decision, `[status: active]`. Tasks 1, 2, 2b and 3 are done and reviewed. The trigger was **not found** twice. The owner chose "accept, add capture". Next is Task 4c, then Task 7 (#580), then Task 8.
+**Branch:** `feat/18.12-relaunch-trigger`, head after this commit. No PR yet. Another worktree holds the branch, so push with `git push origin HEAD:feat/18.12-relaunch-trigger`.
+**Next step:** continue subagent-driven execution of the amended plan at **Task 4c**.
 
 ## 18.12 handoff
 
 - **Design:** `docs/superpowers/specs/2026-11-15-phase-18.12-design.md`, approved 2026-11-15.
-- **Plan:** `docs/superpowers/plans/2026-11-15-phase-18.12-relaunch-trigger.md`. It has 8 tasks; Tasks 1 and 7 are marked `**Model:** opus`, and Task 3 is the coordinator's own.
-- **Owner decisions, 2026-11-15:**
-  - **"Found" needs both a forced and a natural reproduction.** A trace event must force the relaunch: PermissionController's uid flag update, the SdkSandbox reconcile, GMS `PACKAGE_CHANGED`, or a fresh install's delayed processing fired at install time. A natural recurrence in the 10-run loop also counts. Mechanism probes (overlay re-evaluation, `install -r --dont-kill`) are supporting evidence only.
-  - **If nothing forces it,** stop at Task 3 and ask the owner before writing any fix.
-  - **The fix is a wait in the test runner,** in `BlazorNativeTestRunner.onStart` through a new `PostInstallSettle`. It waits only on signals the found trigger moves. If the probes isolate a single broadcaster, the settle script also stops that source.
-  - **#580: investigate the cause first.** Up to 10 fresh-boot iOS runs with LocalAuthentication and coreauthd logs. Fix it at the cause if one is found; otherwise record the evidence and close #580 as accepted.
-- **The calls I made:**
-  - 10 runs for the natural loop and 10 for #580;
-  - the trigger proof is a red/green pair of scratch lane runs, fired by an `adb` watcher, while the merged pins cover the wait logic;
-  - the Android job's 45-minute timeout is the time budget.
+- **Plan:** `docs/superpowers/plans/2026-11-15-phase-18.12-relaunch-trigger.md`, amended 2026-11-16:
+  - Task 2b was added.
+  - Tasks 4 to 6 are superseded; their boxes read "superseded:", not `- [ ]`.
+  - Task 4c, the lane capture, was added.
+  - Task 8 was rewritten: no PostInstallSettle register rows; the PR closes #580 only, and #718 gets an evidence comment and stays open.
+  - Remaining open boxes: Task 4c, Task 7 and Task 8.
+- **Record:** `docs/plans/2026-11-15-phase-18.12-record.md`.
+  - §1 probes: of the 4 trace events, none relaunched. Only the root-only `overlay-shell` mechanism probe gives #407's full signature, with mask `80000000` and `finishDrawing of relaunch`.
+  - §2 natural loop: 10 runs, but the installs were 6 to 13 s apart, so the loop did not have #407's timing.
+  - §2b true-timing loop: 10 natural runs plus 2 forced runs under load, with the installs 0.13 to 0.28 s apart. No relaunch outside the deliberate `recreate()`.
+  - §3 verdict: not found, twice.
+- **Owner decisions:**
+  - **2026-11-15:** found means a trace event or a natural recurrence. No fix on an unproven trigger. #580: investigate the cause first, with 10 iOS runs.
+  - **2026-11-16, after the first verdict:** retry at the true timing, which became Task 2b.
+  - **2026-11-16, after the second verdict:** accept, add capture. #718 is recorded as not reproduced, 18.1's named failure is kept, no wait is written, and the 1 s package/overlay/broadcast sampler plus the `events` logcat buffer go on the main Android lane (Task 4c). The 18.13 re-audit grades DoD item 3 against this accepted residual.
+- **Reusable scratch code**, reachable by sha:
+  - the probe lane: `3f6ba895`, `c3ae9396`, and `scripts/relaunch-probe-lane.sh`;
+  - the true-timing loop and its sampler: `20e9720e` and `80de4f5f`, with `scripts/natural-loop2-lane.sh`.
+  - The Task 4c sampler should start from `80de4f5f`'s sampler.
+- **Process notes:**
+  - Every task is reviewed by a fresh reviewer.
+  - Minor findings are fixed in the review loop.
+  - Implementers once broke the `&` rule; remind them to use `run_in_background` for every wait.
 
 ## Current Position
 
