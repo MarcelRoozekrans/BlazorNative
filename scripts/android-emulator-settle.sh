@@ -31,6 +31,11 @@
 #    A ceiling of SETTLE_CEILING_S seconds of watching fails the step, naming the last change, so an
 #    emulator that never settles fails here and not as a flake in some test.
 #
+# Phase 18.12 (#718) result: the trigger was NOT reproduced in 22 runs, 10 + 10 natural
+# plus 2 forced; only a root-only overlay-shell mechanism probe gave the signature. The
+# settle stays as it is. The lane now captures a recurrence's cause instead; see
+# docs/plans/2026-11-15-phase-18.12-record.md.
+#
 # Every action and every change seen is logged with its time since the start.
 # A failed read never counts as holding still: no device fails the step up front,
 # and a read with no sequence number fails it where it happens.
