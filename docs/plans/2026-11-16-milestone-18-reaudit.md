@@ -398,7 +398,7 @@ grep -n 'since `fc7c0586`' docs/pin-standard.md | cut -d: -f1
 #   533 534 535 536 543 544 625 628 631 638      and :525's introduction names fc7c0586 too
 ```
 
-The three cells that cite the batch commits and were left alone cite only fresh sites: `:577`, `FaultNoticeTests` 16.1's 18.9 part, rows 323 to 325; `:626`, `GeneratorRunTests`' pool pins, rows 31 to 37; and `:525`, the introduction.
+The two cells that cite the batch commits and were left alone cite only fresh sites: `:577`, `FaultNoticeTests` 16.1's 18.9 part, rows 323 to 325; and `:626`, `GeneratorRunTests`' pool pins, rows 31 to 37.
 
 **The rest of 18.11's sweep.** Its 48 fresh rows are M18 cells, whose sites [the record](2026-11-16-phase-18.13-record.md) §2 diffed one by one, plus seven pre-M18 rows: `BnActivityIndicatorTests`, `BnImagePolishDemoTests` group E, `BnDiagnosticsTest` twice and `GeneratorRunTests` three times. None of those reads one of the 15 changed files: the `GeneratorRunTests` facts read `generate-reference.ps1`, `exit-code.ps1` and `hold-stdout.ps1`, and the only scripts that changed are 18.12's two Android scripts.
 
