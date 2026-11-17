@@ -1,12 +1,11 @@
 # Session State
 
 **Last session:** 2026-11-17
-**Milestone:** 18, Acknowledged Bugs, `[status: active]`, started 2026-10-24.
-**Phase:** 18.13, the re-audit, is `[status: active]`. Its PR is #724, from branch `docs/18.13-reaudit`, and it is waiting for the owner.
+**Milestone:** 18, Acknowledged Bugs, `[status: complete]` on 2026-11-17, verdict PASS WITH FINDINGS. No tag, per `CONVENTIONS.md`. No milestone is active.
+**Phase:** 18.13 is `[status: complete]`. #724 was merged as `0846e515`. The phase and milestone close-out is on branch `chore/complete-m18`.
 **Next step:**
-1. The owner merges #724.
-2. Run `complete-phase` for 18.13.
-3. Run `complete-milestone` for M18 as its own PR, with no tag.
+1. The owner merges the close-out PR from `chore/complete-m18`.
+2. Run `new-milestone` for the 1.0 readiness and performance milestone. Its scope is under "Open for the owner" below.
 
 ## 18.13 outcome
 
@@ -48,10 +47,9 @@
 
 ## Recommended Next Step
 
-1. On "Merged ?", check `reviewDecision` and unresolved threads, not only the checks. Then run `complete-phase` for 18.13.
-2. Run `complete-milestone` for M18 as its own small PR, with no tag (`CONVENTIONS.md`). The ROADMAP M18 heading becomes complete.
-3. Then `new-milestone` for the 1.0 readiness and performance milestone.
-4. The standing rules still apply:
+1. On "Merged ?" for the close-out PR, check `reviewDecision` and unresolved threads, not only the checks.
+2. Then `new-milestone` for the 1.0 readiness and performance milestone, with M18's carried-over issues listed above as candidate scope.
+3. The standing rules still apply:
    - No Claude signature and no closing keywords unless intended.
    - Ask with AskUserQuestion.
    - Execution is subagent-driven.
