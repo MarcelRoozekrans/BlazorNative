@@ -2903,10 +2903,11 @@ jobs:
       # ── Consumer smoke (Phase 4.5 Gate 2, extended by Phase 8.1 Gate 1 —
       #    M4 DoD #7 / M8 DoD #2) ────────────────────────────────────────────
       # Packs the EIGHT packages at the one version parsed from
-      # src/Directory.Build.props (8 nupkg + 7 snupkg, zero warnings,
+      # src/Directory.Build.props (8 nupkg, no snupkg, zero warnings,
       # filenames == props version), INTERROGATES every nupkg (type purity
       # off the PE, nuspec truth incl. the SourceLink repository@commit and
-      # the dependency allow-list, inventory shape — this step is where
+      # the dependency allow-list, inventory shape, the embedded PDB with
+      # its Source Link map in every own dll — this step is where
       # nupkg-level purity lives, because the xunit suite above runs before
       # any nupkg exists), restores samples/ConsumerSmoke from the local
       # feed only (+nuget.org transitives) into a clean temp cache with

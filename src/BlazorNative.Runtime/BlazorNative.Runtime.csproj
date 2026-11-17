@@ -154,8 +154,8 @@
 
   <!-- The ProjectReference above builds RouteGen before Pack, so its output dir
        exists here. Glob the tool + its Roslyn deps (dll, .deps.json,
-       .runtimeconfig.json) into tools/; skip the .pdb (symbols do not belong in a
-       build-time tool a consumer only ever execs). NON-EMPTY GUARD: an empty tool
+       .runtimeconfig.json) into tools/; skip any loose .pdb (RouteGen's PDB is
+       embedded in its dll, like every assembly this repo ships). NON-EMPTY GUARD: an empty tool
        dir means the ProjectReference did not build — fail the pack loudly rather
        than ship a Runtime package that silently cannot generate routes. -->
   <Target Name="_AddRouteGenToolToPackage">

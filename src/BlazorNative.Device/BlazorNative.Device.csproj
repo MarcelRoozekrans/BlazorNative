@@ -28,7 +28,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Phase 9.0: shared pack metadata (Version, license, README, icon, snupkg)
+    <!-- Phase 9.0: shared pack metadata (Version, license, README, icon, symbols)
          lives in src/Directory.Build.props — INHERITED, no new version mirror. Only
          the per-package voice stays here. This is the 7th shipped package (M9 DoD #1);
          it is the natural home for all four M9 device-API groups (geolocation now;

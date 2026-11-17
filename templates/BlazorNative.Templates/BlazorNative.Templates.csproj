@@ -15,14 +15,14 @@
            at all. An eighth csproj under src/ reds that pin and un-licenses
            the props.
          · The six's pins are ASSEMBLY-shaped: type purity off the PE, a
-           sentinel type per package, snupkg pairing, ResolveAssemblyPath.
+           sentinel type per package, embedded-PDB check, ResolveAssemblyPath.
            A content-only pack satisfies NONE of them, so joining would mean
            special-casing it in five pinned places — and a special case is a
            hole in a pin (the 8.1 four-copies lesson).
 
        THE FEED IS SEPARATE — artifacts/templates, never artifacts/packages.
-       consumer-smoke.ps1 asserts an EXACT `7 nupkg + 6 snupkg`; an eighth
-       nupkg in that feed would turn an exact count into "7 or 8, depending",
+       consumer-smoke.ps1 asserts an EXACT `8 nupkg + 0 snupkg`; a ninth
+       nupkg in that feed would turn an exact count into "8 or 9, depending",
        which is a count that no longer means anything.
 
        IT PUBLISHES SINCE PHASE 0.4.0 (Gate B) — but from its OWN feed, and
