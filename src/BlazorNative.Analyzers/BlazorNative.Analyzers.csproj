@@ -32,14 +32,6 @@
          lib/). Suppressing the empty group is the metadata fix, not a warning
          suppression; the library packages keep their dependency groups. -->
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-    <!-- Phase 8.1 (design decision 3): the shared props' snupkg story does
-         not fit a package with no lib/ — an empty symbols package is NU5017
-         territory. Override: the pdb travels INSIDE the analyzer dll (the
-         established analyzer-package pattern; SourceLink still applies to
-         the embedded pdb). The feed therefore carries 6 nupkgs + 5 snupkgs,
-         asserted by consumer-smoke.ps1. -->
-    <IncludeSymbols>false</IncludeSymbols>
-    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

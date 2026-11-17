@@ -12,16 +12,11 @@
       1.  pack        — the eight packages → artifacts/packages (fresh), at the
                         ONE version parsed from src/Directory.Build.props
                         (the single version truth, 8.1 design decision 4).
-                        Zero pack warnings; exactly 8 .nupkg + 7 .snupkg
-                        (Analyzers embeds its pdb — no lib/, no snupkg); every
-                        nupkg FILENAME carries the props version (the
+                        Zero pack warnings; exactly 8 .nupkg and NO .snupkg
+                        (every PDB is embedded in its dll); every nupkg
+                        FILENAME carries the props version (the
                         version-drift tooth — a csproj <Version> override
-                        reds here AND in PackageVersionPinTests); and symbols
-                        are PAIRED, not merely counted (Phase 8.2 decision 4):
-                        each of the seven library nupkgs has its .snupkg
-                        SIBLING and Analyzers has none — the counts alone are
-                        blind to WHICH package owns the symbols, and the push
-                        matches them by ADJACENCY.
+                        reds here AND in PackageVersionPinTests).
       2.  interrogate — nupkg-level purity (8.1 design decision 6; the xunit
                         purity pin runs BEFORE pack in CI, so only this script
                         ever owns the packed artifacts). Per nupkg, unzipped:
@@ -35,7 +30,10 @@
                         entry + file; repository@commit = the SourceLink
                         assertion), inventory shape (six libs: exactly one
                         dll + its XML doc under lib/net10.0; Analyzers: NO
-                        lib/, dll under analyzers/dotnet/cs).
+                        lib/, dll under analyzers/dotnet/cs), and on CI the
+                        EMBEDDED PDB of every dll this repo builds, checked
+                        by scripts/check-embedded-pdb: Source Link map to
+                        this repo, deterministic, /_/ paths.
       3.  restore     — samples/ConsumerSmoke into a TEMP package cache with
                         --no-cache and -p:BlazorNativeVersion=<props version>
                         (the csproj carries NO fallback — this script is the
@@ -169,8 +167,8 @@ if ($nupkgs.Count -ne 8) {
     Write-Fail "expected 8 .nupkg in artifacts/packages, found $($nupkgs.Count)"
     exit 1
 }
-if ($snupkgs.Count -ne 7) {
-    Write-Fail "expected 7 .snupkg (Analyzers embeds its pdb — no snupkg), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
+if ($snupkgs.Count -ne 0) {
+    Write-Fail "expected NO .snupkg (every PDB is embedded in its dll, see the root Directory.Build.props), found $($snupkgs.Count): $($snupkgs.Name -join ', ')"
     exit 1
 }
 # The version-drift tooth: every nupkg filename carries exactly the props
@@ -184,52 +182,11 @@ foreach ($proj in $packages) {
     }
 }
 
-# ── THE PAIRING TOOTH (Phase 8.2, design decision 4) ─────────────────────────
-# PAIRING, NOT COUNTING — and the difference is not academic. The two counts
-# above (8 nupkg, 7 snupkg) are blind to WHICH package the symbols belong to:
-# a feed holding Core's nupkg with no sibling, while Analyzers wrongly carries
-# one, is 7 and 6 and passes both counts GREEN while BlazorNative.Core ships
-# with no symbols at all. Proven by mutation, quoted in the commit.
-#
-# It matters to the RELEASE, which is why 8.2 found it: `dotnet nuget push`
-# carries symbols BY ADJACENCY (an adjacent .snupkg rides its .nupkg — the
-# CLI's own evidence is that `-n|--no-symbols` is an opt-OUT). The push
-# enumerates *.nupkg and never names a symbol file, so "every library package
-# has its snupkg sibling" is the assumption the whole symbol story rests on.
-# Its home is HERE rather than in the release lane: it is a PACK-TRUTH claim, it
-# belongs beside the counts it strengthens, and here it rides the REQUIRED lane
-# on every PR instead of only on release-machinery PRs.
-#
-# ONE HONEST NOTE ON ITS REACH, so nobody over-claims it (8.2 Gate 1): with the
-# seven shaped as they are TODAY, the csproj route into that state is blocked —
-# flipping Analyzers to IncludeSymbols=true trips NU5017 ("Cannot create a
-# package that has no dependencies nor content") and pack FAILS before any
-# count is read, exactly as the Analyzers csproj comment predicts. So today the
-# counts and the shapes conspire to make broken pairing hard to reach, and this
-# tooth guards the pairing directly: BlazorNative.Device IS the seventh library
-# package — it joined in Phase 9.0, the counts moved to 7/6 with it, and a Core
-# whose symbols quietly stopped packing is invisible to those counts and visible
-# only here.
-$symbolOffenders = @()
-foreach ($proj in $packages) {
-    $hasSnupkg = Test-Path (Join-Path $feedDir "BlazorNative.$proj.$version.snupkg")
-    # Analyzers is the ONE deliberate exception: no lib/, so a snupkg would be
-    # empty (NU5017 territory) — its pdb travels embedded in the analyzer dll.
-    if ($proj -eq "Analyzers") {
-        if ($hasSnupkg) {
-            $symbolOffenders += "BlazorNative.Analyzers has a .snupkg — it must NOT (no lib/ means an empty symbols package; its pdb is embedded via DebugType=embedded)"
-        }
-    }
-    elseif (-not $hasSnupkg) {
-        $symbolOffenders += "BlazorNative.$proj has NO .snupkg sibling — it would publish to nuget.org with no symbols at all"
-    }
-}
-if ($symbolOffenders.Count -ne 0) {
-    $symbolOffenders | ForEach-Object { Write-Fail "     $_" }
-    Write-Fail "SYMBOL PAIRING broken. The 6/5 counts above are blind to this: symbols are matched to packages by ADJACENCY at push time, so a library package without its .snupkg sibling ships unsymbolicated and nothing else in this repo would notice. Feed: $(($nupkgs.Name + $snupkgs.Name | Sort-Object) -join ', ')"
-    exit 1
-}
-Write-OK "eight packages packed at $version, zero warnings, filenames agree with the props; symbols PAIRED (6 libs each with its .snupkg sibling; Analyzers embedded, no snupkg)"
+# Symbols are no longer a separate package, so there is nothing to pair: the
+# PDB travels INSIDE each dll. Whether it is really there, and really maps to
+# this repo, is a property of the dlls, so step 1.5 checks it on the unzipped
+# packages through scripts/check-embedded-pdb.
+Write-OK "eight packages packed at $version, zero warnings, filenames agree with the props; no .snupkg (PDBs embedded)"
 
 # ── 1.5 Interrogate the nupkgs (8.1 decision 6 — packaging-layer purity) ─────
 Write-Step "interrogating the eight nupkgs (types off the PE, nuspec truth, inventory shape) ..."
@@ -256,6 +213,10 @@ function Get-TypeNames([string]$dllPath) {
 }
 
 $interrogateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "blazornative-smoke-unzip-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+# Every dll this repo builds, across the eight packages, for the embedded-PDB
+# check after the loop. Third-party dlls riding in Runtime's tools/ (Roslyn)
+# are not ours and are not checked.
+$ownDlls = [System.Collections.Generic.List[string]]::new()
 try {
     foreach ($proj in $packages) {
         $id = "BlazorNative.$proj"
@@ -376,6 +337,7 @@ try {
         # Every shipped assembly is scanned, not just the net10.0 floor: a type that
         # only exists in the net11.0 build would otherwise ship unchecked.
         $scanDlls = if ($proj -eq "Analyzers") { @($dll) } else { @("net10.0", "net11.0") | ForEach-Object { Join-Path $dest "lib\$_\$id.dll" } }
+        $scanDlls | ForEach-Object { $ownDlls.Add($_) }
         foreach ($dll in $scanDlls) {
             $typeNames = @(Get-TypeNames $dll)
 
@@ -422,12 +384,44 @@ try {
                 Write-Fail "$id`: the deep-link route codegen is NOT packed under tools/ (missing: $($missingTool -join ', ')). Phase 11.0 Gate B packs BlazorNative.RouteGen + its Roslyn deps into this package so a generated app can run GenerateBlazorNativeRoutes; without them a generated (dotnet new) app cannot derive its deep-link map, and nothing else here would catch it. See BlazorNative.Runtime.csproj's _AddRouteGenToolToPackage target."
                 exit 1
             }
+            $ownDlls.Add((Join-Path $dest "tools\BlazorNative.RouteGen.dll"))
             Write-Host "     $id tools/ ✓ — BlazorNative.RouteGen.dll + Roslyn deps (Gate B: a generated app gets the route codegen from the package)" -ForegroundColor DarkGray
         }
 
         Write-Host "     $id $version — nuspec ✓ (MIT, readme, repository@commit $($repository.GetAttribute('commit').Substring(0,8))…), inventory ✓, $($typeNames.Count) types clean (sentinel $sentinel ✓)" -ForegroundColor DarkGray
     }
     Write-OK "nupkg interrogation clean: purity, nuspec truth, and inventory shape on all eight"
+
+    # ── THE EMBEDDED PDB (replaces the 8.2 snupkg pairing tooth) ─────────────
+    # A consumer pressing Go to Definition on a package type must land in the
+    # original source with no symbol server setting. That needs, in every dll
+    # this repo builds: an embedded portable PDB, a Source Link map to this
+    # repo, a deterministic build, and /_/ document paths that resolve through
+    # the map. ContinuousIntegrationBuild, which writes the /_/ paths, is on in
+    # CI only (the root Directory.Build.props), so a local run checks nothing
+    # here and says so; build-test and the release's validate job both run on
+    # GitHub Actions and check every dll, so the packages that get pushed are
+    # the packages that were checked.
+    if ($env:GITHUB_ACTIONS -eq 'true') {
+        if ($ownDlls.Count -ne 16) {
+            Write-Fail "embedded-PDB check: expected 16 own dlls (7 libraries x 2 TFMs, Analyzers, RouteGen), collected $($ownDlls.Count) — the list feeding the check lost its subject"
+            exit 1
+        }
+        Write-Step "checking the embedded PDB of $($ownDlls.Count) dlls (scripts/check-embedded-pdb) ..."
+        $checker = Join-Path $repoRoot "scripts\check-embedded-pdb\check-embedded-pdb.cs"
+        # Source Link maps to the commit the build was made from, HEAD of this checkout; requiring it in the prefix
+        # rejects a map to main or to an older commit.
+        $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
+        & dotnet run $checker -- "https://raw.githubusercontent.com/MarcelRoozekrans/BlazorNative/$commit/" @ownDlls
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "embedded-PDB check failed (exit $LASTEXITCODE): a packed dll has no embedded PDB, no Source Link map to this repo, a non-deterministic build or non-/_/ paths — Go to Definition on it would show decompiled code"
+            exit 1
+        }
+        Write-OK "embedded PDB: all $($ownDlls.Count) own dlls carry a Source Link map to this repo, deterministic, /_/ paths"
+    }
+    else {
+        Write-Host "     embedded-PDB check skipped: not on GitHub Actions, so ContinuousIntegrationBuild is off and paths are local; CI runs it" -ForegroundColor Yellow
+    }
 }
 finally {
     if (Test-Path $interrogateRoot) { Remove-Item -Recurse -Force $interrogateRoot -ErrorAction SilentlyContinue }

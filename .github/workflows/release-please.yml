@@ -369,10 +369,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "template-smoke.ps1 -PackOnly failed (exit $LASTEXITCODE) — nothing was published." }
 
       # The SECOND artifact, its OWN feed. artifacts/templates carries exactly
-      # ONE nupkg (the content-only template pack, no snupkg) and never touches
-      # artifacts/packages, so the 7+6 count consumer-smoke asserts is untouched.
+      # ONE nupkg (the content-only template pack) and never touches
+      # artifacts/packages, so the 8-nupkg count consumer-smoke asserts is untouched.
       # The push job downloads THIS and pushes it in a dedicated step.
-      - name: Upload the template feed (artifacts/templates — pushed on its own; the 7+6 packages feed is untouched)
+      - name: Upload the template feed (artifacts/templates — pushed on its own; the packages feed is untouched)
         uses: actions/upload-artifact@v7
         with:
           name: templates
@@ -486,11 +486,10 @@ jobs:
       # pushes is theatre: nuget.org accepts a package whose dependencies are not
       # yet published, and its validation and indexing are ASYNCHRONOUS (minutes).
       #
-      # SYMBOLS RIDE BY ADJACENCY. The .snupkg files sit beside their .nupkg and
-      # `dotnet nuget push` carries an adjacent symbol package automatically
-      # (`-n|--no-symbols` is an opt-OUT). The glob is *.nupkg, which does NOT
-      # match *.snupkg — no double push. That symbols actually LAND on the symbol
-      # server is UNPROVEN until the first real push — recorded, not claimed.
+      # SYMBOLS RIDE INSIDE THE DLLS. Every PDB is embedded in its dll with a
+      # Source Link map (the root Directory.Build.props), and consumer-smoke.ps1
+      # in validate checks that on the packed bytes, so there is no .snupkg to
+      # push and nothing depends on the symbol server.
       #
       # --skip-duplicate owns RECOVERY: three pushed, three failed -> re-run the
       # job; the three already up must not 409 the re-run. The preflight above
@@ -505,9 +504,8 @@ jobs:
           if ($nupkgs.Count -eq 0) {
             throw "ZERO .nupkg found in $feed — the artifact hand-off from validate is broken. Pushing nothing and going green is the failure this check exists to prevent."
           }
-          Write-Host "pushing $($nupkgs.Count) packages (symbols ride adjacent):"
+          Write-Host "pushing $($nupkgs.Count) packages (PDBs embedded):"
           $nupkgs | ForEach-Object { Write-Host "  $($_.Name)" }
-          Get-ChildItem $feed -Filter *.snupkg -File | ForEach-Object { Write-Host "  (symbols) $($_.Name)" }
 
           dotnet nuget push $nupkgs.FullName `
             --api-key $env:NUGET_API_KEY `
@@ -522,8 +520,7 @@ jobs:
       # packages push above (ReleaseWorkflowPinTests pins that the login lives
       # in this workflow only and that no stored secret is referenced). The glob is
       # artifacts/templates/*.nupkg — a DIFFERENT directory, ONE file — so
-      # artifacts/packages is never touched and its 7+6 count is untouched. The
-      # content-only pack carries no .snupkg, so nothing rides adjacent here.
+      # artifacts/packages is never touched and its exact count is untouched.
       # --skip-duplicate owns recovery: nuget.org is append-only, so a re-run of
       # a partially-failed push is a no-op on what already landed, and the
       # preflight (which now covers this id) owns "you forgot to bump".
