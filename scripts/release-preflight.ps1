@@ -42,7 +42,7 @@
 
       -Preflight   The nuget.org state check — the ONE thing a real push can
                    reject that no local step can know (8.2 decision 4). Two
-                   POSITIVE-CONTROL ARMS run BEFORE the six are consulted; see
+                   POSITIVE-CONTROL ARMS run BEFORE the shipped set is consulted; see
                    the vacuity note on Test-NugetState below. It is the reason
                    `--skip-duplicate` is safe in release.yml: this reds on a
                    forgotten props bump BEFORE the push job starts.
@@ -97,10 +97,10 @@
 
     WHY THIS SCRIPT NAMES NO PACKAGES (8.1 normative rule 2, the I-2 finding).
     The shipped set already has four copies and every one of them is pinned. A
-    hardcoded list of six IDs here would be a FIFTH — so there isn't one: the
+    hardcoded list of the IDs here would be a FIFTH — so there isn't one: the
     IDs are ENUMERATED from src/*/*.csproj, the same derivation
     PackageVersionPinTests and PackagePurityTests' third tooth already use
-    (PackageId defaults to the assembly name for all six — src/Directory.Build.props
+    (PackageId defaults to the assembly name for every one — src/Directory.Build.props
     carries no explicit PackageId lines, by construction). Enumerating removes
     the copy rather than pinning it: there is nothing left to drift. Non-vacuity
     is asserted — an enumeration that finds nothing is RED, never a cheerful
@@ -436,18 +436,20 @@ function Get-ReleaseVerdict {
 #  THE NUGET.ORG SCANNER
 #
 #  ⚠ THE VACUITY TRAP, closed here rather than after a reviewer finds it (8.2
-#  design decision 4; 8.1's headline recurring). All six IDs return 404 today —
-#  so the preflight is an ABSENCE assertion over a network scanner whose every
-#  current answer is "absent", and a typo'd URL, a wrong endpoint, a swallowed
-#  exception or an offline runner ALL produce exactly the same green as a
-#  genuinely-free ID.
+#  design decision 4; 8.1's headline recurring). The preflight is an ABSENCE
+#  assertion: "this version is free for every id". When it was written, no id
+#  was registered and every answer was 404; today every shipped id is registered
+#  (200) and the absence is per version, but before each release every answer
+#  is still "free". So a typo'd URL, a wrong endpoint, a swallowed exception or
+#  an offline runner ALL produce exactly the same green as a genuinely-free
+#  version.
 #
 #  Two things follow, and both are load-bearing:
 #
 #   1. NOTHING IS SWALLOWED. 200 and 404 are the only answers this function
 #      accepts. Any other status, and any transport exception, is RED — an
-#      offline runner must never be indistinguishable from six free IDs.
-#   2. THE ARMS RUN FIRST (Invoke-ControlArms). The six are never reported
+#      offline runner must never be indistinguishable from a free version.
+#   2. THE ARMS RUN FIRST (Invoke-ControlArms). The shipped set is never reported
 #      clean by a scanner that has not proven it can SEE (arm 1) and can
 #      DISTINGUISH (arm 2).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -501,20 +503,21 @@ function Test-VersionPublished {
 
 <#
 .SYNOPSIS
-    THE TWO-ARM POSITIVE CONTROL. Runs BEFORE the six, and a failing arm is RED.
+    THE TWO-ARM POSITIVE CONTROL. Runs BEFORE the shipped set is queried, and a
+    failing arm is RED.
 .DESCRIPTION
     Arm 1 — THE SCANNER CAN SEE: a known-published control returns 200 with a
     non-empty versions[]. A typo'd URL or a wrong endpoint fails HERE, instead
-    of reporting a cheerful "six clear".
+    of reporting a cheerful "all clear".
 
     Arm 2 — THE SCANNER CAN DISTINGUISH: that same control is classified
     PUBLISHED at a known-present version and FREE at a known-absent one. A
     scanner that answers "free" to everything fails here — and "free to
-    everything" is precisely what a broken scanner looks like when all six real
-    subjects are 404 anyway.
+    everything" is precisely what a broken scanner looks like when every real
+    subject's release version is free anyway, as it is before every release.
 #>
 function Invoke-ControlArms {
-    Write-Step "positive control arms (the six are all 404 today — an absence scanner must prove it can see BEFORE it reports absence) ..."
+    Write-Step "positive control arms (before a release the version is free for every id — an absence scanner must prove it can see BEFORE it reports absence) ..."
 
     # ── Arm 1: can it see? ───────────────────────────────────────────────────
     $control = Test-NugetState -Id $ControlId
