@@ -26,6 +26,10 @@ cd android
 ./gradlew installDebug        # onto a running emulator/device
 ```
 
+On Linux and macOS, `gradlew` is currently generated without its executable bit, so
+`./gradlew` stops with *Permission denied*. Run `chmod +x gradlew` once in the `android` folder,
+or call it as `bash ./gradlew installDebug`.
+
 `gradlew` fails fast and names the exact publish command if a `.so` is missing — it will
 not build you an APK with stale native assets.
 
