@@ -4089,9 +4089,10 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 18.13: Re-audit and close [status: active]
+#### Phase 18.13: Re-audit and close [status: complete]
 **Goal:** Re-audit M18 against its DoD on HEAD after 18.12, as 17.12 did after 17.11, and close it if it passes. **No tag**, per `CONVENTIONS.md`.
 **Plan:** `docs/superpowers/plans/2026-11-16-phase-18.13-reaudit.md`
+**Completed:** 2026-11-17
 **Record:** `docs/plans/2026-11-16-phase-18.13-record.md`
 **Re-audit:** `docs/plans/2026-11-16-milestone-18-reaudit.md`
 **Outcome (2026-11-16):** PASS WITH FINDINGS, 11 MET and 2 MET NARROWLY. Item 3 is graded against the owner's 2026-11-16 amendment; 27 sites staled by the 0.22.1 release were re-run.
