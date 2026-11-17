@@ -11,7 +11,7 @@
 ## 18.13 outcome
 
 - **Verdict: PASS WITH FINDINGS.** 11 items are MET, 2 are MET NARROWLY, and none is NOT MET. Report: `docs/plans/2026-11-16-milestone-18-reaudit.md`. Record: `docs/plans/2026-11-16-phase-18.13-record.md`.
-- **Item 3 is MET NARROWLY** under the owner's amendment of 2026-11-16, which is written into MILESTONE.md item 3. The narrowings:
+- **Item 3 is MET NARROWLY** under the owner's amendment of 2026-11-16 and the owner's clarification of 2026-11-17, both written into MILESTONE.md item 3. The clarification says the amendment's capture is 18.12's capture as built, which is not required to be shown to catch the unknown cause; CodeRabbit raised this on #724. The narrowings:
   - #407's cause is still unproven after 18.12, and #718 stays open in case it recurs;
   - #453 holds only through #580, which was accepted, not fixed;
   - the evidence is one clean sample per lane;

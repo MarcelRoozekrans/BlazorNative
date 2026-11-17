@@ -15,7 +15,7 @@
 - **Item 3 is graded against the text as amended by the owner on 2026-11-16,** in `docs/planning/MILESTONE.md`. Its best possible grade is MET NARROWLY, because the title's "fixed at their cause" still does not hold literally for #407.
 
 **Verdict:** **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, 0 NOT MET. See [the verdict](#verdict).
-- Item 3, the flakes, is MET NARROWLY under the amendment: #407's cause stays unproven after 18.12 and #718 is open; #453 holds through #580, accepted and not fixed; one clean sample per lane; and the capture's sampler reads only every 1 to 3 s and has no sampler-free control.
+- Item 3, the flakes, is MET NARROWLY under the amendment and the owner's 2026-11-17 clarification of its capture condition: #407's cause stays unproven after 18.12 and #718 is open; #453 holds through #580, accepted and not fixed; one clean sample per lane; and the capture's sampler reads only every 1 to 3 s and has no sampler-free control.
 - Item 13, new pins, stays MET NARROWLY on the owner's 2026-11-15 decision: three register rows were written in 18.11.
 - **Findings:** ten register cells cited reds that the 0.22.1 release made stale, fixed in this phase; #580's GitHub close reason says `COMPLETED` for a residual that was accepted, for the owner; and two of 18.11's command quotes were wrong, one of them a diff of a path that does not exist, corrected here.
 
@@ -153,6 +153,7 @@ grep -oE 'Executed 307 tests, with [0-9]+ failures \([0-9]+ unexpected\)' 439631
 > **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. …
 > - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
 >   - *Owner decision 2026-11-16:* a flake whose cause stays unproven after a phase spent hunting it (#407: 18.12, with #718 left open for a recurrence) meets this bullet with a fix that makes the failure name itself, plus a lane capture that would record the cause if it recurs. A residual the owner accepted after measuring it (#580, 18.12) counts as decided.
+>   - *Owner clarification 2026-11-17:* "a lane capture that would record the cause if it recurs" means 18.12's capture as built, the one chosen with "accept, add capture". It samples package, overlay and broadcast state every 1 to 3 s and keeps the `events` buffer, so a recurrence leaves its surrounding conditions on record. It is not required to be shown to catch the cause, which is unknown. A change shorter than one sampling gap can go unrecorded; that limit narrows the grade and does not fail it.
 > - No fix raises a bound to hide a slow path.
 > - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
 
@@ -226,7 +227,7 @@ Every run is attempt 1. The logs are 8382, 1379 and 7983 lines long, so none of 
   - **Under the amendment's first sentence, for #407.** It needs three things, and each holds:
     - a phase spent hunting the cause: 18.12, the 18.12 record §1 to §3;
     - a fix that makes the failure name itself: 18.1's `pollUntilOnSameActivity`, pinned by `PollAndroidTest` and `BnCameraAndroidTest`, sites 55 to 60, all fresh in [the record](2026-11-16-phase-18.13-record.md) §2;
-    - a lane capture for a recurrence: 18.12's capture, which the owner chose with "accept, add capture", present on the graded run, 3a. It samples package, overlay and broadcast state every 1 to 3 s and keeps the `events` buffer, so a recurrence leaves the conditions around it on record. It is not shown to record the cause: the cause is unknown, and a change that starts and ends between two reads leaves no trace in the sampler, narrowing 4.
+    - a lane capture that would record the cause if it recurs, read through the owner's 2026-11-17 clarification as 18.12's capture as built: present on the graded run, 3a. The sampler reads package, overlay and broadcast state every 1 to 3 s, and the `events` buffer is kept, so a recurrence leaves its surrounding conditions on record. Because #407's cause is unknown, this capture is not shown to catch the cause itself, and a change that starts and ends between two reads leaves no trace. The clarification accepts that limit as a narrowing, narrowing 4, so this condition holds only through the clarification.
     The cause is not found. The title's "fixed at their cause" does not hold for #407, which is why MET is out of reach.
 - **"No fix raises a bound to hide a slow path."** Holds literally, 3b.
 - **"The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane."** Holds literally, 3c.
@@ -235,7 +236,7 @@ Every run is attempt 1. The logs are 8382, 1379 and 7983 lines long, so none of 
 1. **#718 is open.** #407's trigger is unproven; the lane names the failure and records the conditions, but nothing removes the relaunch.
 2. **#580 is accepted, not fixed.** #453 holds only below about 40 s of cold start. GitHub shows #580 as `CLOSED COMPLETED`, which reads as fixed; that is finding F2.
 3. **One sample per lane.** The five flakes were intermittent, at rates as low as about 1 in 10 runs. One clean run per lane shows that this head did not hit them, not that they cannot recur.
-4. **The capture has two timing limits.** First, the sampler reads every 1 to 3 s, gaps of 1.1 to 3.3 s measured in 18.12, so a package, overlay or broadcast change that starts and ends between two reads is not recorded. Since #407's cause is unproven, the capture may miss it on a recurrence; it records the conditions around a relaunch, not necessarily its cause. Second, it runs `dumpsys` reads through the install window, which could move the install-processing timing that #407 depended on. The capture has no sampler-free control, so whether it makes #407 rarer or more frequent is not known. Both are per the 18.12 record §4, and both are part of why this item is MET NARROWLY.
+4. **The capture has two timing limits.** First, the sampler reads every 1 to 3 s, gaps of 1.1 to 3.3 s measured in 18.12, so a package, overlay or broadcast change that starts and ends between two reads is not recorded. Since #407's cause is unproven, the capture may miss it on a recurrence; it records the conditions around a relaunch, not necessarily its cause. Second, it runs `dumpsys` reads through the install window, which could move the install-processing timing that #407 depended on. The capture has no sampler-free control, so whether it makes #407 rarer or more frequent is not known. Both are per the 18.12 record §4, and both are part of why this item is MET NARROWLY. The owner's 2026-11-17 clarification accepts the first limit as a narrowing rather than a failure of the capture condition.
 
 **Why not MET.** The amendment changes what the first bullet accepts, not the item's title. The design and the plan cap item 3 at MET NARROWLY for that reason, and this report keeps 18.11's NOT MET as history in the scorecard.
 
@@ -571,7 +572,7 @@ No GitHub issue is filed: F1, F3 and F4 are fixed here, and F2 is one state chan
 
 - **Eleven items are MET:** 1, 2, 4, 5, 6, 7, 8, 9, 10, 11 and 12. Item 11 is MET after F1's fix in this phase.
 - **Two are MET NARROWLY:**
-  - **Item 3,** graded against the owner's 2026-11-16 amendment. #551, #564 and #444 hold literally. #453 holds through #580, accepted and not fixed. #407 holds under the amendment: a phase spent hunting, a named failure, and a capture that ran on the graded lane, with #718 open. The narrowings are #718 open, #580 accepted, one sample per lane, and the capture's sampler, which reads only every 1 to 3 s and has no sampler-free control. 18.11 graded it NOT MET, before the amendment.
+  - **Item 3,** graded against the owner's 2026-11-16 amendment and its 2026-11-17 clarification of the capture condition. #551, #564 and #444 hold literally. #453 holds through #580, accepted and not fixed. #407 holds under the amendment: a phase spent hunting, a named failure, and a capture that ran on the graded lane, with #718 open. The narrowings are #718 open, #580 accepted, one sample per lane, and the capture's sampler, which reads only every 1 to 3 s and has no sampler-free control. 18.11 graded it NOT MET, before the amendment.
   - **Item 13,** the three register rows written in 18.11, read on intent by the owner's 2026-11-15 decision.
 - **The findings:** F1, fixed; F2, for the owner; F3 and F4, corrected here.
 
