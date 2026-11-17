@@ -44,8 +44,8 @@
 
       1. pack      — templates/BlazorNative.Templates → artifacts/templates. Its
                      OWN feed, never artifacts/packages: consumer-smoke.ps1
-                     asserts an EXACT 7 nupkg + 6 snupkg there, and an eighth
-                     would turn an exact count into "7 or 8, depending".
+                     asserts an EXACT 8 nupkg + 0 snupkg there, and a ninth
+                     would turn an exact count into "8 or 9, depending".
       2. install   — `dotnet new install <nupkg>`. The REAL shipping path (the
                      pack, not the content directory) — uninstalled in the
                      finally, so nothing is left machine-wide.
@@ -250,8 +250,8 @@ try {
     # deeper end-to-end proof (install -> create -> restore -> publish -> the
     # tripwire trio -> assembleDebug, steps 2-6 below) is the required build-test
     # lane's job, unchanged. What it checks off the PACKED bytes: exactly ONE
-    # nupkg, NO snupkg (a content-only pack has none — the pairing tooth's mirror
-    # image), and the packed SHAPE (id/version, Template packageType, content/
+    # nupkg, NO snupkg (no package in this repo packs one: PDBs are embedded
+    # in the dlls), and the packed SHAPE (id/version, Template packageType, content/
     # material, root README) so a pack that silently lost its template-ness or
     # its content reds HERE rather than on a stranger's `dotnet new`.
     if ($PackOnly) {

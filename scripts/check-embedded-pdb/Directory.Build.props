@@ -1,0 +1,3 @@
+<!-- Empty on purpose: stops the repo's Directory.Build.props chain from reaching
+     check-embedded-pdb.cs, a one-file app that needs none of the package settings. -->
+<Project />

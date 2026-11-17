@@ -104,8 +104,8 @@
        nupkg whose filename disagrees).
 
        What stays per-csproj: Description + PackageTags (each package
-       speaks for itself), the Analyzers' special shape (no lib/, embedded
-       pdb instead of snupkg), and every non-packaging property.
+       speaks for itself), the Analyzers' special shape (no lib/), and every
+       non-packaging property.
        ───────────────────────────────────────────────────────────────────── -->
 
   <PropertyGroup>
@@ -138,25 +138,20 @@
          long. -->
     <PackageProjectUrl>https://marcelroozekrans.github.io/BlazorNative/</PackageProjectUrl>
 
-    <!-- Symbols + SourceLink + determinism (every claim is a CI assertion,
-         not a property setting — the smoke's interrogate step checks the
-         packed nuspec for repository@commit, the feed for 5 snupkgs):
+    <!-- Symbols + SourceLink + determinism:
+         - the PDB is EMBEDDED in each dll (DebugType=embedded in the root
+           Directory.Build.props), so a consumer's Go to Definition finds it
+           without any symbol server setting, and no .snupkg is packed;
+         - the .NET SDK includes Source Link for git checkouts, which writes
+           the map into that embedded PDB and the commit into the nuspec;
          - PublishRepositoryUrl feeds the nuspec <repository> element;
-         - the .NET SDK includes Microsoft.SourceLink.GitHub implicitly for
-           git checkouts (verified at Gate 1 via the nuspec commit
-           attribute; the named fallback is an explicit PackageReference
-           here, applied only on evidence);
          - EmbedUntrackedSources embeds generator output in the pdb;
-         - ContinuousIntegrationBuild normalizes paths on CI only (local
-           builds stay debuggable); determinism itself is the SDK default.
-         The Analyzers csproj overrides IncludeSymbols to false (a snupkg
-         for a no-lib/ package is empty — NU5017 territory) and embeds its
-         pdb instead. -->
+         - ContinuousIntegrationBuild normalizes paths to /_/ on CI only, set
+           in the root Directory.Build.props for src/ and RouteGen.
+         consumer-smoke.ps1 asserts all of it on the packed dlls, through
+         scripts/check-embedded-pdb, and the nuspec for repository@commit. -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
     <!-- Each project supplies its own README.md (decision 7); the Exists
          guard below makes a MISSING readme fail pack loudly as NU5039 (the
