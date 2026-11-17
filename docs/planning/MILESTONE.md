@@ -1,12 +1,14 @@
 # Milestone 18: Acknowledged Bugs
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-10-24
+**Completed:** 2026-11-17 · verdict **PASS WITH FINDINGS**, [re-audit](../plans/2026-11-16-milestone-18-reaudit.md), PR #724. No tag, per `CONVENTIONS.md`.
 
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md)
 **Predecessor:** Milestone 17 — Close the Dispatch Lane's Debt (complete 2026-10-24, verdict **PASS WITH
 FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md)).
-**Closes:** #551, #564, #453, #444, #407, #718, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+**Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+**Carried open:** #718 stays open by design, for a recurrence of #407's relaunch, per the owner's decision of 2026-11-16 in item 3.
 
 ## Goal
 
@@ -72,7 +74,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 10. Phase 18.10 — iOS show completes when posted (#444) [complete] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
 11. Phase 18.11 — audit and close (#568) [complete] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
 12. Phase 18.12 — #407's relaunch trigger at its cause (#718), and the #580 decision [complete]
-13. Phase 18.13 — re-audit and close [active]
+13. Phase 18.13 — re-audit and close [complete]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
 
