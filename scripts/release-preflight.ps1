@@ -438,9 +438,9 @@ function Get-ReleaseVerdict {
 #  ⚠ THE VACUITY TRAP, closed here rather than after a reviewer finds it (8.2
 #  design decision 4; 8.1's headline recurring). The preflight is an ABSENCE
 #  assertion: "this version is free for every id". When it was written, no id
-#  was registered and every answer was 404; today every shipped id is registered
-#  (200) and the absence is per version, but before each release every answer
-#  is still "free". So a typo'd URL, a wrong endpoint, a swallowed exception or
+#  was registered and every answer was 404; once an id is registered (200) the
+#  absence is per version, but before each release every answer is still
+#  "free". So a typo'd URL, a wrong endpoint, a swallowed exception or
 #  an offline runner ALL produce exactly the same green as a genuinely-free
 #  version.
 #

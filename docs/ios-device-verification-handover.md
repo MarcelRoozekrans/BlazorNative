@@ -1,9 +1,10 @@
 # Handover — iOS real-device verification (P3)
 
 **Mission:** get BlazorNative's iOS shell running, signed, on a **real iPhone**, and
-verify it there against the seven acceptance criteria below. This is the **last blocker
-for 1.0** — every other 1.0 criterion is met; the project has deliberately refused to
-ship "1.0" with iOS proven only in the simulator.
+verify it there against the seven acceptance criteria below. This is **1.0 criterion P3, a
+blocker** — the [1.0 criteria](plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) list
+what else is still open; the project has deliberately refused to ship "1.0" with iOS proven
+only in the simulator.
 
 > **Read this first, then read [`website/docs/shells/ios.md`](../website/docs/shells/ios.md)
 > and [`src/BlazorNative.Apple/project.yml`](../src/BlazorNative.Apple/project.yml).**
@@ -343,7 +344,8 @@ P3 can be called **met** when:
 4. **Q1** has a paired observation (Release quiet at `Warn`, trace at `Verbose`).
 5. **Frame parity** on the demo layout pages is confirmed (or a difference is filed).
 
-At that point the last 1.0 blocker is cleared and the maintainer can cut 1.0.
+At that point P3 is met. Whether the maintainer can then cut 1.0 depends on the rest of the
+[1.0 criteria](plans/2026-07-22-phase-11.3-one-point-oh-criteria.md).
 
 ---
 
