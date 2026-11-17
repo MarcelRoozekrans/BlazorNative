@@ -42,7 +42,7 @@ dotnet publish . -c Release -r linux-bionic-x64      # the emulator's ABI
 cd android && ./gradlew installDebug
 ```
 
-On Linux and macOS, `gradlew` is currently checked out without its executable bit, so
+On Linux and macOS, `gradlew` is currently generated without its executable bit, so
 `./gradlew` stops with *Permission denied*. Run `chmod +x gradlew` once in the `android` folder,
 or call it as `bash ./gradlew installDebug`.
 

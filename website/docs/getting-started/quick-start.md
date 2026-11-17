@@ -39,7 +39,7 @@ cd android
 ./gradlew installDebug        # onto a running emulator/device
 ```
 
-On Linux and macOS, `gradlew` is currently checked out without its executable bit, so
+On Linux and macOS, `gradlew` is currently generated without its executable bit, so
 `./gradlew` stops with *Permission denied*. Run `chmod +x gradlew` once in the `android` folder,
 or call it as `bash ./gradlew installDebug`.
 
