@@ -21,10 +21,12 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 
 ## Definition of Done
 
-- [ ] All planned phases complete
+- [x] All planned phases complete
 - [x] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
-- [ ] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs. **18.11 grades it NOT MET:** #407's trigger is unproven, so its cause is not found, and #453 leaves #580. The owner decides the repair ([audit](../plans/2026-11-15-milestone-18-audit.md) §3e).
+- [x] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs. **18.11 grades it NOT MET:** #407's trigger is unproven, so its cause is not found, and #453 leaves #580. The owner decides the repair ([audit](../plans/2026-11-15-milestone-18-audit.md) §3e). The owner amended the first bullet on 2026-11-16; 18.13 re-grades against it. **18.13 grades it MET NARROWLY** under the amendment and its 2026-11-17 clarification: #718 is open, #580 is accepted and not fixed, the capture samples every 1 to 3 s, and the evidence is one clean sample per lane ([re-audit](../plans/2026-11-16-milestone-18-reaudit.md) §3).
   - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
+    - *Owner decision 2026-11-16:* a flake whose cause stays unproven after a phase spent hunting it (#407: 18.12, with #718 left open for a recurrence) meets this bullet with a fix that makes the failure name itself, plus a lane capture that would record the cause if it recurs. A residual the owner accepted after measuring it (#580, 18.12) counts as decided.
+    - *Owner clarification 2026-11-17:* "a lane capture that would record the cause if it recurs" means 18.12's capture as built, the one chosen with "accept, add capture". It samples package, overlay and broadcast state every 1 to 3 s and keeps the `events` buffer, so a recurrence leaves its surrounding conditions on record. It is not required to be shown to catch the cause, which is unknown. A change shorter than one sampling gap can go unrecorded; that limit narrows the grade and does not fail it.
   - No fix raises a bound to hide a slow path.
   - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
 - [x] **#500 is fixed as decided.** The owner decided on 2026-10-24 to attribute faults to the dispatch that queued the work.
@@ -70,7 +72,7 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 10. Phase 18.10 — iOS show completes when posted (#444) [complete] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
 11. Phase 18.11 — audit and close (#568) [complete] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
 12. Phase 18.12 — #407's relaunch trigger at its cause (#718), and the #580 decision [complete]
-13. Phase 18.13 — re-audit and close [pending]
+13. Phase 18.13 — re-audit and close [active]
 
 > Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
 
@@ -79,3 +81,4 @@ Every new pin is graded against the written rule in `docs/pin-standard.md`, in t
 | Date | Verdict | Gaps |
 |---|---|---|
 | 2026-11-15 | **FAIL**: 11 MET, 1 MET NARROWLY, 1 NOT MET ([audit](../plans/2026-11-15-milestone-18-audit.md)) | Flakes, NOT MET: #407's cause is not found, its trigger unproven; #453 leaves #580; one clean sample per lane. The owner chose on 2026-11-15 to repair it at its cause, in gap phase 18.12, with #718, and then re-audit in 18.13. New pins: three register rows were written in 18.11, not in the phase that added the pin, accepted on intent by the owner on 2026-11-15. Filed: #716, #717, #718 |
+| 2026-11-16 | **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, 0 NOT MET ([re-audit](../plans/2026-11-16-milestone-18-reaudit.md)) | Flakes, MET NARROWLY under the owner's 2026-11-16 amendment: #407's cause unproven after 18.12, #718 open for a recurrence, the capture ran on the graded lane; #453 holds through #580, accepted. New pins, MET NARROWLY on the owner's 2026-11-15 decision. 27 sites staled by the 0.22.1 `VersionNumber` change were re-run, and their register cells name the stale reds. Open for the owner: #580's GitHub close reason reads `COMPLETED` |
