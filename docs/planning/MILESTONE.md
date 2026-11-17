@@ -38,13 +38,14 @@ No milestone tag, per `CONVENTIONS.md`: release-please owns releases.
 
 ## Phases
 
-1. Phase 19.1 — re-grade the 1.0 criteria [pending]
+1. Phase 19.1 — re-grade the 1.0 criteria [complete]
 2. Phase 19.2 — measurement harness [pending]
 3. Phase 19.3 — baseline run and report [pending]
 4. Phase 19.4 — performance fixes (#575, regressions, #12/#13 verdicts) [pending]
 5. Phase 19.5 — Android and batch correctness (#621, #600, #593) [pending]
 6. Phase 19.6 — CI and pin hygiene (#711, #582, #716, #717, #562) [pending]
 7. Phase 19.7 — real-iPhone session (P3 and iOS real-device perf) [pending]
-8. Phase 19.8 — the 1.0 decision [pending]
+8. Phase 19.8 — API baseline drain (A5) [pending]
+9. Phase 19.9 — the 1.0 decision [pending]
 
-> 19.1 runs first but does not hold back 19.2 to 19.6. 19.2 → 19.3 → 19.4 is a chain. 19.7 waits on 19.2's marks and the owner's session; iOS regression fixes in 19.4 wait on 19.7's confirmation. 19.8 goes last.
+> 19.1 runs first but does not hold back 19.2 to 19.6. 19.2 → 19.3 → 19.4 is a chain. 19.7 waits on 19.2's marks and the owner's session; iOS regression fixes in 19.4 wait on 19.7's confirmation. 19.8 (the A5 drain) runs once 19.2–19.6 have landed their API changes, early enough that a release cycle passes before 19.9; 19.9 goes last.

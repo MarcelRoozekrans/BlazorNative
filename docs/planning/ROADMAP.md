@@ -4109,8 +4109,11 @@ the app's handler through a forwarding hook.
 **Design:** [`docs/superpowers/specs/2026-11-17-milestone-19-design.md`](../superpowers/specs/2026-11-17-milestone-19-design.md) · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
 **Carried in:** #575, #621, #600, #593, #711, #582, #716, #717, #562. #718 stays open as a recurrence watch.
 
-#### Phase 19.1: Re-grade the 1.0 criteria [status: pending]
+#### Phase 19.1: Re-grade the 1.0 criteria [status: complete]
 **Goal:** Re-check every row of the criteria file against HEAD, sweep the issues filed since 2026-07-24 for new blocker candidates, and publish an interim scoreboard.
+**Design:** `docs/superpowers/specs/2026-11-17-phase-19.1-design.md`
+**Plan:** `docs/superpowers/plans/2026-11-17-phase-19.1-criteria-regrade.md`
+**Completed:** 2026-11-17
 **Surface:** Docs
 **HelpWanted:** no
 
@@ -4144,7 +4147,12 @@ the app's handler through a forwarding hook.
 **Surface:** Infra
 **HelpWanted:** no
 
-#### Phase 19.8: The 1.0 decision [status: pending]
+#### Phase 19.8: API baseline drain (A5) [status: pending]
+**Goal:** Move the shipped API from every `PublicAPI.Unshipped.txt` into `PublicAPI.Shipped.txt` in a release, then hold the baselines unchanged for one release cycle, so 19.9 can grade A5.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 19.9: The 1.0 decision [status: pending]
 **Goal:** Re-grade the criteria file on the final head, audit M19, then either cut 1.0.0 through release-please with the owner or record the blocker list.
 **Surface:** Docs
 **HelpWanted:** no
