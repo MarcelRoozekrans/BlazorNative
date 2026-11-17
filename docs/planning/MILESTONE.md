@@ -38,7 +38,7 @@ No milestone tag, per `CONVENTIONS.md`: release-please owns releases.
 
 ## Phases
 
-1. Phase 19.1 — re-grade the 1.0 criteria [active]
+1. Phase 19.1 — re-grade the 1.0 criteria [complete]
 2. Phase 19.2 — measurement harness [pending]
 3. Phase 19.3 — baseline run and report [pending]
 4. Phase 19.4 — performance fixes (#575, regressions, #12/#13 verdicts) [pending]
