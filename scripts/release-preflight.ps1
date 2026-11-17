@@ -253,18 +253,20 @@ function Get-ShippedPackageIds {
 
 <#
 .SYNOPSIS
-    The template pack's PackageId — the EIGHTH publishable, sourced from the one
-    file that owns its identity (Phase 0.4.0 Gate B).
+    The template pack's PackageId — the NINTH publishable (eight src/ packages
+    plus BlazorNative.Templates), sourced from the one file that owns its
+    identity (Phase 0.4.0 Gate B).
 .DESCRIPTION
     Get-ShippedPackageIds enumerates src/ ONLY (8.1 normative rule 2), and the
-    template lives OUTSIDE src/ deliberately (a seventh csproj there un-licenses
+    template lives OUTSIDE src/ deliberately (one more csproj there un-licenses
     the props — PackagePurityTests). So src/ enumeration structurally CANNOT
-    reach the template id, and the preflight would query the seven and miss the
-    eighth — the one publishable whose taken-version red is what makes
-    --skip-duplicate safe on the template's own push. This is a NAMED query, not
-    a bare literal: the id is read from the pack csproj's <PackageId>, its single
-    home, the same "necessity, not drift" shape the csproj already uses for its
-    own metadata. Non-vacuity: exactly one non-empty <PackageId> or throw.
+    reach the template id, and the preflight would query the eight src/
+    packages and miss the ninth — the one publishable whose taken-version red
+    is what makes --skip-duplicate safe on the template's own push. This is a
+    NAMED query, not a bare literal: the id is read from the pack csproj's
+    <PackageId>, its single home, the same "necessity, not drift" shape the
+    csproj already uses for its own metadata. Non-vacuity: exactly one
+    non-empty <PackageId> or throw.
 #>
 function Get-TemplatePackageId {
     $csproj = Join-Path $repoRoot "templates\BlazorNative.Templates\BlazorNative.Templates.csproj"
@@ -687,7 +689,7 @@ function Invoke-Preflight {
     # id), not by reasoning. Same family as the smoke's Get-TypeNames wrapping
     # bug: let the pipeline ENUMERATE, and collect with @() where it lands.
     $ids = @(Get-ShippedPackageIds)
-    # THE EIGHTH publishable, sourced from its csproj <PackageId> (Phase 0.4.0
+    # THE NINTH publishable, sourced from its csproj <PackageId> (Phase 0.4.0
     # Gate B). src/ enumeration cannot reach it — the template lives outside
     # src/ by design — so it is a NAMED addition to the queried set, not a
     # rostered literal. Its taken-version red before the key exists is what makes
@@ -702,7 +704,7 @@ function Invoke-Preflight {
     Write-Host ""
     Write-OK "version source: src/Directory.Build.props → $propsVersion"
     Write-OK "shipped set: $($ids.Count) ids ENUMERATED from src/ (never rostered — 8.1 normative rule 2): $($ids -join ', ')"
-    Write-OK "template pack: '$templateId' (the eighth publishable — outside src/, so enumeration cannot reach it; read from its csproj <PackageId>)"
+    Write-OK "template pack: '$templateId' (the ninth publishable — outside src/, so enumeration cannot reach it; read from its csproj <PackageId>)"
     Write-Host ""
 
     if (-not (Invoke-ControlArms)) {
