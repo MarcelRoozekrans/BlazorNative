@@ -3964,7 +3964,8 @@ the app's handler through a forwarding hook.
 
 ---
 
-### 🔄 Milestone 18 — Acknowledged Bugs  *(active — started 2026-10-24)* [status: active]
+### ✅ Milestone 18 — Acknowledged Bugs  *(complete — 2026-10-24 to 2026-11-17)* [status: complete]
+**Completed:** 2026-11-17 · verdict **PASS WITH FINDINGS**, [re-audit](../plans/2026-11-16-milestone-18-reaudit.md), PR #724. No tag, per `CONVENTIONS.md`.
 
 **Goal:** Fix every bug M17 left acknowledged but unfixed, starting with the CI flakes so the suites are honest. No new features.
 **Started:** 2026-10-24

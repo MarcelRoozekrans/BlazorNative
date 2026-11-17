@@ -1,7 +1,8 @@
 # Milestone 18: Acknowledged Bugs
 
-**Status:** active
+**Status:** complete
 **Started:** 2026-10-24
+**Completed:** 2026-11-17 · verdict **PASS WITH FINDINGS**, [re-audit](../plans/2026-11-16-milestone-18-reaudit.md), PR #724. No tag, per `CONVENTIONS.md`.
 
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md)
 **Predecessor:** Milestone 17 — Close the Dispatch Lane's Debt (complete 2026-10-24, verdict **PASS WITH
