@@ -7,7 +7,8 @@
 **Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md)
 **Predecessor:** Milestone 17 — Close the Dispatch Lane's Debt (complete 2026-10-24, verdict **PASS WITH
 FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md)).
-**Closes:** #551, #564, #453, #444, #407, #718, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+**Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
+**Carried open:** #718 stays open by design, for a recurrence of #407's relaunch, per the owner's decision of 2026-11-16 in item 3.
 
 ## Goal
 
