@@ -15,7 +15,7 @@
   - #407's cause is still unproven after 18.12, and #718 stays open in case it recurs;
   - #453 holds only through #580, which was accepted, not fixed;
   - the evidence is one clean sample per lane;
-  - the capture's sampler has no sampler-free control, per the 18.12 record §4.
+  - the capture's sampler reads only every 1 to 3 s, so it may miss the cause, and it has no sampler-free control, per the 18.12 record §4.
 - **Item 13 is MET NARROWLY,** as in 18.11, on the owner's decision of 2026-11-15.
 - **Freshness.** 312 of the 339 M18 sites are fresh and 27 are stale. Every stale site is stale through `Exports.cs`, where the 0.22.1 release changed only `VersionNumber`. All 27 were re-run to their own failing line on both TFMs, and a sample of 4 fresh sites, one per route, reproduced 4 of 4. The register cells now name the stale reds, including the corroborating ones: L1, M5 and R4.
 - **Graded lanes:** head `93c7acac`, all four lanes at attempt 1, every failure signature at 0, and the `instrumented-logcat` capture present.
