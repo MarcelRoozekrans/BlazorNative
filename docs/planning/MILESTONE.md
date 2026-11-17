@@ -1,86 +1,50 @@
-# Milestone 18: Acknowledged Bugs
+# Milestone 19: 1.0 Readiness and Performance
 
-**Status:** complete
-**Started:** 2026-10-24
-**Completed:** 2026-11-17 · verdict **PASS WITH FINDINGS**, [re-audit](../plans/2026-11-16-milestone-18-reaudit.md), PR #724. No tag, per `CONVENTIONS.md`.
+**Status:** active
+**Started:** 2026-11-17
 
-**Design:** [`docs/superpowers/specs/2026-10-24-milestone-18-design.md`](../superpowers/specs/2026-10-24-milestone-18-design.md)
-**Predecessor:** Milestone 17 — Close the Dispatch Lane's Debt (complete 2026-10-24, verdict **PASS WITH
-FINDINGS**, [final re-audit](../plans/2026-10-22-milestone-17-reaudit-3.md)).
-**Closes:** #551, #564, #453, #444, #407, #500, #506, #511, #522, #543, #544, #401, #396, #530, #568.
-**Carried open:** #718 stays open by design, for a recurrence of #407's relaunch, per the owner's decision of 2026-11-16 in item 3.
+**Design:** [`docs/superpowers/specs/2026-11-17-milestone-19-design.md`](../superpowers/specs/2026-11-17-milestone-19-design.md)
+**Predecessor:** Milestone 18 — Acknowledged Bugs (complete 2026-11-17, verdict **PASS WITH FINDINGS**,
+[re-audit](../plans/2026-11-16-milestone-18-reaudit.md), close-out #730).
+**Carried in from M18:** #575, #621, #600, #593, #711, #582, #716, #717, #562.
+**Not carried:** #718 stays open by design as a recurrence watch for #407.
 
 ## Goal
 
-Fix every bug M17 left acknowledged but unfixed, so the dispatch lane, both shells and the test suites behave as their contracts and docs say. This milestone exists because the owner decided on 2026-10-21 that "we need to finish them all".
+Answer one question with evidence: **can BlazorNative be 1.0 today, and if not, exactly what stops it?**
 
-- **CI comes first.** The Windows CI flakes cost a diagnosis and a re-run on three of M17's last PRs, so the suites get honest before anything else.
-- **Then the user-facing bugs.** Fault attribution, secure-storage ordering, a blank recreated Activity, and the slow-handler warning's naming.
-- **Then the test-suite hangs and the twin divergences.**
-- **Last, the generator's pipe holder.** It is the one investigation whose cause is still unknown.
+- **Measure.** Cold boot, dispatch-lane latency and frame-apply time on both shells, HEAD against `v0.15.0`, and fix any real regression the numbers show.
+- **Re-grade.** Every row of `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` against current code, including P3 from a real-iPhone session the owner runs.
+- **Clear the carry-over.** The bugs and CI debt left by M18, so the 1.0 decision is not made over known-false promises.
 
-Every new pin is graded against the written rule in `docs/pin-standard.md`, in the section "Grading a pin: sites and reds". M17 ended with that rule in place.
+The milestone ends in one of two states: 1.0.0 is published, or the criteria file lists every open blocker with an owner.
+
+Scope comes from the owner's decision of 2026-11-04 and the brainstorm of 2026-11-17. The design records the decisions, the measurement approach (external cold boot plus a `Verbose`-gated timing seam), the regression rule and the other calls.
 
 ## Definition of Done
 
-- [x] All planned phases complete
-- [x] All tests passing, .NET, JVM **and both device lanes**, with each lane's `headSha` compared against the PR head
-- [x] **The CI flakes are fixed at their cause:** #551, #564, #453, #444 and #407. #564 was fixed at its cause in 18.9, PR #710; #444 was fixed at its cause in 18.10, PR #712. The box stays open until 18.11 confirms the last bullet on the re-audit's own runs. **18.11 grades it NOT MET:** #407's trigger is unproven, so its cause is not found, and #453 leaves #580. The owner decides the repair ([audit](../plans/2026-11-15-milestone-18-audit.md) §3e). The owner amended the first bullet on 2026-11-16; 18.13 re-grades against it. **18.13 grades it MET NARROWLY** under the amendment and its 2026-11-17 clarification: #718 is open, #580 is accepted and not fixed, the capture samples every 1 to 3 s, and the evidence is one clean sample per lane ([re-audit](../plans/2026-11-16-milestone-18-reaudit.md) §3).
-  - Each flake's cause is found and fixed. Each fix is pinned where a pin can hold it.
-    - *Owner decision 2026-11-16:* a flake whose cause stays unproven after a phase spent hunting it (#407: 18.12, with #718 left open for a recurrence) meets this bullet with a fix that makes the failure name itself, plus a lane capture that would record the cause if it recurs. A residual the owner accepted after measuring it (#580, 18.12) counts as decided.
-    - *Owner clarification 2026-11-17:* "a lane capture that would record the cause if it recurs" means 18.12's capture as built, the one chosen with "accept, add capture". It samples package, overlay and broadcast state every 1 to 3 s and keeps the `events` buffer, so a recurrence leaves its surrounding conditions on record. It is not required to be shown to catch the cause, which is unknown. A change shorter than one sampling gap can go unrecorded; that limit narrows the grade and does not fail it.
-  - No fix raises a bound to hide a slow path.
-  - The re-audit's own CI runs hit none of these signatures. Attempt 1 is green on every lane.
-- [x] **#500 is fixed as decided.** The owner decided on 2026-10-24 to attribute faults to the dispatch that queued the work.
-  - A re-render queued by dispatch A's continuation is tagged with A's scope, as is an action A queues through `RunAfterDispatch`.
-  - A fault in that work is A's: a late FaultNotice under A's handler id. The window it runs in keeps its own rc.
-  - Both outcomes are pinned and mutation-proven.
-- [x] **#506 is fixed as decided.** The owner decided on 2026-10-24 on a per-key queue.
-  - On Android, a secure-storage request on a key waits behind a pending auth-bound request on the same key. Requests on other keys keep flowing.
-  - A pin shows a delete or a plain set after an auth set cannot run first. A second pin shows another key is not blocked.
-  - iOS is checked for the same hazard, and fixed or pinned to match.
-- [x] **#511 is fixed.** An Activity recreated during boot shows its page, not a blank screen. A device pin proves it.
-  - **#601**, decided by the owner on 2026-10-31 and done in 18.4: the secure-storage hold has one process-wide owner, so a recreated Activity no longer loses or double-holds a pending prompt. PR #605, to be merged.
-- [x] **#522 is fixed as decided.** The owner decided on 2026-10-24 on page plus wrapper position. Done in 18.5, PR #634: a compiler lambda is named by its page and position, and an app method keeps its own name.
-  - For a bound input, the slow-handler warning names the page type and the wrapper's position, never a `<…>b__` compiler lambda.
-  - The warning still names the app's method wherever one exists.
-- [x] **#543 and #544 are fixed.** Done in 18.6, PR #659.
-  - **#543**, decided by the owner on 2026-10-24: bounded wait plus suite timeout. A JVM test that waits on a host call joins it with a bound and fails by name. The Gradle test task has a per-test timeout, so no single test can hold the step for 45 minutes.
-  - **#544:** the back tests check in their own turn that a back press does not finish the Activity, and S4, finishing on back, reds all five tests.
-- [x] **#401 and #396 are fixed.** Each twin divergence is resolved to one documented behaviour on both shells and pinned by a twin pin. Done in 18.7, PR #691.
-  - #401 is the stderr pump's level gate.
-  - #396 is secure storage on an unenrolled device.
-- [x] **#530 is fixed.** The process that outlives `dotnet publish` and holds the reference generator's output pipe is identified and fixed at its source. The bound from 17.5 still names it if it ever returns. Done in 18.8, PR #707: on Windows CI the holder is a reused MSBuild worker node. Node reuse on stalled 20 of 20 iterations, off was clean 20 of 20, so 17.5's node-reuse fix is the source fix ([record](../plans/2026-11-13-phase-18.8-record.md) section 2).
-- [x] **#568 is fixed.** No register cell cites a stale red without naming it stale.
-- [x] **No ABI change.** The 80-byte bridge struct and the 10 exports are unchanged. Any wire addition goes through `src/wire-vocabulary.json`.
-- [x] **Every new pin conforms to the grading rule.**
-  - Its sites, meaning the labelled anchors and name claims, have fresh reds that quote their messages.
-  - Its register cell is written in the phase that adds it.
-  - Staleness is checked against each red's own commit.
+- [ ] All planned phases complete.
+- [ ] All tests passing: the required lanes are green on the final head, and the device lanes (Android instrumented, iOS simulator) are green at attempt 1 on that head.
+- [ ] **Perf report published** under `docs/plans/`, covering cold boot, dispatch-lane latency and frame-apply time on both shells, HEAD against `v0.15.0`, from CI lanes with at least 20 runs per side per metric, median and spread given, plus real-device numbers from an Android phone and the iPhone. The scripts and the backport branch that produced it are committed, so the run can be repeated.
+- [ ] **Every regression the report calls real is fixed and re-measured**, or the owner accepts it in writing on its issue. #12, #13 and #575 each have a data-backed verdict on the issue: fixed, or kept as accepted debt with the measured cost.
+- [ ] **The timing marks are silent at `Warn`**, proven both ways like Q1: zero marks at the default and marks present at `Verbose`.
+- [ ] **#621, #600 and #593 are closed**, each fixed with a pin that reds without the fix, or, for #593, the drop is documented where consumers read it, if the owner chooses that branch.
+- [ ] **#711, #582 and #716 are closed**, and **#717 and #562 are closed or reduced to a written, owner-accepted remainder** on the issue.
+- [ ] **P3 is graded** against its seven acceptance items from a real-iPhone session, with a record under `docs/plans/`. Any finding from the session is fixed or filed and graded against 1.0.
+- [ ] **The criteria file is re-graded** on the final head: every row has a state and evidence dated in M19, the scoreboard is rewritten, and any new blocker found since July is added with its class.
+- [ ] **The 1.0 outcome is recorded:** either 1.0.0 is published (a `Release-As: 1.0.0` commit merged by the owner, the release PR merged by the owner, and every package `.nupkg` answering a HEAD request on nuget.org), or the criteria file and STATE.md list every open blocker with its owner, and no tag is cut.
 
-> **No "release tagged in git" criterion.** `CONVENTIONS.md` records `Milestone completion tags a release: no`, and release-please owns releases.
+No milestone tag, per `CONVENTIONS.md`: release-please owns releases.
 
 ## Phases
 
-1. Phase 18.1 — CI flakes at their cause (#551, #564, #453, #444, #407) [complete] — #551, #453 and #407 fixed at cause, #564 reopened 2026-11-05 (now 18.9); #444 open with instrumentation, SpringBoard stall captured (#584)
-2. Phase 18.2 — fault attribution for queued work (#500) [complete]
-3. Phase 18.3 — secure-storage per-key ordering (#506) [complete] — same-key requests queue behind a pending prompt on both shells (#599)
-4. Phase 18.4 — recreation during boot (#511, with #601 folded in by owner decision of 2026-10-31) [complete]
-5. Phase 18.5 — slow-handler naming for bound inputs (#522) [complete]
-6. Phase 18.6 — test-suite honesty, part two (#543, #544) [complete] — bounded hold-probe wait, measured JVM timeouts, in-turn back check through `pressHandledBack` (PR #659)
-7. Phase 18.7 — twin divergences (#401, #396) [complete]
-8. Phase 18.8 — the generator's pipe holder (#530) [complete]
-9. Phase 18.9 — the Windows dispatch bound (#564) [complete] — inserted 2026-11-14, owner decision: fix the open DoD flakes before the audit
-10. Phase 18.10 — iOS show completes when posted (#444) [complete] — inserted 2026-11-14; owner decision: `Granted` means posted, as on Android
-11. Phase 18.11 — audit and close (#568) [complete] — audit verdict FAIL on item 3 (#407's trigger), owner chose a gap phase 2026-11-15
-12. Phase 18.12 — #407's relaunch trigger at its cause (#718), and the #580 decision [complete]
-13. Phase 18.13 — re-audit and close [complete]
+1. Phase 19.1 — re-grade the 1.0 criteria [pending]
+2. Phase 19.2 — measurement harness [pending]
+3. Phase 19.3 — baseline run and report [pending]
+4. Phase 19.4 — performance fixes (#575, regressions, #12/#13 verdicts) [pending]
+5. Phase 19.5 — Android and batch correctness (#621, #600, #593) [pending]
+6. Phase 19.6 — CI and pin hygiene (#711, #582, #716, #717, #562) [pending]
+7. Phase 19.7 — real-iPhone session (P3 and iOS real-device perf) [pending]
+8. Phase 19.8 — the 1.0 decision [pending]
 
-> Flakes go first, by owner decision of 2026-10-24, so every later M18 PR gets clean CI.
-
-## Audit History
-
-| Date | Verdict | Gaps |
-|---|---|---|
-| 2026-11-15 | **FAIL**: 11 MET, 1 MET NARROWLY, 1 NOT MET ([audit](../plans/2026-11-15-milestone-18-audit.md)) | Flakes, NOT MET: #407's cause is not found, its trigger unproven; #453 leaves #580; one clean sample per lane. The owner chose on 2026-11-15 to repair it at its cause, in gap phase 18.12, with #718, and then re-audit in 18.13. New pins: three register rows were written in 18.11, not in the phase that added the pin, accepted on intent by the owner on 2026-11-15. Filed: #716, #717, #718 |
-| 2026-11-16 | **PASS WITH FINDINGS**: 11 MET, 2 MET NARROWLY, 0 NOT MET ([re-audit](../plans/2026-11-16-milestone-18-reaudit.md)) | Flakes, MET NARROWLY under the owner's 2026-11-16 amendment: #407's cause unproven after 18.12, #718 open for a recurrence, the capture ran on the graded lane; #453 holds through #580, accepted. New pins, MET NARROWLY on the owner's 2026-11-15 decision. 27 sites staled by the 0.22.1 `VersionNumber` change were re-run, and their register cells name the stale reds. Open for the owner: #580's GitHub close reason reads `COMPLETED` |
+> 19.1 runs first but does not hold back 19.2 to 19.6. 19.2 → 19.3 → 19.4 is a chain. 19.7 waits on 19.2's marks and the owner's session. 19.8 goes last.

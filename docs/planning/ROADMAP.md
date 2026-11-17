@@ -4102,6 +4102,55 @@ the app's handler through a forwarding hook.
 
 ---
 
+### 🔄 Milestone 19 — 1.0 Readiness and Performance  *(active — started 2026-11-17)* [status: active]
+
+**Goal:** Answer with evidence whether BlazorNative can be 1.0 today: measure both shells against `v0.15.0` and fix real regressions, re-grade every 1.0 criterion including P3 on a real iPhone, clear M18's carry-over, then cut 1.0.0 or list what blocks it.
+**Started:** 2026-11-17
+**Design:** [`docs/superpowers/specs/2026-11-17-milestone-19-design.md`](../superpowers/specs/2026-11-17-milestone-19-design.md) · full scope, DoD and risks in [MILESTONE.md](MILESTONE.md).
+**Carried in:** #575, #621, #600, #593, #711, #582, #716, #717, #562. #718 stays open as a recurrence watch.
+
+#### Phase 19.1: Re-grade the 1.0 criteria [status: pending]
+**Goal:** Re-check every row of the criteria file against HEAD, sweep the issues filed since 2026-07-24 for new blocker candidates, and publish an interim scoreboard.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 19.2: Measurement harness [status: pending]
+**Goal:** Add `Verbose`-gated timing marks on both shells and in .NET, external cold-boot scripts, a dispatch-only measurement workflow and the `v0.15.0` backport branch; prove the marks silent at `Warn`.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 19.3: Baseline run and report [status: pending]
+**Goal:** Run HEAD and `v0.15.0` on the emulator and simulator lanes and an Android phone, publish the report, and name each real regression and the verdict data for #12, #13 and #575.
+**Surface:** Docs
+**HelpWanted:** no
+
+#### Phase 19.4: Performance fixes [status: pending]
+**Goal:** Fix #575 and each regression 19.3 called real, re-measure with the same harness, and record the verdicts on #12 and #13.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 19.5: Android and batch correctness (#621, #600, #593) [status: pending]
+**Goal:** Fix the orphaned secure-storage prompt denial, pin the biometrics completion on a stopped Activity, and fix or document a faulted batch's dropped remove patches, each with a pin that reds without the fix.
+**Surface:** Backend
+**HelpWanted:** no
+
+#### Phase 19.6: CI and pin hygiene (#711, #582, #716, #717, #562) [status: pending]
+**Goal:** Close #711, #582 and #716, and work #717 and #562 down to closed or an owner-accepted remainder.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 19.7: Real-iPhone session [status: pending]
+**Goal:** With a signed device build, the owner runs P3's seven acceptance items and the iOS real-device perf pass on a real iPhone; record both and fix or file every finding.
+**Surface:** Infra
+**HelpWanted:** no
+
+#### Phase 19.8: The 1.0 decision [status: pending]
+**Goal:** Re-grade the criteria file on the final head, audit M19, then either cut 1.0.0 through release-please with the owner or record the blocker list.
+**Surface:** Docs
+**HelpWanted:** no
+
+---
+
 ### 🔮 Backlog / Future *(uncommitted — promote to a dated milestone when they approach)*
 
 **Enterprise readiness** (old P7): OTA updates with delta + rollback, MD3 / iOS HIG

@@ -3,7 +3,7 @@
 **Date:** 2026-11-17
 **Milestone:** `19`
 **Stage:** milestone (one milestone, multiple phases)
-**Status:** draft
+**Status:** approved 2026-11-17
 
 **Predecessor:** Milestone 18, Acknowledged Bugs. It completed on 2026-11-17 with the verdict
 PASS WITH FINDINGS; the close-out merged as `9e1ee784` (#730).
