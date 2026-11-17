@@ -127,8 +127,9 @@ release-please owns releases.
      iOS verdicts stay provisional until 19.7's real-device pass confirms them, because the
      regression rule needs the real-device direction.
 4. **Phase 19.4: Performance fixes** — `Surface: Backend`
-   - **Goal:** Fix each regression 19.3 called real, re-measure with the same harness, and record
-     the verdicts on #12, #13 and #575. Each one is either fixed, or kept as accepted debt with its
+   - **Goal:** For each regression 19.3 called real, either fix it and re-measure with the same
+     harness, or record the owner's written acceptance on its issue. Record the verdicts on #12,
+     #13 and #575. Each one is either fixed, or kept as accepted debt with its
      measured cost written on the issue by the owner. An iOS regression is worked only after 19.7
      confirms it on the iPhone.
 5. **Phase 19.5: Android and batch correctness** — `Surface: Backend`

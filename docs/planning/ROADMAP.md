@@ -4125,7 +4125,7 @@ the app's handler through a forwarding hook.
 **HelpWanted:** no
 
 #### Phase 19.4: Performance fixes [status: pending]
-**Goal:** Fix each regression 19.3 called real and re-measure with the same harness; record a verdict on #12, #13 and #575, each fixed or kept as owner-accepted debt with its measured cost. iOS regressions are worked only after 19.7 confirms them.
+**Goal:** For each regression 19.3 called real, fix it and re-measure with the same harness, or record the owner's written acceptance on its issue; record a verdict on #12, #13 and #575, each fixed or kept as owner-accepted debt with its measured cost. iOS regressions are worked only after 19.7 confirms them.
 **Surface:** Backend
 **HelpWanted:** no
 
