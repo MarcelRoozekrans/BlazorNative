@@ -32,10 +32,11 @@ protocol, and Yoga tree run everywhere.
 > 80-byte / 10-export C-ABI; Android is **device-proven**, diagnostic logging is level-gated
 > and quiet by default, and render faults surface rather than crash.
 
-**1.0 is blocked on exactly one thing: a real iPhone.** iOS today is **simulator-only** —
+**1.0 is blocked on a real iPhone.** iOS today is **simulator-only** —
 real-device iOS (code signing, provisioning, App Store validation, Secure Enclave, APNs)
-needs an Apple Developer account and is deferred. Everything else the 1.0 criteria ask for
-is met. See [API stability](https://marcelroozekrans.github.io/BlazorNative/docs/api-stability)
+needs an Apple Developer account and is deferred. A November 2026 re-check of the 1.0
+criteria also left a few rows waiting on the maintainer's ruling; the checklist names them.
+See [API stability](https://marcelroozekrans.github.io/BlazorNative/docs/api-stability)
 for the tier table, the compatibility statement, and the full 1.0 checklist.
 
 **Honest caveats** (deliberate, documented):
