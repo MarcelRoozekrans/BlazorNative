@@ -42,6 +42,10 @@ dotnet publish . -c Release -r linux-bionic-x64      # the emulator's ABI
 cd android && ./gradlew installDebug
 ```
 
+On Linux and macOS, `gradlew` is currently checked out without its executable bit, so
+`./gradlew` stops with *Permission denied*. Run `chmod +x gradlew` once in the `android` folder,
+or call it as `bash ./gradlew installDebug`.
+
 Gradle **fails fast and names the exact publish command** when a `.so` is missing, rather
 than assembling an APK around stale native assets. If you publish somewhere other than the
 default, point it at the tree:

@@ -146,7 +146,10 @@ public static class BlazorNativeApp
     /// contracts documented CONSUME-ONLY — <see cref="BlazorNative.Core.INavigationManager"/>
     /// and <see cref="BlazorNative.Core.IMobileBridge"/> — which the framework
     /// implements and consumes itself. Adding services is always safe; replacing
-    /// a consume-only contract is not, and is rejected rather than half-honoured.
+    /// a consume-only contract is not. Replacing <see cref="BlazorNative.Core.INavigationManager"/>
+    /// is rejected at startup rather than half-honoured; replacing
+    /// <see cref="BlazorNative.Core.IMobileBridge"/> is not checked (#402), but it is
+    /// just as unsupported: do not do it.
     /// </para>
     /// Never calling it is the baseline — the field stays null and the host
     /// session skips the invocation.</summary>

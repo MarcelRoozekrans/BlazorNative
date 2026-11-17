@@ -600,9 +600,12 @@ public enum CameraStatus
 /// rather than the documented 2048/85. The explicit ctor chains to the primary
 /// constructor so <c>new CaptureOptions()</c> genuinely carries the defaults.
 /// <c>default(CaptureOptions)</c> still zero-initialises (the language guarantees a
-/// zeroing parameterless value for every struct and no ctor can suppress it); a
-/// zeroed value is treated as UNSET at the shell boundary, where a 0 quality maps to
-/// the default rather than the worst-possible encode.</para></summary>
+/// zeroing parameterless value for every struct and no ctor can suppress it). At the
+/// shell boundary only the zeroed <see cref="Quality"/> is treated as UNSET: a 0
+/// quality maps to the default rather than the worst-possible encode. A zeroed
+/// <see cref="MaxDimension"/> keeps its documented meaning and captures at FULL
+/// resolution, so <c>default(CaptureOptions)</c> gives the big file the 2048 px
+/// default exists to avoid; use <c>new CaptureOptions()</c> for the defaults.</para></summary>
 /// <param name="MaxDimension">Long-edge cap in pixels for the downscale; 0 keeps full
 /// resolution. Default 2048.</param>
 /// <param name="Quality">JPEG quality 1–100 for the re-encode. Default 85.</param>

@@ -137,7 +137,7 @@ public static class AppPages
 |---|---|
 | `DevHostBridge` (`BlazorNative.Core`) | The in-process mock bridge. Genuinely useful for your tests — it is the bridge double you register when a page mounted by `BlazorNative.Testing` injects `IMobileBridge` — but its members are *mock-shaped*: seeding hooks and canned results, not a contract designed for strangers. |
 | `BnLog` / `BnLogLevel` (`BlazorNative.Core`) | The logging seam — see [Logging](./logging.md). The level names and `BnLogLevel`'s ordinals are not expected to move; `Sink`'s deliberately narrow shape and the line format were chosen before their first real consumers, so they may. |
-| `BlazorNative.Testing` — `BnTestHost`, `BnTestTree`, `BnTestNode`, `BnShell` | The consumer test harness — see [Testing a page](./getting-started/quick-start.md#testing-a-page). Its shape may move while real consumer suites shake it out. |
+| `BlazorNative.Testing` — `BnTestHost`, `BnTestTree`, `BnTestNode`, `BnShell` | The consumer test harness — see [Testing a page](./getting-started/quick-start.md#testing-a-page). Its shape may move while real consumer suites shake it out. The API reference does not cover this package yet: its types are documented in their xmldoc, which your IDE shows, and in Testing a page. |
 | `AddBlazorNativeRenderer` (`BlazorNative.Renderer`) | A composition-root call you need only if you are building a custom host. It is a one-line delegate to generated code, so its shape is not ours to promise. |
 
 Use them. Pin your version if you depend on their exact shape.
