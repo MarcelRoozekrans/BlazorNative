@@ -1,6 +1,6 @@
 # Session State
 
-**Last session:** 2026-11-16
+**Last session:** 2026-11-17
 **Milestone:** 18, Acknowledged Bugs, `[status: active]`, started 2026-10-24.
 **Phase:** 18.13, the re-audit, is `[status: active]`. Its PR is #724, from branch `docs/18.13-reaudit`, and it is waiting for the owner.
 **Next step:**
@@ -25,7 +25,7 @@
 
 ## Open for the owner
 
-- **#580's GitHub close reason reads `COMPLETED`,** because #721's body said "Closes #580". 18.12 accepted #580; it did not fix it. Proposal: re-close it as "not planned", with a comment pointing to the 18.12 record §7.
+- **#580 is re-closed as "not planned"** on 2026-11-17, at the owner's choice. A comment on it points to the 18.12 record §7. This settles the report's finding F2.
 - The open decisions from M18 carry over to the next milestone:
   - **The 1.0 readiness and performance milestone,** decided 2026-11-04:
     - add a perf baseline: cold boot, dispatch-lane latency and frame-apply time on both shells, compared against an older release;
