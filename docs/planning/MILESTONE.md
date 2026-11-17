@@ -47,4 +47,4 @@ No milestone tag, per `CONVENTIONS.md`: release-please owns releases.
 7. Phase 19.7 — real-iPhone session (P3 and iOS real-device perf) [pending]
 8. Phase 19.8 — the 1.0 decision [pending]
 
-> 19.1 runs first but does not hold back 19.2 to 19.6. 19.2 → 19.3 → 19.4 is a chain. 19.7 waits on 19.2's marks and the owner's session. 19.8 goes last.
+> 19.1 runs first but does not hold back 19.2 to 19.6. 19.2 → 19.3 → 19.4 is a chain. 19.7 waits on 19.2's marks and the owner's session; iOS regression fixes in 19.4 wait on 19.7's confirmation. 19.8 goes last.

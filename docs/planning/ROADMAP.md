@@ -4120,17 +4120,17 @@ the app's handler through a forwarding hook.
 **HelpWanted:** no
 
 #### Phase 19.3: Baseline run and report [status: pending]
-**Goal:** Run HEAD and `v0.15.0` on the emulator and simulator lanes and an Android phone, publish the report, and name each real regression and the verdict data for #12, #13 and #575.
+**Goal:** Run HEAD and `v0.15.0` on the emulator and simulator lanes and an Android phone, publish the report, and name each real regression and the verdict data for #12, #13 and #575. iOS verdicts stay provisional until 19.7's iPhone pass.
 **Surface:** Docs
 **HelpWanted:** no
 
 #### Phase 19.4: Performance fixes [status: pending]
-**Goal:** Fix #575 and each regression 19.3 called real, re-measure with the same harness, and record the verdicts on #12 and #13.
+**Goal:** Fix each regression 19.3 called real and re-measure with the same harness; record a verdict on #12, #13 and #575, each fixed or kept as owner-accepted debt with its measured cost. iOS regressions are worked only after 19.7 confirms them.
 **Surface:** Backend
 **HelpWanted:** no
 
 #### Phase 19.5: Android and batch correctness (#621, #600, #593) [status: pending]
-**Goal:** Fix the orphaned secure-storage prompt denial, pin the biometrics completion on a stopped Activity, and fix or document a faulted batch's dropped remove patches, each with a pin that reds without the fix.
+**Goal:** Fix the orphaned secure-storage prompt denial and pin the biometrics completion on a stopped Activity, each with a pin that reds without the fix; for a faulted batch's dropped remove patches, the owner chooses a pinned fix or documenting the drop.
 **Surface:** Backend
 **HelpWanted:** no
 

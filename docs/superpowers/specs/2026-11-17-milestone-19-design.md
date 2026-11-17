@@ -124,13 +124,19 @@ release-please owns releases.
 3. **Phase 19.3: Baseline run and report** — `Surface: Docs`
    - **Goal:** Run HEAD and `v0.15.0` on the emulator and simulator lanes and an Android phone,
      publish the report, and name each real regression and the verdict data for #12, #13 and #575.
+     iOS verdicts stay provisional until 19.7's real-device pass confirms them, because the
+     regression rule needs the real-device direction.
 4. **Phase 19.4: Performance fixes** — `Surface: Backend`
-   - **Goal:** Fix #575 and each regression 19.3 called real, re-measure with the same harness, and
-     record the verdicts on #12 and #13.
+   - **Goal:** Fix each regression 19.3 called real, re-measure with the same harness, and record
+     the verdicts on #12, #13 and #575. Each one is either fixed, or kept as accepted debt with its
+     measured cost written on the issue by the owner. An iOS regression is worked only after 19.7
+     confirms it on the iPhone.
 5. **Phase 19.5: Android and batch correctness** — `Surface: Backend`
-   - **Goal:** Fix #621 (orphaned secure-storage prompt denied by another instance's destroy), #600
-     (biometrics completion on a stopped Activity, pin the behaviour) and #593 (a faulted batch's
-     remove patches), each with a pin that reds without the fix.
+   - **Goal:** Fix #621 (orphaned secure-storage prompt denied by another instance's destroy) and
+     #600 (biometrics completion on a stopped Activity, pin the behaviour), each with a pin that
+     reds without the fix. Resolve #593 (a faulted batch's remove patches) the way the owner
+     chooses in this phase: fixed with such a pin, or the drop documented where consumers read
+     it.
 6. **Phase 19.6: CI and pin hygiene** — `Surface: Infra`
    - **Goal:** Close #711, #582 and #716, and work #717 and #562 down to closed or an owner-accepted
      remainder.
@@ -144,7 +150,8 @@ release-please owns releases.
 Ordering: 19.1 goes first because it can add blockers that change later phases. 19.2 to 19.4 are a
 chain. 19.5 and 19.6 are independent of the perf chain and of each other. 19.7 waits only on the
 owner's device availability and on 19.2 (the marks must exist for the perf pass); it can run as soon
-as both are ready. 19.8 goes last.
+as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; Android ones do not.
+19.8 goes last.
 
 ## Dependencies on Prior Milestones
 
