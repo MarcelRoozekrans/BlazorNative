@@ -46,7 +46,7 @@ namespace BlazorNative.Runtime.Tests;
 //     or malformed resource. That literal must still name the manifest's default
 //     component, so a renamed default page cannot boot a resource-less app into the
 //     wrong screen. Pinned from checkout TEXT, the 7.6 way.
-//   · ManifestRoutedRows_MatchTheFourteenPageBaseline — the content pin. A drift
+//   · ManifestRoutedRows_MatchTheFifteenPageBaseline — the content pin. A drift
 //     test comparing two surfaces is blind to a row deleted from BOTH; this literal
 //     catches a routed page silently vanishing from the SOURCE.
 //
@@ -167,13 +167,13 @@ public sealed class RouteTableDriftTests
     /// +BnCameraDemo, Phase 9.3 — "/camera";
     /// +BnSafeAreaDemo, Phase 14.2 — "/safearea".)</summary>
     [Fact]
-    public void ManifestRoutedRows_MatchTheFourteenPageBaseline()
+    public void ManifestRoutedRows_MatchTheFifteenPageBaseline()
     {
         Assert.Equal(
             ["BnCameraDemo", "BnDemo", "BnFormDemo", "BnGeolocationDemo", "BnImageDemo",
              "BnImagePolishDemo", "BnLayoutDemo", "BnListDemo", "BnModalDemo",
              "BnNotificationsDemo", "BnSafeAreaDemo", "BnScrollDemo", "BnSecureDemo",
-             "BnSettingsPage"],
+             "BnSettingsPage", "PerfProbe"],
             SampleAppPages.All
                 .Where(p => p.Route is not null)
                 .Select(p => p.Name)

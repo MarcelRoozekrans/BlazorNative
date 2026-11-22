@@ -19,15 +19,18 @@ namespace BlazorNative.Runtime.Tests;
 // would let a new page go unreachable, which is the original defect. Both
 // directions, or the guard only half exists.
 //
-// "/" and "/settings" are the two documented exemptions, asserted rather than
+// "/" and "/settings" are the first two documented exemptions, asserted rather than
 // assumed: "/" is BnDemo itself (a menu row to the page you are on) and
 // "/settings" is reached by the pinned "Settings →" button that IS the DoD #7
-// navigation proof. If either ever stops being exempt-worthy — BnDemo moved off
+// navigation proof. "/perf" (19.2) is the third: PerfProbe is a measurement fixture that the perf
+// tests mount by component name, and a menu row would add a node to BnDemo and churn its goldens on
+// both shells for a page no user is meant to open. The two facts keep their "TwoExemptions" names, which
+// other documents cite; the third exemption lives in the same code paths. If any ever stops being exempt-worthy — BnDemo moved off
 // "/", say — the exemption assertions below fail rather than quietly widening.
 //
 // Each comparison fact carries its own floor (15.4, #375): an empty page list or an empty menu
 // reds the fact that would otherwise compare nothing, not only its sibling. Since 15.7 the floor is
-// the MEASURED size of each side (14 routed pages, 12 menu rows, zero headroom), not mere presence,
+// the MEASURED size of each side (15 routed pages, 12 menu rows, zero headroom), not mere presence,
 // and MenuRows_AreUniqueAndLabelled carries it too: its uniqueness counts and its Assert.All both
 // passed on an empty menu, which the 15.6 audit's mutation showed.
 //
@@ -49,6 +52,7 @@ public sealed class RouteMenuDriftTests
     /// <summary>The routes the menu deliberately does not carry, and why.</summary>
     private const string SelfRoute = "/";           // BnDemo — the page the menu is ON
     private const string SettingsRoute = "/settings"; // reached by the pinned "Settings →" button
+    private const string PerfRoute = "/perf";         // PerfProbe, 19.2 — a measurement fixture, no menu row
 
     private static string[] RoutedPages() =>
         [.. SampleAppPages.All
@@ -58,7 +62,7 @@ public sealed class RouteMenuDriftTests
     /// <summary>The measured size of each side, at zero headroom. Adding a page or a row raises
     /// the count past the floor and nothing reds; removing one reds here, so the removal is a
     /// decision on the record, made by lowering the number in the same commit.</summary>
-    private const int MeasuredRoutedPages = 14;
+    private const int MeasuredRoutedPages = 15;
     private const int MeasuredMenuRows = 12;
 
     /// <summary>Rule 2, per fact: each comparison below is <i>for every X, assert Y</i>, which
@@ -77,7 +81,7 @@ public sealed class RouteMenuDriftTests
             + "if a row was deliberately removed, lower the floor in the same commit.");
     }
 
-    /// <summary>The routed pages, other than the two exemptions, that have no menu row. The
+    /// <summary>The routed pages, other than the three exemptions, that have no menu row. The
     /// detector of <see cref="EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow"/>, extracted so
     /// <see cref="Missing_ReportsAPlantedGhostRoute"/> can drive the same code.</summary>
     private static string[] Missing(string[] routed, (string Label, string Route)[] menu)
@@ -85,7 +89,7 @@ public sealed class RouteMenuDriftTests
         var inMenu = menu.Select(d => d.Route).ToHashSet(StringComparer.Ordinal);
 
         return routed
-            .Where(r => r != SelfRoute && r != SettingsRoute)
+            .Where(r => r != SelfRoute && r != SettingsRoute && r != PerfRoute)
             .Where(r => !inMenu.Contains(r))
             .ToArray();
     }
@@ -166,10 +170,15 @@ public sealed class RouteMenuDriftTests
         // reaches it, which is why the menu does not repeat it.
         Assert.Contains(SampleAppPages.All, p => p.Route == SettingsRoute);
 
-        // …and neither may ALSO appear in the menu, or the exemption is a fiction
+        // "/perf" must still be PerfProbe, the fixture the measurement tests mount.
+        var perf = Assert.Single(SampleAppPages.All, p => p.Route == PerfRoute);
+        Assert.Equal("PerfProbe", perf.Name);
+
+        // …and none may ALSO appear in the menu, or the exemption is a fiction
         // and the page is reachable twice by two different mechanisms.
         Assert.DoesNotContain(BnDemo.Destinations, d => d.Route == SelfRoute);
         Assert.DoesNotContain(BnDemo.Destinations, d => d.Route == SettingsRoute);
+        Assert.DoesNotContain(BnDemo.Destinations, d => d.Route == PerfRoute);
     }
 
     [Fact]

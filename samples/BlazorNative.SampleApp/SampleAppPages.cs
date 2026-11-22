@@ -7,7 +7,7 @@ namespace BlazorNative.SampleApp;
 // SampleAppPages — Phase 8.0 (design decisions 1+2, M8 DoD #1: the
 // registration inversion).
 //
-// THE APP'S MANIFEST: the 15 rows (10 routed pages + 5 unrouted test probes)
+// THE APP'S MANIFEST: the 23 rows (15 routed pages + 8 unrouted pages and test probes)
 // that lived in Runtime's PageManifest.cs until 8.0, provenance comments and
 // all — now declared by the app that owns them and PUSHED through the public
 // BlazorNativeApp.RegisterPages API. The 7.6 normative rule holds verbatim
@@ -40,7 +40,7 @@ namespace BlazorNative.SampleApp;
 
 public static class SampleAppPages
 {
-    /// <summary>THE manifest: 10 routed pages + 5 unrouted test probes.
+    /// <summary>THE manifest: 15 routed pages + 8 unrouted pages and test probes.
     /// Sync Mount&lt;T&gt; (inline dispatcher, Phase 2.4) — the first render
     /// completes before TryMount returns, so the frame callback has already
     /// fired. Mount values return the root componentId (Phase 3.5: the
@@ -165,6 +165,10 @@ public static class SampleAppPages
         // both shells produce identical frames despite real devices
         // differing. See BnSafeAreaDemo.razor's header.
         BlazorNativePage.Routed<BnSafeAreaDemo>("/safearea", "BnSafeAreaDemo"),
+        // Phase 19.2 (Task 3): the click-to-frame measurement page. One click is one frame
+        // with a fixed patch count (PerfProbeTests); the Android and iOS PerfMeasurement
+        // tests click it 25+ times. Routed so a deep link can open it.
+        BlazorNativePage.Routed<PerfProbe>("/perf", "PerfProbe"),
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),
