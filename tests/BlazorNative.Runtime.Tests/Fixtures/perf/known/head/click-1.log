@@ -1,0 +1,11 @@
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.post seq=1 t=1000000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.enter seq=1 t=1300000 id=7
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.handler seq=1 t=1500000 id=7
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.recv seq=1 t=2000000
+some other logcat line
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.applied seq=1 t=2800000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.post seq=2 t=10000000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.enter seq=2 t=10400000 id=7
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.handler seq=2 t=10900000 id=7
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.recv seq=2 t=11000000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.applied seq=2 t=12500000

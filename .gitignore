@@ -36,6 +36,7 @@ nuget.config.local
 
 # Logs
 *.log
+!tests/BlazorNative.Runtime.Tests/Fixtures/perf/**/*.log
 logs/
 
 # Gradle build cache

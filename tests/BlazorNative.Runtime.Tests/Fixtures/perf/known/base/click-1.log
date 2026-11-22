@@ -1,0 +1,5 @@
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.post seq=1 t=3000000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.enter seq=1 t=3500000 id=4
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF dispatch.handler seq=1 t=4000000 id=4
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.recv seq=1 t=4100000
+11-22 10:00:00.123  1234  1250 V BlazorNative/Perf: BNPERF frame.applied seq=1 t=5100000

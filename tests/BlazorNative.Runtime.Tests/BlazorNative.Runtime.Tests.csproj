@@ -84,6 +84,9 @@
          BnLog's drain at ProcessExit and on an unhandled exception. Referenced so that it
          is built, with its runtimeconfig, next to the tests. -->
     <ProjectReference Include="..\BlazorNative.LogExitProbe\BlazorNative.LogExitProbe.csproj" />
+    <!-- 19.2 Task 4: PerfReportTests call Program.Run and the pairing types in-process, so the
+         tests and the CI step cannot disagree about what a sample is. -->
+    <ProjectReference Include="..\..\tools\BlazorNative.PerfReport\BlazorNative.PerfReport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
