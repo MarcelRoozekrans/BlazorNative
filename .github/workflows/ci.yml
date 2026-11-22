@@ -2868,7 +2868,7 @@ jobs:
       # 208 -> 209 (18.5, +1, 2026-11-10): the JVM host test for the lambda call-site naming.
       # 209 -> 210 (18.7, +1, 2026-11-11): BnStderrPumpTwinTest, #401 — every stderr vector is forwarded
       #    whatever the shell level.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 210 passed / 0 failed)
+      - name: JVM tests (Gradle testDebugUnitTest — assert 214 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
