@@ -24,9 +24,8 @@ namespace BlazorNative.Runtime.Tests;
 // "/settings" is reached by the pinned "Settings →" button that IS the DoD #7
 // navigation proof. "/perf" (19.2) is the third: PerfProbe is a measurement fixture that the perf
 // tests mount by component name, and a menu row would add a node to BnDemo and churn its goldens on
-// both shells for a page no user is meant to open. The two facts keep their "TwoExemptions" names, which
-// other documents cite; the third exemption lives in the same code paths. If any ever stops being exempt-worthy — BnDemo moved off
-// "/", say — the exemption assertions below fail rather than quietly widening.
+// both shells for a page no user is meant to open. If any ever stops being exempt-worthy — BnDemo moved
+// off "/", say — the exemption assertions below fail rather than quietly widening.
 //
 // Each comparison fact carries its own floor (15.4, #375): an empty page list or an empty menu
 // reds the fact that would otherwise compare nothing, not only its sibling. Since 15.7 the floor is
@@ -82,7 +81,7 @@ public sealed class RouteMenuDriftTests
     }
 
     /// <summary>The routed pages, other than the three exemptions, that have no menu row. The
-    /// detector of <see cref="EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow"/>, extracted so
+    /// detector of <see cref="EveryRoutedPage_ExceptTheExemptRoutes_HasAMenuRow"/>, extracted so
     /// <see cref="Missing_ReportsAPlantedGhostRoute"/> can drive the same code.</summary>
     private static string[] Missing(string[] routed, (string Label, string Route)[] menu)
     {
@@ -108,7 +107,7 @@ public sealed class RouteMenuDriftTests
     }
 
     [Fact]
-    public void EveryRoutedPage_ExceptTheTwoExemptions_HasAMenuRow()
+    public void EveryRoutedPage_ExceptTheExemptRoutes_HasAMenuRow()
     {
         var routed = RoutedPages();
         AssertBothSidesNonEmpty(routed);
@@ -160,7 +159,7 @@ public sealed class RouteMenuDriftTests
     }
 
     [Fact]
-    public void TheTwoExemptions_AreStillWhatTheyClaimToBe()
+    public void TheExemptRoutes_AreStillWhatTheyClaimToBe()
     {
         // "/" must still be BnDemo — the menu omits it because it is THIS page.
         var self = Assert.Single(SampleAppPages.All, p => p.Route == SelfRoute);

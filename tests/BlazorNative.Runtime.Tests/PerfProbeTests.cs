@@ -39,13 +39,25 @@ public sealed class PerfProbeTests
                 mount.Patches.OfType<AttachEventPatch>(), p => p.EventName == "click");
 
             var perClick = new List<int>();
+            var texts = new List<string[]>();
             for (int i = 1; i <= 5; i++)
             {
                 int before = frames.Count;
                 Assert.Equal(0, Exports.DispatchEventCore((ulong)click.HandlerId, ClickArgs));
                 Assert.Equal(before + 1, frames.Count);
                 perClick.Add(frames[^1].Patches.Count());
+
+                // The page's contract: a click is exactly two ReplaceText patches (the
+                // count label and row 0) plus the frame's commit marker, nothing else.
+                RenderPatch[] changes = [.. frames[^1].Patches.Where(p => p is not CommitFramePatch)];
+                Assert.Equal(2, changes.Length);
+                Assert.All(changes, p => Assert.IsType<ReplaceTextPatch>(p));
+                texts.Add([.. changes.Cast<ReplaceTextPatch>().Select(p => p.Text)]);
             }
+
+            // The settle signal the device tests wait for.
+            Assert.Contains("Count: 1", texts[0]);
+            Assert.Contains("Count: 2", texts[1]);
 
             Assert.True(perClick[0] > 0, "a click must change something");
             Assert.All(perClick, n => Assert.Equal(perClick[1], n));
