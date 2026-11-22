@@ -1,54 +1,42 @@
 # Session State
 
 **Last session:** 2026-11-22
-**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17 (#732, merged as `51c837bd`).
-**Phase:** 19.1 (re-grade the 1.0 criteria) is complete and merged: PR #733, squash `9aa49d85` on `main`. Phases 19.2 to 19.9 are `[status: pending]`, with no design or plan yet.
-**Branch:** `docs/19.2-measurement-harness`, cut from `main` at `9aa49d85`. It holds only this handoff.
-**Next step:** run `start-next-phase`. It routes to Phase 19.2 (measurement harness, Surface: Infra), which starts with a phase-scope brainstorm.
+**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17.
+**Phase:** 19.2, Measurement harness, `[status: active]`. The design and the plan are approved
+(owner, 2026-11-22). No plan task has started.
+**Branch:** `docs/19.2-measurement-harness`. It holds the design, the plan and the start-phase
+commit. Another worktree holds that branch name, so a worktree may need to check it out under a local
+alias and push with `git push origin HEAD:docs/19.2-measurement-harness`.
+**Next step:** execute the plan subagent-driven, starting at Task 1, the build-only check of the
+`v0.15.0` backport branch.
 
-## What 19.1 produced
+## Current Position
 
-- **The evidence log** is `docs/plans/2026-11-17-phase-19.1-regrade.md`, anchored at `51c837bd`. It has one entry per criteria row and a sweep of 101 issues. It ends with the owner's rulings.
-- **The ledger** is `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md`, re-graded. Every row carries an M19 note.
+- **Design:** `docs/superpowers/specs/2026-11-22-phase-19.2-design.md`, approved 2026-11-22.
+- **Plan:** `docs/superpowers/plans/2026-11-22-phase-19.2-measurement-harness.md`, with 11 tasks,
+  `## Checks`, and Tasks 9 and 10 marked `**Model:** opus`.
+- **Owner rulings, 2026-11-22, in the 19.2 brainstorm:**
+  1. Cold boot runs from the kernel's process start to the first applied batch with a `CommitFrame`,
+     not to the OS first frame. Both shells boot .NET off the main thread, so `am start -W` and
+     `XCTApplicationLaunchMetric` would only see an empty layout. Android also calls
+     `reportFullyDrawn()` at that point.
+  2. The clicks come from measurement test classes (androidTest and BnHostTests) that the PR lanes
+     exclude. No test hook goes into the shipped shell.
+  3. HEAD and `v0.15.0` are interleaved in one emulator job and one simulator job, from one dispatch.
+     This resolves the M19 design's contradiction between "dispatch per ref" and "interleave".
+- **Calls made in the design and plan.** Each is listed in the design's "Calls made" section; the
+  owner approved both documents with them:
+  - pairing by order in a serial test, because the ABI is frozen;
+  - `PerfProbe` boots in every run;
+  - a temporary branch-limited `push` trigger on `perf.yml`, removed in Task 11;
+  - a `.v015` app-id suffix on the backport branch;
+  - the parser is a C# tool, `tools/BlazorNative.PerfReport`, tested in
+    `BlazorNative.Runtime.Tests` rather than written in `pwsh`;
+  - the marks and `reportFullyDrawn` stay in the product.
 
-The interim scoreboard:
+## Open Decisions
 
-| | Count |
-|---|---:|
-| Blockers | 17: 14 MET, 2 OPEN, 1 partial |
-| Non-blocking | 13: 8 met, 4 still false but with a published caveat (#402, #495, D3, R4), 1 OPEN (R2, the owner's 1.0 cut) |
-
-The two OPEN blockers are P3 (the real iPhone) and #600. The partial blocker is A5. Q3 counts as MET, but provisionally: the #12/#13 verdicts are pending in 19.3/19.4.
-
-## Owner rulings, 2026-11-17
-
-- **A5, the Unshipped→Shipped drain.** It is a 1.0 requirement. The new **Phase 19.8, API baseline drain (A5)** owns it. The 1.0 decision moved from 19.8 to **19.9**.
-- **Q2.** It means surfacing, so it is MET. The rc clause is narrowed to the parameter-binding fault.
-- **#210.** Narrowing the docs counts, so it is MET.
-- **#402 and #495.** Both are DOCUMENTED, and their caveats are published. The #402 caveat is the corrected `BlazorNativeApp.cs` xmldoc. The #495 caveat is on quick-start, the Android shell page and the template README.
-- **#600.** It is a BLOCKER. The existing **Phase 19.5** owns it, because its goal already includes the #600 fix with a pin. No phase was inserted for it, and no caveat was published.
-- **Q5.** The `IMobileBridge.cs` xmldoc now says a zeroed `MaxDimension` keeps full resolution, so Q5 is MET.
-- **D3 and R4.** Their caveats are published: the api-stability page, and a README Limitations bullet.
-- **README status paragraph.** Count-free; it points at the 1.0 checklist.
-- **R3.** Reworded to name `BlazorNative.Testing`.
-
-## Owner ruling, 2026-11-22
-
-- **P3's scope.** APNs and universal links are dropped from P3's acceptance items, because neither feature is built and both are published 1.0 limitations. CodeRabbit raised it on #733. P3 now has **five** items, and stays OPEN and a BLOCKER until the 19.7 session. Recorded in the ledger (P3 row and §6), the evidence log (ruling 12), the handover, ROADMAP 19.7, MILESTONE's DoD, the M19 design and `website/docs/api-stability.md`.
-
-## Other fixes made in 19.1
-
-These sentences were found false and corrected:
-
-- the S3 xmldoc in `NativeRenderer.cs`, which called the move non-breaking;
-- the PR baseline of the release-validation lane in `.github/workflows/release.yml`, which credited `main`'s release commit to #733 and red its nuget.org preflight; it now diffs against the merge ref's first parent;
-- the stale package counts and a false "404 today" claim in `scripts/release-preflight.ps1`, which was a prose-only edit that kept the BOM;
-- the NOT-API count in the tiers doc, which is now 29;
-- two "last blocker" claims in `docs/ios-device-verification-handover.md`.
-
-## Open for the owner
-
-- Nothing on 19.1. The owner runs the iPhone session in 19.7.
+- None. Task 1 stops and asks the owner only if `v0.15.0` will not build, even with toolchain pins.
 
 ## Blockers
 
@@ -56,15 +44,20 @@ These sentences were found false and corrected:
 
 ## Recommended Next Step
 
-1. Run `start-next-phase` on `docs/19.2-measurement-harness`. It routes to the Phase 19.2 brainstorm. Use the M19 design's "Calls made after the builder check" section:
-   - a `workflow_dispatch` measurement workflow;
-   - marks gated at `Verbose` and silent at `Warn`, proven both ways;
-   - a `v0.15.0` backport branch, with a build-only check of it as the first task;
-   - the dispatch-lane and frame-apply mark points the design proposes.
-2. Swift and JVM code cannot compile on Linux, so open a draft PR early for 19.2's shell marks.
-3. The standing rules still apply:
-   - no Claude signature, and no closing keywords unless they are intended;
+1. Run `resume-work`, then `start-next-phase`. 19.2 is `active` with a plan, so it routes to
+   `list-phase-assumptions` and then `subagent-driven-development`. The owner already approved the
+   plan, so the assumptions gate is a confirmation.
+2. **Task 1:**
+   - cut `perf/v0.15.0-marks` from `v0.15.0`;
+   - dispatch its own `android-instrumented.yml` and `ios.yml`;
+   - record the run ids in `docs/plans/2026-11-22-phase-19.2-record.md`;
+   - confirm the launch paths at the tag: Android `EXTRA_COMPONENT`, and the iOS deep-link map.
+3. Open the draft PR at Task 5, the first shell marks. Swift and JVM cannot compile on Linux.
+4. Pinned counts at the start of 19.2: .NET 2828, JVM 210, instrumented 273, XCTest 307.
+5. Standing rules:
+   - no Claude signature or `Co-Authored-By` trailer, and no closing keywords;
    - ask with AskUserQuestion;
    - execution is subagent-driven;
-   - never `pkill -f`, and never `&`.
-4. CodeRabbit re-reviews every push and can turn a green PR to CHANGES_REQUESTED; #733 took two rounds. Check `reviewDecision`, unresolved threads and its review body before saying a PR is ready.
+   - never `pkill -f`, and never `&`;
+   - CodeRabbit re-reviews every push, so check `reviewDecision`, unresolved threads and its review
+     body before calling the PR ready.
