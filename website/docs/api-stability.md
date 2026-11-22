@@ -322,6 +322,7 @@ with frame tables asserted identical to Android's — and builds the device slic
 request. Neither is an iPhone, so 1.0 will not ship on them: real-device verification is blocker
 **P3** in that list, tracked on [#17](https://github.com/MarcelRoozekrans/BlazorNative/issues/17).
 Its acceptance criteria are the things a simulator cannot prove — camera capture from a real
-sensor, Face ID / Touch ID against the Secure Enclave, real-GPS geolocation, APNs and universal
-links, code-signing and provisioning, and thermal/background behaviour. **Android is
+sensor, Face ID / Touch ID against the Secure Enclave, real-GPS geolocation, code-signing and
+provisioning, and thermal/background behaviour. Remote push (APNs) and universal links are not
+P3 items: neither is built, and both are listed as 1.0 limitations. **Android is
 device-proven.**

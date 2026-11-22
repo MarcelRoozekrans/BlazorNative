@@ -33,11 +33,16 @@ The two OPEN blockers are P3 (the real iPhone) and #600. The partial blocker is 
 - **README status paragraph.** Count-free; it points at the 1.0 checklist.
 - **R3.** Reworded to name `BlazorNative.Testing`.
 
+## Owner ruling, 2026-11-22
+
+- **P3's scope.** APNs and universal links are dropped from P3's acceptance items, because neither feature is built and both are published 1.0 limitations. CodeRabbit raised it on #733. P3 now has **five** items, and stays OPEN and a BLOCKER until the 19.7 session. Recorded in the ledger (P3 row and §6), the evidence log (ruling 12), the handover, ROADMAP 19.7, MILESTONE's DoD, the M19 design and `website/docs/api-stability.md`.
+
 ## Other fixes made in 19.1
 
 These sentences were found false and corrected:
 
 - the S3 xmldoc in `NativeRenderer.cs`, which called the move non-breaking;
+- the PR baseline of the release-validation lane in `.github/workflows/release.yml`, which credited `main`'s release commit to #733 and red its nuget.org preflight; it now diffs against the merge ref's first parent;
 - the stale package counts and a false "404 today" claim in `scripts/release-preflight.ps1`, which was a prose-only edit that kept the BOM;
 - the NOT-API count in the tiers doc, which is now 29;
 - two "last blocker" claims in `docs/ios-device-verification-handover.md`.

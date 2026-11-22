@@ -4143,7 +4143,7 @@ the app's handler through a forwarding hook.
 **HelpWanted:** no
 
 #### Phase 19.7: Real-iPhone session [status: pending]
-**Goal:** With a signed device build, the owner runs P3's seven acceptance items and the iOS real-device perf pass on a real iPhone; record both and fix or file every finding.
+**Goal:** With a signed device build, the owner runs P3's five acceptance items (APNs and universal links dropped, owner, 2026-11-22) and the iOS real-device perf pass on a real iPhone; record both and fix or file every finding.
 **Surface:** Infra
 **HelpWanted:** no
 

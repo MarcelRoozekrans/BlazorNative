@@ -59,8 +59,10 @@ thread, fault classification, thread hops), which is where latency would move if
    report must say so and not attribute a runtime-caused delta to framework code.
 4. **All nine carried-over issues are in scope**: #575, #621, #600, #593, #711, #582, #716, #717,
    #562.
-5. **P3 is worked inside M19**: a phase where the owner runs P3's seven acceptance items on a real
+5. **P3 is worked inside M19**: a phase where the owner runs P3's five acceptance items on a real
    iPhone. The iOS real-device perf numbers come from that same session.
+   *(Seven items when this design was approved. The owner dropped APNs and universal links on
+   2026-11-22, because neither feature is built; see the 1.0 criteria file, §6.)*
 6. **The owner runs the iPhone session and has the Apple Developer account ready.** 19.7 delivers a
    signing and staging script plus a step-by-step session checklist. The session is scheduled as
    soon as 19.2's timing marks land. The plan targets "1.0.0 published" as the expected outcome.
@@ -77,7 +79,7 @@ thread, fault classification, thread hops), which is where latency would move if
   - A "regression" or "improvement" claimed inside measurement noise.
   - Timing marks that print at the default log level, which would falsify Q1.
   - P3 graded MET from the simulator, or from the September contributor run alone without checking
-    it against the seven items.
+    it against the five items.
 
 ## Definition of Done
 
@@ -98,7 +100,7 @@ thread, fault classification, thread hops), which is where latency would move if
       #593, the drop is documented where consumers read it, if the owner chooses that branch.
 - [ ] **#711, #582 and #716 are closed**, and **#717 and #562 are closed or reduced to a written,
       owner-accepted remainder** on the issue.
-- [ ] **P3 is graded** against its seven acceptance items from a real-iPhone session, with a record
+- [ ] **P3 is graded** against its five acceptance items from a real-iPhone session, with a record
       under `docs/plans/`. Any finding from the session is fixed or filed and graded against 1.0.
 - [ ] **The criteria file is re-graded** on the final head: every row has a state and evidence dated
       in M19, the scoreboard is rewritten, and any new blocker found since July is added with its
@@ -142,7 +144,7 @@ release-please owns releases.
    - **Goal:** Close #711, #582 and #716, and work #717 and #562 down to closed or an owner-accepted
      remainder.
 7. **Phase 19.7: Real-iPhone session** — `Surface: Infra`
-   - **Goal:** With a signed device build, run P3's seven acceptance items and the iOS real-device
+   - **Goal:** With a signed device build, run P3's five acceptance items and the iOS real-device
      perf pass on a real iPhone, record both, and fix or file every finding.
 8. **Phase 19.8: The 1.0 decision** — `Surface: Docs`
    - **Goal:** Re-grade the criteria file on the final head, audit M19, and then either cut 1.0.0
