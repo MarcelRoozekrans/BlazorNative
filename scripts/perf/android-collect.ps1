@@ -22,8 +22,8 @@
 
   The parsing and assertion logic is in functions, so the file can be dot-sourced without running.
 
-  Requirements: pwsh 7 (native stderr handling; Windows PowerShell 5.1 can parse the file but is not
-  supported for running it), adb on PATH, and a device that accepts `logcat -G 16M`. The boot and click
+  Requirements: pwsh 7 (the script uses .NET Core APIs, ProcessStartInfo.ArgumentList and
+  Process.Kill with a process tree; Windows PowerShell 5.1 can parse the file but is not supported for running it), adb on PATH, and a device that accepts `logcat -G 16M`. The boot and click
   kinds require -Sdk and -Commit, which become meta.json. To rerun after a failed collection, delete
   <Out>/<Side> first, or pass -Force, which overwrites the run logs.
 #>
@@ -34,7 +34,7 @@ param(
     [ValidateSet('head', 'v015')][string]$Side,
     [ValidateSet('boot', 'click', 'q1')][string]$Kind,
     [int]$Runs = 20,
-    [int]$Clicks = 25,
+    [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
     [string]$Out,
     [string]$Sdk,
     [string]$Commit,
@@ -144,6 +144,7 @@ function Get-MarkCount {
 # A click log is complete when every click's post and handler are in, and post equals the click count.
 function Test-ClickLogComplete {
     param([string[]]$Lines, [int]$Clicks)
+    if ($Clicks -lt 1) { return $false }
     $post = Get-MarkCount $Lines 'dispatch.post'
     $handler = Get-MarkCount $Lines 'dispatch.handler'
     return ($post -eq $Clicks) -and ($handler -ge $post)
@@ -235,7 +236,16 @@ function Invoke-ClickRun {
     $runner = "$($script:Package).test/$($script:TestRunner)"
     # Bound: a few seconds per click plus a margin for the boot.
     $instrumentTimeout = 120 + 5 * $script:Clicks
-    $result = Invoke-Adb $instrumentTimeout 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$($script:Clicks)" $runner
+    try {
+        $result = Invoke-Adb $instrumentTimeout 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$($script:Clicks)" $runner
+    }
+    catch {
+        # Killing the host adb tree does not stop the device-side test. Best effort; the original error stays.
+        foreach ($pkg in "$($script:Package).test", $script:Package) {
+            try { Invoke-Adb 10 'shell' 'am' 'force-stop' $pkg | Out-Null } catch { }
+        }
+        throw
+    }
     if (-not (Test-InstrumentPassed $result)) { throw "PerfMeasurementTest did not pass:`n$($result -join "`n")" }
     # The .NET marks reach the log late through the writer thread and the stderr pump, so wait for the tail.
     $clicks = $script:Clicks

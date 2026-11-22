@@ -107,7 +107,7 @@ dropped samples per side and why.
 ## Collectors
 
 `scripts/perf/android-collect.ps1` writes the layout above from an Android device or emulator, one kind per
-call: `boot`, `click` or `q1`. It needs pwsh 7 (native stderr handling), adb on PATH, and a device that
+call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
 accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them,
 under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
 being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. Every
