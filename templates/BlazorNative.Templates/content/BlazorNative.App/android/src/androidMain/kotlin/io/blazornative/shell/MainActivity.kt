@@ -386,7 +386,7 @@ class MainActivity : FragmentActivity() {
             onFrame = { frame -> mapper.apply(frame) },
             onError = onError,
             // Phase 19.2: `frame.recv`, from the render thread, at the callback's entry.
-            perfMark = { point -> BnPerfMark.mark(point) },
+            perfMark = { BnPerfMark.mark("frame.recv") },
             // Phase 16.2 (#346): on whatever thread .NET sent it from — only BUFFERED here,
             // for the mapper's next batch to apply on main (spec decision 2).
             onBackState = { canGoBack -> mapper.offerBackState(canGoBack) },

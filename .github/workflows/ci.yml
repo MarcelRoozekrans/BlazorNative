@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (2922 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (2928 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2407,7 +2407,8 @@ jobs:
       # 2842 -> 2886 (19.2 Task 4, +22, 2026-11-22): Runtime 1247 -> 1269. PerfReport: known-log samples, clock order violations, dropped samples (missing point, extra frame, no frame), the 5% drop limit, min-runs, warm-up exclusion, quartiles, Fully drawn formats, malformed marks, usage errors.
       # 2886 -> 2916 (19.2 Task 4 fix, +15, 2026-11-22): Runtime 1269 -> 1284. PerfReport pairs by per-point order and id, not log position: .NET lines after frame lines or the next post, a foreign id, post id required, recv/applied counts, ruler rules, applied-before-recv, boot order, min-runs after drops.
       # 2916 -> 2922 (19.2 Task 4 fix 2, +3, 2026-11-22): Runtime 1284 -> 1287. PerfReport: duplicate run numbers per side and kind are rejected naming both files, and a ruler seen only in warm-up does not drop later runs or count as a side mismatch.
-      - name: .NET tests (assert 2922 passed / 0 skipped)
+      # 2922 -> 2928 (19.2 Task 5 fix, +3, 2026-11-22): Runtime 1287 -> 1290. PerfMarkSiteDriftTests: every mark call site passes a literal point name, the planted-violation check, and BnPerfMark.kt exists in exactly two copies. PerfReport swaps RecvAppliedCountMismatch and FrameAppliedBeforeRecv for ThrowingBatch_NoApplied_DropsOneSampleOnly and TwoAppliedForOneRecv_PairsTheFirst, net 0.
+      - name: .NET tests (assert 2928 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2425,8 +2426,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 2922 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 2922 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 2928 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 2928 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It
@@ -2868,7 +2869,7 @@ jobs:
       # 208 -> 209 (18.5, +1, 2026-11-10): the JVM host test for the lambda call-site naming.
       # 209 -> 210 (18.7, +1, 2026-11-11): BnStderrPumpTwinTest, #401 — every stderr vector is forwarded
       #    whatever the shell level.
-      - name: JVM tests (Gradle testDebugUnitTest — assert 214 passed / 0 failed)
+      - name: JVM tests (Gradle testDebugUnitTest — assert 216 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |
           $stepClock = [System.Diagnostics.Stopwatch]::StartNew()
@@ -2899,9 +2900,9 @@ jobs:
             $errors += [int]$suite.errors; $skipped += [int]$suite.skipped
           }
           Write-Host "JVM test totals across $($xmls.Count) suites: tests=$tests failures=$failures errors=$errors skipped=$skipped"
-          # 19.2 Task 5: +4 for BnPerfMarkTest (default threshold, Verbose line, once, Warn reportFullyDrawn).
-          if ($tests -ne 214 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
-            throw "JVM test baseline drift: expected 214 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
+          # 19.2 Task 5: +4 for BnPerfMarkTest (default threshold, Verbose line, once, Warn reportFullyDrawn), +2 in the fix round (bootStart at the default threshold, bootContentPending).
+          if ($tests -ne 216 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+            throw "JVM test baseline drift: expected 216 passed / 0 failed / 0 skipped, got tests=$tests failures=$failures errors=$errors skipped=$skipped"
           }
 
       # the instrumented-sources compile gate moved to its own required job

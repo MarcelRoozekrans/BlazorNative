@@ -76,8 +76,9 @@ internal static class Pairing
     /// by point and paired by per-point order and id:
     /// the k-th dispatch.post with id X takes the k-th dispatch.enter and dispatch.handler with
     /// id X. The click's frame is the one frame.recv with handler.t le recv.t lt the next post's t;
-    /// its frame.applied is the applied mark with the same per-point index. A click with a missing
-    /// point, no frame, or more than one frame is a dropped sample.
+    /// its frame.applied is the first applied mark with recv.t le applied.t lt the next recv's t. A click
+    /// with a missing point, no frame, more than one frame, or a frame with no applied mark is a
+    /// dropped sample.
     /// </summary>
     public static PairingResult PairClicks(IReadOnlyList<Mark> marks, int run, string where)
     {
@@ -85,11 +86,6 @@ internal static class Pairing
         var posts = marks.Where(m => m.Point == MarkLine.PostPoint).ToList();
         var recvs = marks.Where(m => m.Point == MarkLine.RecvPoint).ToList();
         var applieds = marks.Where(m => m.Point == MarkLine.AppliedPoint).ToList();
-        if (recvs.Count != applieds.Count)
-        {
-            r.Violations.Add($"{where}: {recvs.Count} frame.recv marks but {applieds.Count} frame.applied marks, the frames cannot be matched");
-            return r;
-        }
         var enters = ById(marks, MarkLine.EnterPoint);
         var handlers = ById(marks, MarkLine.HandlerPoint);
         var seen = new Dictionary<long, int>();
@@ -122,13 +118,15 @@ internal static class Pairing
                 if (recvs[i].T >= handler.T && recvs[i].T < upper) inWindow.Add(i);
             if (inWindow.Count == 0) { r.Drops.Add($"{tag}: no frame before the next post"); continue; }
             if (inWindow.Count > 1) { r.Drops.Add($"{tag}: more than one frame ({inWindow.Count} recv)"); continue; }
-            var recv = recvs[inWindow[0]];
-            var applied = applieds[inWindow[0]];
-            if (applied.T < recv.T)
-            {
-                r.Violations.Add($"{tag}: frame.applied (t={applied.T}) precedes frame.recv (t={recv.T})");
-                continue;
-            }
+            var recvIndex = inWindow[0];
+            var recv = recvs[recvIndex];
+            // The frame's applied mark is the first one in [recv.t, next recv.t). Both are shell
+            // marks on the same clock. A dropped frame or a throwing batch has no applied mark,
+            // and that costs this one sample; an applied mark is never taken from another frame.
+            var nextRecv = recvIndex + 1 < recvs.Count ? recvs[recvIndex + 1].T : long.MaxValue;
+            var appliedIndex = applieds.FindIndex(a => a.T >= recv.T && a.T < nextRecv);
+            if (appliedIndex < 0) { r.Drops.Add($"{tag}: no frame.applied for the frame"); continue; }
+            var applied = applieds[appliedIndex];
 
             r.Samples.Add(new Sample(Metrics.Dispatch, Metrics.Total, run, Metrics.NsToMs(handler.T - post.T)));
             r.Samples.Add(new Sample(Metrics.Dispatch, Metrics.Lane, run, Metrics.NsToMs(enter.T - post.T)));

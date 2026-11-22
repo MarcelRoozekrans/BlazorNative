@@ -24,9 +24,10 @@ import java.util.concurrent.atomic.AtomicLong
 //
 // The line goes out through `BnShellLog.verbose` with `BnPrivacy.SAFE`, because a
 // REDACTED line would be written as `<private>` and hide the numbers. The line
-// holds a point name, two counters and a handler id, and nothing the app author
-// wrote. LogPrivacyDriftTests exempts this file from its literal-message rule
-// for that reason.
+// holds a point name, two counters and a handler id. Every call site passes one of
+// the seven point names as a string literal, and PerfMarkSiteDriftTests pins that.
+// LogPrivacyDriftTests exempts this file from its literal-message rule for that
+// reason.
 //
 // Clocks. A span that crosses the shell/.NET boundary reads `System.nanoTime()`,
 // which is CLOCK_MONOTONIC on bionic, the clock .NET's Stopwatch reads. Boot
@@ -44,7 +45,7 @@ object BnPerfMark {
     private val bootContentFired = AtomicBoolean(false)
 
     /**
-     * Replaces the nanosecond clock for [mark] and [bootContentOnce]. The JVM unit
+     * Replaces the nanosecond clock for [mark], [bootStart] and [bootContentOnce]. The JVM unit
      * lane cannot call `System.nanoTime()` and `SystemClock` deterministically, so
      * a test sets this and counts the reads. Null in production.
      */
@@ -52,10 +53,11 @@ object BnPerfMark {
     internal var clockForTest: (() -> Long)? = null
 
     /** Writes one mark for [point] when the level gate is at Verbose or finer.
-     * [id] is written as ` id=<id>` when it is set. */
+     * [id] is written as ` id=<id>` when it is not 0: handler ids start at 1, the same
+     * convention as .NET's BnPerfMarks, and it keeps a boxed Long out of the path below Verbose. */
     @JvmStatic
     @JvmOverloads
-    fun mark(point: String, id: Long? = null) {
+    fun mark(point: String, id: Long = 0) {
         if (!BnShellLog.isEnabled(BnLogLevel.VERBOSE)) return
         val t = (clockForTest ?: System::nanoTime)()
         write(point, t, id)
@@ -65,7 +67,7 @@ object BnPerfMark {
     @JvmStatic
     fun bootStart() {
         if (!BnShellLog.isEnabled(BnLogLevel.VERBOSE)) return
-        write("boot.start", Process.getStartElapsedRealtime() * 1_000_000L, null)
+        write("boot.start", (clockForTest ?: { Process.getStartElapsedRealtime() * 1_000_000L })(), 0)
     }
 
     /**
@@ -82,14 +84,24 @@ object BnPerfMark {
         if (!once.compareAndSet(false, true)) return
         if (BnShellLog.isEnabled(BnLogLevel.VERBOSE)) {
             val t = (clockForTest ?: SystemClock::elapsedRealtimeNanos)()
-            write("boot.content", t, null)
+            write("boot.content", t, 0)
         }
         reportFullyDrawn()
     }
 
-    private fun write(point: String, t: Long, id: Long?) {
+    /** True until [bootContentOnce] has run once in this process: a cheap read, so a caller
+     * can skip the work of deciding whether a batch is the first with content. */
+    @JvmStatic
+    fun bootContentPending(): Boolean = !bootContentFired.get()
+
+    /** True until [bootContentOnce] has run once in this process: a cheap read, so a caller
+     * can skip the work of deciding whether a batch is the first with content. */
+    @JvmStatic
+    fun bootContentPending(): Boolean = !bootContentFired.get()
+
+    private fun write(point: String, t: Long, id: Long) {
         val seq = seqs.getOrPut(point) { AtomicLong() }.incrementAndGet()
-        val line = if (id != null) "BNPERF $point seq=$seq t=$t id=$id" else "BNPERF $point seq=$seq t=$t"
+        val line = if (id != 0L) "BNPERF $point seq=$seq t=$t id=$id" else "BNPERF $point seq=$seq t=$t"
         BnShellLog.verbose(TAG, line, BnPrivacy.SAFE)
     }
 }

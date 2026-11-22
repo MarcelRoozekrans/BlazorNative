@@ -56,9 +56,10 @@ by point, keeps each point's log order, and pairs by order and id:
   unused `dispatch.handler` with id X, in per-point order filtered by X. If either is missing, the
   sample is dropped.
 - The click's frame is the one `frame.recv` with `handler.t <= recv.t < next post's t`. The last click
-  has no upper bound. Zero or several such marks drop the sample. Its `frame.applied` is the applied mark
-  with the same per-point index as that recv. A file with different numbers of `frame.recv` and
-  `frame.applied` marks fails.
+  has no upper bound. Zero or several such marks drop the sample. Its `frame.applied` is the first applied
+  mark with `recv.t <= applied.t < next recv's t` (the last recv has no upper bound). A frame with no
+  such mark, as when its batch threw, drops that one sample; an applied mark is never taken from
+  another frame, and unequal numbers of `frame.recv` and `frame.applied` marks are not an error.
 - In a boot log the first `boot.start` and the first `boot.content` are paired.
 
 The triple is chosen by order and id, not by timestamp, so the clock check below still tests the
@@ -66,8 +67,8 @@ shared clock.
 
 ## Checks
 
-- Every sample, warm-up included, must satisfy `dispatch.post <= dispatch.enter <= dispatch.handler`
-  and `frame.recv <= frame.applied`. One violation fails the run: it means the shell and .NET are not
+- Every sample, warm-up included, must satisfy `dispatch.post <= dispatch.enter <= dispatch.handler`.
+  One violation fails the run: it means the shell and .NET are not
   reading the same clock.
 - Per side and metric (run 0 not counted), more than 5% dropped fails the run. Exactly 5% passes.
 - `--min-runs` counts samples per side per metric, not run files. A side with fewer than `--min-runs`
@@ -76,7 +77,7 @@ shared clock.
 - At most one `Fully drawn` and one `TotalTime` per boot log; more is an error naming the file. Once any
   boot log of a side with run above 0 has a ruler (warm-up alone does not count), a boot log with run above 0 and no such line is a dropped sample for
   that metric. Both sides must report the same rulers; neither side reporting them, as on iOS, is fine.
-- `frame.applied` must not precede its `frame.recv`; `boot.content` must not precede `boot.start`.
+- `boot.content` must not precede `boot.start`.
 
 ## samples.csv
 

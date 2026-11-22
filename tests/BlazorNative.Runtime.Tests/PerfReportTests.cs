@@ -424,27 +424,37 @@ public sealed class PerfReportTests : IDisposable
     }
 
     [Fact]
-    public void RecvAppliedCountMismatch_FailsTheFile()
+    public void ThrowingBatch_NoApplied_DropsOneSampleOnly()
     {
-        var input = WriteSide("head", ("click-1.log", GoodClicks(3) + Mk("frame.recv", 9_000_000_000)));
+        // A frame whose batch threw has a recv and no applied. It costs its own click and nothing else:
+        // the run still passes and the drop is reported.
+        var thrown = Click(9_000_000_000, 9_001_000_000, 9_002_000_000, 9_003_000_000, null);
+        var input = WriteSide("head", ("click-1.log", GoodClicks(40) + thrown));
 
         var (code, err, _) = Run(input);
 
-        Assert.Equal(1, code);
-        Assert.Contains("frame.recv", err);
-        Assert.Contains("frame.applied", err);
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Equal(40, csv.Count(l => l.Contains(",click_to_content,")));
+        Assert.Equal(40, csv.Count(l => l.Contains(",dispatch,total,")) );
+        Assert.Contains("dropped", File.ReadAllText(Path.Combine(_root, "out", "summary.md")), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void FrameAppliedBeforeRecv_FailsTheRun()
+    public void TwoAppliedForOneRecv_PairsTheFirst()
     {
-        var input = WriteSide("head", ("click-1.log", Click(1_000_000, 2_000_000, 3_000_000, 5_000_000, 4_000_000)));
+        // Two applied marks inside one recv window: the first (4 ms) is the frame's, the second (9 ms) is not.
+        var two = Click(9_000_000_000, 9_001_000_000, 9_002_000_000, 9_003_000_000, 9_007_000_000)
+            + $"{Prefix} frame.applied seq=2 t=9012000000\n";
+        var input = WriteSide("head", ("click-1.log", GoodClicks(40) + two));
 
         var (code, err, _) = Run(input);
 
-        Assert.Equal(1, code);
-        Assert.Contains("frame.applied", err);
-        Assert.Contains("frame.recv", err);
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,7", csv);
+        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,12", csv);
+        Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,4", csv);
     }
 
     [Fact]

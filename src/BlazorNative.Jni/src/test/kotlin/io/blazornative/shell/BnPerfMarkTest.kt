@@ -94,11 +94,41 @@ class BnPerfMarkTest {
     fun `reportFullyDrawn is called at Warn too`() {
         collect()
         BnShellLog.setLevelFromOrdinal(BnLogLevel.WARN)
+        var reads = 0
+        BnPerfMark.clockForTest = { reads++; 1L }
         var reported = 0
 
         BnPerfMark.bootContentOnce(AtomicBoolean(false)) { reported++ }
 
         assertEquals(1, reported)
+        assertEquals(0, reads, "boot.content below Verbose must not read the clock")
         assertTrue(lines.isEmpty(), "no mark at Warn, got $lines")
+    }
+
+    @Test
+    fun `bootStart at the default threshold reads no clock and writes nothing`() {
+        collect()
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.UNSET)
+        var reads = 0
+        BnPerfMark.clockForTest = { reads++; 1L }
+
+        BnPerfMark.bootStart()
+
+        assertEquals(0, reads, "boot.start below Verbose must not read the clock")
+        assertTrue(lines.isEmpty(), "boot.start below Verbose must write nothing, got $lines")
+    }
+
+    @Test
+    fun `bootContentPending is true until the process flag fires`() {
+        collect()
+        BnShellLog.setLevelFromOrdinal(BnLogLevel.WARN)
+        // Only this test touches the process-wide flag; every other test passes its own.
+        assertTrue(BnPerfMark.bootContentPending())
+        var reported = 0
+
+        BnPerfMark.bootContentOnce { reported++ }
+
+        assertEquals(1, reported)
+        assertTrue(!BnPerfMark.bootContentPending())
     }
 }

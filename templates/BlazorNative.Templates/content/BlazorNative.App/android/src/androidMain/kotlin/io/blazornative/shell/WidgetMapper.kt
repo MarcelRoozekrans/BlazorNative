@@ -886,7 +886,8 @@ class WidgetMapper(
         // Phase 19.2: the batch is applied. `frame.applied` is the last statement of
         // applyBatchBody, after the scroll flush and the back-state publish.
         BnPerfMark.mark("frame.applied")
-        if (patches.any { it is RenderPatch.CommitFrame }) {
+        // The scan runs only until boot.content has fired; after that it is one flag read.
+        if (BnPerfMark.bootContentPending() && patches.any { it is RenderPatch.CommitFrame }) {
             // `boot.content` and Fully drawn: the first batch that holds a CommitFrame.
             BnPerfMark.bootContentOnce { (context as? Activity)?.reportFullyDrawn() }
         }
