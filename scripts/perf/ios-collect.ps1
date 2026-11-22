@@ -47,7 +47,7 @@ param(
     [string]$Bundle = 'io.blazornative.bnhost',
     [ValidateSet('head', 'v015')][string]$Side,
     [ValidateSet('boot', 'click', 'q1')][string]$Kind,
-    [int]$Runs = 20,
+    [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
     [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
     [string]$Out,
     [string]$Sdk,
@@ -201,6 +201,16 @@ function Get-RunLogPath {
     return $path
 }
 
+# Under -Force: removes the side directory's <kind>-<n>.log files for the kind being collected, and nothing
+# else, so a run above the new -Runs cannot survive from an earlier collection.
+function Remove-KindLogs {
+    param([string]$SideDir, [string]$Kind)
+    if (-not (Test-Path -LiteralPath $SideDir)) { return }
+    foreach ($f in Get-ChildItem -LiteralPath $SideDir -File) {
+        if ($f.Name -match ('^' + [regex]::Escape($Kind) + '-\d+\.log$')) { Remove-Item -LiteralPath $f.FullName }
+    }
+}
+
 # ── Process functions ───────────────────────────────────────────────────────
 
 # Runs a tool with a deadline. On timeout the process tree is killed and this throws. Returns an object with
@@ -288,8 +298,8 @@ function Invoke-BootRun {
     param([string]$SideDir, [int]$Run)
     $path = Get-RunLogPath $SideDir 'boot' $Run
     Stop-App
-    Set-LogLevelEnv $true
     try {
+        Set-LogLevelEnv $true
         $start = Get-WindowStart
         # A terminated app opened by URL is a cold launch: AppDelegate stashes the route and
         # HostViewController mounts the component BnDeepLink maps it to, PerfProbe for /perf.
@@ -349,30 +359,38 @@ function Start-Launch {
 function Invoke-Q1 {
     param([string]$OutDir, [string]$SideName)
     $failures = New-Object System.Collections.Generic.List[string]
+    try {
+        $launch = Start-Launch $false
+        # Nothing marks the end of a boot at the default level, so give it a bounded settle before reading.
+        Start-Sleep -Seconds $script:SettleSeconds
+        $default = Get-OsLog $launch.Start 'ndjson'
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
+        if (-not (Test-LaunchControl $default $launch.Pid)) {
+            # This control proves only that the launched process ran and logged. That debug capture works
+            # is proved by the Verbose phase below: its marks are debug records read through the same persistence.
+            # The control needs a record from the process itself; the subsystem filter may hide it, so ask unfiltered.
+            $any = (Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--style' 'ndjson' '--start' $launch.Start '--predicate' "processID == $($launch.Pid)").Lines
+            if (-not (Test-LaunchControl $any $launch.Pid)) { $failures.Add("positive control failed: process $($launch.Pid) logged nothing, so the default launch is not shown to have happened") }
+        }
+        foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
-    $launch = Start-Launch $false
-    # Nothing marks the end of a boot at the default level, so give it a bounded settle before reading.
-    Start-Sleep -Seconds $script:SettleSeconds
-    $default = Get-OsLog $launch.Start 'ndjson'
-    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
-    if (-not (Test-LaunchControl $default $launch.Pid)) {
-        # The control needs a record from the process itself; the subsystem filter may hide it, so ask unfiltered.
-        $any = (Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--style' 'ndjson' '--start' $launch.Start '--predicate' "processID == $($launch.Pid)").Lines
-        if (-not (Test-LaunchControl $any $launch.Pid)) { $failures.Add("positive control failed: process $($launch.Pid) logged nothing, so the default launch is not shown to have happened") }
+        $launch = Start-Launch $true
+        $verbose = Wait-ForLog $launch.Start { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose' -Style 'ndjson'
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
+        foreach ($f in (Test-Q1Verbose $verbose)) { $failures.Add($f) }
+        Stop-App
+
+        if ($failures.Count -gt 0) {
+            $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
+            throw "q1 failed with $($failures.Count) violation(s)"
+        }
+        Write-Host 'q1 passed: quiet at the default level, all marks at Verbose'
     }
-    foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
-
-    $launch = Start-Launch $true
-    $verbose = Wait-ForLog $launch.Start { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose' -Style 'ndjson'
-    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
-    foreach ($f in (Test-Q1Verbose $verbose)) { $failures.Add($f) }
-    Stop-App
-
-    if ($failures.Count -gt 0) {
-        $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
-        throw "q1 failed with $($failures.Count) violation(s)"
+    finally {
+        # A timeout or failed assertion must not leave the app running or an env override behind.
+        Stop-App
+        try { Set-LogLevelEnv $false } catch { }
     }
-    Write-Host 'q1 passed: quiet at the default level, all marks at Verbose'
 }
 
 # ── Main: skipped when dot-sourced ──────────────────────────────────────────
@@ -399,6 +417,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 [void](Get-RunLogPath $sideDir $Kind 0)
             }
             New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
+            if ($Force) { Remove-KindLogs $sideDir $Kind }
             $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
             [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
         }
@@ -412,7 +431,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
     }
     catch {
-        Write-Host "ios-collect: $($_.Exception.Message)" -ForegroundColor Red
+        [Console]::Error.WriteLine("ios-collect: $($_.Exception.Message)")
         exit 1
     }
 }

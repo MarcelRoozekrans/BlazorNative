@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (2934 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (2938 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2410,7 +2410,8 @@ jobs:
       # 2922 -> 2928 (19.2 Task 5 fix, +3, 2026-11-22): Runtime 1287 -> 1290. PerfMarkSiteDriftTests: every mark call site passes a literal point name, the planted-violation check, and BnPerfMark.kt exists in exactly two copies. PerfReport swaps RecvAppliedCountMismatch and FrameAppliedBeforeRecv for ThrowingBatch_NoApplied_DropsOneSampleOnly and TwoAppliedForOneRecv_PairsTheFirst, net 0.
       # 2928 -> 2930 (19.2 Task 6, +2, 2026-11-22): Runtime 1290 -> 1291. PerfMarkSiteDriftTests: BnPerfMark.swift exists exactly once; the call check now also reads the Swift shell sources.
       # 2930 -> 2934 (19.2 Task 6 fix, +4, 2026-11-22): Runtime 1291 -> 1293. LogPrivacyDriftTests: the Swift .safe call sites are a closed list by file, and the planted-site control.
-      - name: .NET tests (assert 2934 passed / 0 skipped)
+      # 2934 -> 2938 (19.2 Task 8 fix, +2, 2026-11-23): Runtime 1293 -> 1295. IosRouteComponentsDriftTests: every component in BnDeepLink.routeComponents is a registered page and /perf is PerfProbe, and the planted-bad control for the detector.
+      - name: .NET tests (assert 2938 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2428,8 +2429,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 2934 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 2934 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 2938 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 2938 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It

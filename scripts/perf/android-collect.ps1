@@ -33,7 +33,7 @@ param(
     [string]$Package = 'io.blazornative.shell',
     [ValidateSet('head', 'v015')][string]$Side,
     [ValidateSet('boot', 'click', 'q1')][string]$Kind,
-    [int]$Runs = 20,
+    [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
     [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
     [string]$Out,
     [string]$Sdk,
@@ -158,6 +158,16 @@ function Get-RunLogPath {
         throw "refusing to overwrite ${path}: the parser rejects duplicate run numbers. Delete the side directory $SideDir, or pass -Force."
     }
     return $path
+}
+
+# Under -Force: removes the side directory's <kind>-<n>.log files for the kind being collected, and nothing
+# else, so a run above the new -Runs cannot survive from an earlier collection.
+function Remove-KindLogs {
+    param([string]$SideDir, [string]$Kind)
+    if (-not (Test-Path -LiteralPath $SideDir)) { return }
+    foreach ($f in Get-ChildItem -LiteralPath $SideDir -File) {
+        if ($f.Name -match ('^' + [regex]::Escape($Kind) + '-\d+\.log$')) { Remove-Item -LiteralPath $f.FullName }
+    }
 }
 
 # ── Device functions ────────────────────────────────────────────────────────
@@ -293,6 +303,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 if ($err) { throw $err }
             }
             New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
+            if ($Force) { Remove-KindLogs $sideDir $Kind }
             $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
             [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
         }
@@ -305,7 +316,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
     }
     catch {
-        Write-Host "android-collect: $($_.Exception.Message)" -ForegroundColor Red
+        [Console]::Error.WriteLine("android-collect: $($_.Exception.Message)")
         exit 1
     }
 }

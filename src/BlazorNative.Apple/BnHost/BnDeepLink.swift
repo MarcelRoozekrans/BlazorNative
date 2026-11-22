@@ -65,7 +65,8 @@ final class BnDeepLink {
         "/notifications": "BnNotificationsDemo",
         "/geolocation": "BnGeolocationDemo",
         // 19.2: the measurement fixture, so a cold link can mount it by name. Registered in
-        // SampleAppPages as Routed("/perf", "PerfProbe"), which RouteTableDriftTests pins.
+        // SampleAppPages as Routed("/perf", "PerfProbe"). IosRouteComponentsDriftTests parses this
+        // literal and pins that every component here is a registered page and /perf is PerfProbe.
         "/perf": "PerfProbe",
     ]
 
