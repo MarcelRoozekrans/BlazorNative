@@ -62,6 +62,8 @@ public static class BnPerfMarks
     {
         if (!BnLog.IsEnabled(BnLogLevel.Verbose)) return;
 
+        // The clock is read before seq on purpose: the timestamp must not include the
+        // counter's cost. Racing threads may get seq and t in opposite orders; the parser tolerates it.
         Func<long>? clock = ClockForTest;
         long ticks = clock is null ? Stopwatch.GetTimestamp() : clock();
         long[] counter = s_seq.GetOrAdd(point, static _ => new long[1]);
@@ -88,8 +90,10 @@ public static class BnPerfMarks
             if (s_thread is null)
             {
                 var t = new Thread(Drain) { IsBackground = true, Name = "BnPerfMarks" };
-                s_thread = t;
+                // Assigned only after a successful start, so a failed start is retried by the
+                // next mark. The lock keeps the start single.
                 t.UnsafeStart();
+                s_thread = t;
             }
             Monitor.PulseAll(s_lock);
         }

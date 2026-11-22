@@ -13,6 +13,7 @@ public sealed class BnPerfMarksTests : IDisposable
     private readonly BnLogLevel _originalLevel = BnLog.Level;
     private readonly ConcurrentQueue<string> _lines = new();
     private readonly ConcurrentQueue<int> _threads = new();
+    private readonly Action<BnLogLevel, string, string>? _originalSink = BnLog.Sink;
 
     public BnPerfMarksTests()
     {
@@ -28,6 +29,7 @@ public sealed class BnPerfMarksTests : IDisposable
     {
         BnPerfMarks.DrainForTest(TimeSpan.FromSeconds(5));
         BnPerfMarks.TestSink = null;
+        BnLog.Sink = _originalSink;
         BnPerfMarks.ClockForTest = null;
         BnPerfMarks.ResetForTest();
         BnLog.Level = _originalLevel;
@@ -98,5 +100,22 @@ public sealed class BnPerfMarksTests : IDisposable
 
         Assert.True(_threads.TryDequeue(out int writer));
         Assert.NotEqual(Environment.CurrentManagedThreadId, writer);
+    }
+
+    [Fact]
+    public void Mark_ProductionPath_WritesVerbosePerfLineThroughBnLog()
+    {
+        BnLog.Level = BnLogLevel.Verbose;
+        BnPerfMarks.TestSink = null;
+        var seen = new ConcurrentQueue<(BnLogLevel Level, string Category, string Message)>();
+        BnLog.Sink = (level, category, message) => seen.Enqueue((level, category, message));
+
+        BnPerfMarks.Mark("dispatch.handler", 7);
+        Drain();
+
+        var entry = Assert.Single(seen);
+        Assert.Equal(BnLogLevel.Verbose, entry.Level);
+        Assert.Equal("Perf", entry.Category);
+        Assert.Matches(new Regex(@"^BNPERF dispatch\.handler seq=1 t=\d+ id=7$"), entry.Message);
     }
 }
