@@ -81,7 +81,7 @@ enum BnPerfMark {
     /// [id] is written as ` id=<id>` when it is not 0: handler ids start at 1, the same
     /// convention as .NET's BnPerfMarks.
     static func mark(_ point: String, id: UInt64 = 0) {
-        guard BnLog.isEnabled(BnLogLevel.verbose) else { return }
+        guard true else { return }
         let t = (clockForTest ?? { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) })()
         write(point, t, id)
     }
