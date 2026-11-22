@@ -1,11 +1,10 @@
 # Session State
 
-**Last session:** 2026-11-17
+**Last session:** 2026-11-22
 **Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17 (#732, merged as `51c837bd`).
-**Phase:** 19.1 (re-grade the 1.0 criteria) is complete on branch `docs/19.1-criteria-regrade`, PR #733. Phases 19.2 to 19.9 are `[status: pending]`, with no design or plan yet.
-**Next step:**
-1. Get PR #733 green. Mark it ready when CI passes, then the owner merges it.
-2. Run `start-next-phase`. It routes to Phase 19.2 (measurement harness, Surface: Infra), which starts with a phase-scope brainstorm.
+**Phase:** 19.1 (re-grade the 1.0 criteria) is complete and merged: PR #733, squash `9aa49d85` on `main`. Phases 19.2 to 19.9 are `[status: pending]`, with no design or plan yet.
+**Branch:** `docs/19.2-measurement-harness`, cut from `main` at `9aa49d85`. It holds only this handoff.
+**Next step:** run `start-next-phase`. It routes to Phase 19.2 (measurement harness, Surface: Infra), which starts with a phase-scope brainstorm.
 
 ## What 19.1 produced
 
@@ -49,7 +48,7 @@ These sentences were found false and corrected:
 
 ## Open for the owner
 
-- Merge PR #733 once it is green.
+- Nothing on 19.1. The owner runs the iPhone session in 19.7.
 
 ## Blockers
 
@@ -57,15 +56,15 @@ These sentences were found false and corrected:
 
 ## Recommended Next Step
 
-1. On "Merged ?" for #733, follow the merge rule. Check `reviewDecision` and the unresolved threads as well as the checks, and read CodeRabbit's review body even when it says APPROVED.
-2. Then run `start-next-phase`, which routes to the Phase 19.2 brainstorm. Use the M19 design's "Calls made after the builder check" section for 19.2:
+1. Run `start-next-phase` on `docs/19.2-measurement-harness`. It routes to the Phase 19.2 brainstorm. Use the M19 design's "Calls made after the builder check" section:
    - a `workflow_dispatch` measurement workflow;
    - marks gated at `Verbose` and silent at `Warn`, proven both ways;
    - a `v0.15.0` backport branch, with a build-only check of it as the first task;
    - the dispatch-lane and frame-apply mark points the design proposes.
-3. Swift and JVM code cannot compile on Linux, so 19.2's shell marks need a draft PR early.
-4. The standing rules still apply:
+2. Swift and JVM code cannot compile on Linux, so open a draft PR early for 19.2's shell marks.
+3. The standing rules still apply:
    - no Claude signature, and no closing keywords unless they are intended;
    - ask with AskUserQuestion;
    - execution is subagent-driven;
    - never `pkill -f`, and never `&`.
+4. CodeRabbit re-reviews every push and can turn a green PR to CHANGES_REQUESTED; #733 took two rounds. Check `reviewDecision`, unresolved threads and its review body before saying a PR is ready.
