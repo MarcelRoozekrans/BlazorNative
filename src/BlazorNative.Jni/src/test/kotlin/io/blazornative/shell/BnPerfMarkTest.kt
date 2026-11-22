@@ -119,16 +119,17 @@ class BnPerfMarkTest {
     }
 
     @Test
-    fun `bootContentPending is true until the process flag fires`() {
+    fun `bootContentPending is true until the flag fires`() {
         collect()
         BnShellLog.setLevelFromOrdinal(BnLogLevel.WARN)
-        // Only this test touches the process-wide flag; every other test passes its own.
-        assertTrue(BnPerfMark.bootContentPending())
+        // The test's own flag, so no other test and no retry can have fired it first.
+        val once = AtomicBoolean(false)
+        assertTrue(BnPerfMark.bootContentPending(once))
         var reported = 0
 
-        BnPerfMark.bootContentOnce { reported++ }
+        BnPerfMark.bootContentOnce(once) { reported++ }
 
         assertEquals(1, reported)
-        assertTrue(!BnPerfMark.bootContentPending())
+        assertTrue(!BnPerfMark.bootContentPending(once))
     }
 }

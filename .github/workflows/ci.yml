@@ -2869,6 +2869,11 @@ jobs:
       # 208 -> 209 (18.5, +1, 2026-11-10): the JVM host test for the lambda call-site naming.
       # 209 -> 210 (18.7, +1, 2026-11-11): BnStderrPumpTwinTest, #401 — every stderr vector is forwarded
       #    whatever the shell level.
+      # 210 -> 214 (19.2 Task 5, +4, 2026-11-22): BnPerfMarkTest — a mark at the default threshold reads
+      #    no clock and writes nothing, a mark at Verbose writes one SAFE BNPERF line, boot.content fires
+      #    once, and reportFullyDrawn is called at Warn too.
+      # 214 -> 216 (19.2 Task 5 fix, +2, 2026-11-22): BnPerfMarkTest — boot.start at the default
+      #    threshold reads no clock and writes nothing, and bootContentPending is true until its flag fires.
       - name: JVM tests (Gradle testDebugUnitTest — assert 216 passed / 0 failed)
         working-directory: src/BlazorNative.Jni
         run: |

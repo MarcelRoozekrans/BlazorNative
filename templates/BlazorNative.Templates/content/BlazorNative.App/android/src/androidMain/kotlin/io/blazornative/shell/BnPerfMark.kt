@@ -89,10 +89,11 @@ object BnPerfMark {
         reportFullyDrawn()
     }
 
-    /** True until [bootContentOnce] has run once in this process: a cheap read, so a caller
-     * can skip the work of deciding whether a batch is the first with content. */
+    /** True until [bootContentOnce] has run once on [once], which defaults to the process-wide
+     * flag: a cheap read, so a caller can skip the work of deciding whether a batch is the first
+     * with content. A test passes its own flag, as it does to [bootContentOnce]. */
     @JvmStatic
-    fun bootContentPending(): Boolean = !bootContentFired.get()
+    fun bootContentPending(once: AtomicBoolean = bootContentFired): Boolean = !once.get()
 
     private fun write(point: String, t: Long, id: Long) {
         val seq = seqs.getOrPut(point) { AtomicLong() }.incrementAndGet()
