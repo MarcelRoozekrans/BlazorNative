@@ -369,19 +369,27 @@ public sealed class LogPrivacyDriftTests
     /// <summary>The Swift files that may pass <c>privacy: .safe</c>, and how many call sites each holds.
     /// BnRuntime has the three constant lines, BnPerfMark its one BNPERF line, whose text is a
     /// literal point name and numbers (PerfMarkSiteDriftTests pins the names); the rest are
-    /// constant lines that predate 19.2.</summary>
+    /// constant lines that predate 19.2. DOES NOT COVER: a privacy argument that is neither the
+    /// literal nor a stored constant of value .safe, such as one returned by a function or chosen
+    /// by a conditional.</summary>
     private static readonly Dictionary<string, int> SwiftSafeSites = new()
     {
-        ["BnBiometrics.swift"] = 1,
-        ["BnDeepLink.swift"] = 1,
-        ["BnPerfMark.swift"] = 1,
-        ["BnRuntime.swift"] = 3,
-        ["BnSecureStorage.swift"] = 1,
-        ["BnStderrPump.swift"] = 3,
+        ["BnBiometrics.swift"] = 1,    // two millisecond numbers plus constant text
+        ["BnDeepLink.swift"] = 1,      // logs only the scheme:// constant, never the URL
+        ["BnPerfMark.swift"] = 1,      // the BNPERF line: a literal point name and numbers
+        ["BnRuntime.swift"] = 3,       // two constant lines and the framework version
+        ["BnSecureStorage.swift"] = 1, // a constant string
+        ["BnStderrPump.swift"] = 3,    // constants, two of them with errno
     };
 
+    // Matches `privacy: .safe` and the qualified `privacy: BnLogPrivacy.safe`.
+    private static readonly Regex SafeArg = new(@"privacy\s*:\s*(?:BnLogPrivacy\s*\.\s*)?\.?safe\b", RegexOptions.Compiled);
+
+    // A stored constant or variable of value `.safe`, which would pass the argument by name.
+    private static readonly Regex SafeStored = new(@"\b(?:let|var)\s+\w+\s*(?::\s*\w+)?\s*=\s*(?:BnLogPrivacy\s*)?\.safe\b", RegexOptions.Compiled);
+
     private static int SwiftSafeCount(string code)
-        => Regex.Matches(code, @"privacy\s*:\s*\.safe\b").Count;
+        => SafeArg.Matches(code).Count + SafeStored.Matches(code).Count;
 
     [Fact]
     public void SwiftSafe_IsPassedOnlyAtTheListedSites()
@@ -406,6 +414,9 @@ public sealed class LogPrivacyDriftTests
         Assert.Equal(0, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x\")\n// privacy: .safe\n")));
         Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x \\(y)\", privacy: .safe)")));
         Assert.Equal(2, SwiftSafeCount(CommentStrippedSource.Strip("a(privacy: .safe)\nb(privacy:.safe)")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("a(privacy: BnLogPrivacy.safe)")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("let p: BnLogPrivacy = .safe")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("var p = BnLogPrivacy.safe")));
     }
 
     // ── 5. The reveal switch is "debuggable", set before the pump ────────────
