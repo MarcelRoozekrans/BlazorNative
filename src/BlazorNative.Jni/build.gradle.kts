@@ -174,6 +174,8 @@ android {
         // -PperfOnly runs only those classes. The collector uses `am instrument` directly.
         if (findProperty("perfOnly") != null) {
             testInstrumentationRunnerArguments["annotation"] = "io.blazornative.shell.PerfMeasurement"
+        } else {
+            testInstrumentationRunnerArguments["notAnnotation"] = "io.blazornative.shell.PerfMeasurement"
         }
     }
 
