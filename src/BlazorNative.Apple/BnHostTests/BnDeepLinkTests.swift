@@ -119,6 +119,13 @@ final class BnDeepLinkTests: XCTestCase {
         XCTAssertEqual(BnDeepLink.shared.resolvedLaunchComponent(), "BnNotificationsDemo",
                        "the stashed route must resolve to a mount NAME — that is how the cold path "
                        + "boots the right page instead of the default one")
+
+        // 19.2: the measurement fixture is launchable by link (blazornative://perf).
+        BnDeepLink.shared.clearForTest()
+        XCTAssertTrue(BnDeepLink.shared.handle(url: URL(string: "blazornative://perf")!))
+        XCTAssertEqual(BnDeepLink.shared.pendingLaunchRouteForTest(), "/perf")
+        XCTAssertEqual(BnDeepLink.shared.resolvedLaunchComponent(), "PerfProbe",
+                       "the perf collector cold-launches PerfProbe through this entry")
     }
 
     func testAColdLinkWithNoComponentFallsBackRatherThanFailing() {

@@ -64,6 +64,9 @@ final class BnDeepLink {
     static let routeComponents: [String: String] = [
         "/notifications": "BnNotificationsDemo",
         "/geolocation": "BnGeolocationDemo",
+        // 19.2: the measurement fixture, so a cold link can mount it by name. Registered in
+        // SampleAppPages as Routed("/perf", "PerfProbe"), which RouteTableDriftTests pins.
+        "/perf": "PerfProbe",
     ]
 
     private let lock = NSLock()

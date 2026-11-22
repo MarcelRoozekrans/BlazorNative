@@ -528,7 +528,10 @@ jobs:
           set -o pipefail
           # #444: the simulator log collected on failure starts here.
           date '+%Y-%m-%d %H:%M:%S' > ../../ios-out/test-start.txt
+          # 19.2: BnPerfMeasurementTests is a measurement, not a correctness test. The lane
+          # skips it, so the baseline below is unchanged; scripts/perf/ios-collect.ps1 runs it.
           xcodebuild test \
+            -skip-testing:BnHostTests/BnPerfMeasurementTests \
             -project BnHost.xcodeproj \
             -scheme BnHost \
             -onlyUsePackageVersionsFromResolvedFile \
