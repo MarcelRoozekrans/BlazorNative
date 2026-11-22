@@ -17,6 +17,11 @@
 // passes one of the seven point names as a string literal, and
 // PerfMarkSiteDriftTests pins that for the Swift sources.
 //
+// Threads. Marks come from the main, lane and render threads. `seq` is assigned
+// under `lock` and the line is handed to the sink and to BnLog after the lock is
+// released, so two threads marking the same point get distinct seq values but their
+// lines may reach the log in either order.
+//
 // Clocks. A span that crosses the shell/.NET boundary reads
 // `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`. Boot is a wall-clock pair:
 // `boot.start` is the process start the kernel recorded, `kp_proc.p_starttime`

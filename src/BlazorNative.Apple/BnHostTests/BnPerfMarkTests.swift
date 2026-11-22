@@ -18,17 +18,23 @@ final class BnPerfMarkTests: XCTestCase {
     private var lines: [String] = []
     private let linesLock = NSLock()
     private var clockReads = 0
+    private var testThread: Thread!
 
     override func setUp() {
         super.setUp()
         lines = []
         clockReads = 0
+        // The clock counts reads made on this thread only: a runtime thread left over from an
+        // earlier test could mark at Verbose and bump a process-wide counter.
+        testThread = Thread.current
         BnPerfMark.sinkForTest = { [unowned self] line in
             guard line.hasPrefix("BNPERF \(self.point) ") else { return }
             self.linesLock.lock(); self.lines.append(line); self.linesLock.unlock()
         }
         BnPerfMark.clockForTest = { [unowned self] in
-            self.linesLock.lock(); self.clockReads += 1; self.linesLock.unlock()
+            if Thread.current === self.testThread {
+                self.linesLock.lock(); self.clockReads += 1; self.linesLock.unlock()
+            }
             return 4242
         }
     }

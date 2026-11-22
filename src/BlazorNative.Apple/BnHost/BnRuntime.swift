@@ -285,7 +285,8 @@ final class BnRuntime {
         }
         let version = result.version.map { String(cString: $0) } ?? "<null>"
         // `.safe`: the framework's OWN version string, no app/user/OS data. One of
-        // exactly three `.safe` sites in the shell — see BnLog.swift's privacy rule.
+        // the three `.safe` sites in this file; the shell-wide list is in BnLog.swift's privacy
+        // rule and is pinned by LogPrivacyDriftTests.
         BnLog.info(BnRuntime.logCategory, "native init ok — \(version)", privacy: .safe)
 
         // register the frame callback

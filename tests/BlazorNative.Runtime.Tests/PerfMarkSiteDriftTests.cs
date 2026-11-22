@@ -71,19 +71,22 @@ public sealed class PerfMarkSiteDriftTests
         int sites = 0;
         var seen = new HashSet<string>();
         int swiftSites = 0;
+        var swiftSeen = new HashSet<string>();
         foreach (var (rel, code) in KotlinSources().Concat(SwiftSources()))
         {
             offenders.AddRange(Offenders(code).Select(o => rel + ": " + o));
             foreach (Match m in Regex.Matches(code, "(?:BnPerfMark\\s*\\.\\s*mark|perfMark\\s*\\?\\s*\\.\\s*invoke)\\s*\\(\\s*\"([a-z.]+)\""))
-            { sites++; seen.Add(m.Groups[1].Value); if (rel.EndsWith(".swift", StringComparison.Ordinal)) swiftSites++; }
+            { sites++; seen.Add(m.Groups[1].Value); if (rel.EndsWith(".swift", StringComparison.Ordinal)) { swiftSites++; swiftSeen.Add(m.Groups[1].Value); } }
         }
 
         Assert.True(offenders.Count == 0,
             "A perf mark call that is not a literal of the seven point names:\n  " + string.Join("\n  ", offenders));
         // Non-vacuity: dispatch.post, the hook's frame.recv twice and frame.applied, in each of two copies.
         Assert.True(sites >= 8, $"found {sites} mark call sites, expected at least 8; the call regex has stopped seeing them");
-        // The Swift shell marks dispatch.post, frame.recv and frame.applied; boot.start and boot.content go through BnPerfMark's own entry points.
+        // The Swift shell marks dispatch.post, frame.recv and frame.applied; boot.start and boot.content go through BnPerfMark's own entry points, bootStart and bootContentOnce, which are not mark calls.
         Assert.True(swiftSites >= 3, $"found {swiftSites} Swift mark call sites, expected at least 3; the call regex has stopped seeing them");
+        foreach (var p in new[] { "dispatch.post", "frame.recv", "frame.applied" })
+            Assert.True(swiftSeen.Contains(p), $"the Swift shell has no literal BnPerfMark.mark call for {p}");
         Assert.Contains("dispatch.post", seen);
         Assert.Contains("frame.recv", seen);
         Assert.Contains("frame.applied", seen);

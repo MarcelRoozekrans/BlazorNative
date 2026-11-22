@@ -364,6 +364,50 @@ public sealed class LogPrivacyDriftTests
             pump);
     }
 
+    // ── 4b. Swift .safe is a closed list ─────────────────────────────────────
+
+    /// <summary>The Swift files that may pass <c>privacy: .safe</c>, and how many call sites each holds.
+    /// BnRuntime has the three constant lines, BnPerfMark its one BNPERF line, whose text is a
+    /// literal point name and numbers (PerfMarkSiteDriftTests pins the names); the rest are
+    /// constant lines that predate 19.2.</summary>
+    private static readonly Dictionary<string, int> SwiftSafeSites = new()
+    {
+        ["BnBiometrics.swift"] = 1,
+        ["BnDeepLink.swift"] = 1,
+        ["BnPerfMark.swift"] = 1,
+        ["BnRuntime.swift"] = 3,
+        ["BnSecureStorage.swift"] = 1,
+        ["BnStderrPump.swift"] = 3,
+    };
+
+    private static int SwiftSafeCount(string code)
+        => Regex.Matches(code, @"privacy\s*:\s*\.safe\b").Count;
+
+    [Fact]
+    public void SwiftSafe_IsPassedOnlyAtTheListedSites()
+    {
+        var found = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        string dir = Path.Combine(BnRepo.Root(), "src/BlazorNative.Apple/BnHost");
+        foreach (var f in Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories))
+        {
+            int n = SwiftSafeCount(CommentStrippedSource.Strip(File.ReadAllText(f)));
+            if (n > 0) found[Path.GetFileName(f)] = n;
+        }
+
+        string Show(IEnumerable<KeyValuePair<string, int>> d) => string.Join(", ", d.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => $"{k.Key}={k.Value}"));
+        Assert.True(found.OrderBy(k => k.Key, StringComparer.Ordinal).SequenceEqual(SwiftSafeSites.OrderBy(k => k.Key, StringComparer.Ordinal)),
+            $"`privacy: .safe` call sites in the Swift shell are [{Show(found)}], expected [{Show(SwiftSafeSites)}]. "
+            + "A new .safe site must carry only a constant or a number, and be added to the list with its reason.");
+    }
+
+    [Fact]
+    public void TheSwiftSafeCheck_CountsAPlantedSiteAndIgnoresAComment()
+    {
+        Assert.Equal(0, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x\")\n// privacy: .safe\n")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x \\(y)\", privacy: .safe)")));
+        Assert.Equal(2, SwiftSafeCount(CommentStrippedSource.Strip("a(privacy: .safe)\nb(privacy:.safe)")));
+    }
+
     // ── 5. The reveal switch is "debuggable", set before the pump ────────────
 
     [Fact]
