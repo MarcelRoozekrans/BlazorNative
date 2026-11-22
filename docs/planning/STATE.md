@@ -1,39 +1,55 @@
 # Session State
 
 **Last session:** 2026-11-17
-**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17. M18 closed with PASS WITH FINDINGS; its close-out #730 merged as `9e1ee784`.
-**Phase:** none started. All eight phases (19.1 to 19.8) are `[status: pending]` with no design or plan yet.
+**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17 (#732, merged as `51c837bd`).
+**Phase:** 19.1 (re-grade the 1.0 criteria) is complete on branch `docs/19.1-criteria-regrade`, PR #733. Phases 19.2 to 19.9 are `[status: pending]`, with no design or plan yet.
 **Next step:**
-1. The owner merges the milestone-start PR from `chore/start-m19`.
-2. Run `start-next-phase`. It routes to Phase 19.1, re-grade the 1.0 criteria, which starts with a phase-scope brainstorm.
+1. Get PR #733 green. Mark it ready when CI passes, then the owner merges it.
+2. Run `start-next-phase`. It routes to Phase 19.2 (measurement harness, Surface: Infra), which starts with a phase-scope brainstorm.
 
-## How M19 was scoped (brainstorm, 2026-11-17)
+## What 19.1 produced
 
-Design: `docs/superpowers/specs/2026-11-17-milestone-19-design.md`, approved by the owner on 2026-11-17. The owner's answers:
+- **The evidence log** is `docs/plans/2026-11-17-phase-19.1-regrade.md`, anchored at `51c837bd`. It has one entry per criteria row and a sweep of 101 issues. It ends with the owner's rulings.
+- **The ledger** is `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md`, re-graded. Every row carries an M19 note.
 
-- **Perf goal: record and fix.** Measure, publish, and fix real regressions in M19. Re-judge #12, #13 and #575 on the data. No CI budget gate.
-- **Measurement approach A:**
-  - cold boot is timed from outside the app (`am start -W`, the XCTest launch metric);
-  - dispatch-lane latency and frame-apply time come from a few `Verbose`-gated marks, which must be silent at `Warn` so Q1 stays true;
-  - the marks are cherry-picked onto a backport branch cut from the comparison tag.
-- **Comparison release: `v0.15.0`.** It runs on .NET 10 and HEAD on .NET 11; the report must separate runtime deltas from framework deltas.
-- **All nine carry-overs are in:** #575, #621, #600, #593, #711, #582, #716, #717, #562. #718 stays open as a recurrence watch.
-- **P3 is graded in M19.** The owner runs the real-iPhone session and has the Apple Developer account ready. It is scheduled once 19.2's marks land.
+The interim scoreboard:
 
-My calls, written into the design's "Calls made after the builder check" section, for the owner to correct:
+| | Count |
+|---|---:|
+| Blockers | 17: 14 MET, 2 OPEN, 1 partial |
+| Non-blocking | 13: 8 met, 4 still false but with a published caveat (#402, #495, D3, R4), 1 OPEN (R2, the owner's 1.0 cut) |
 
-- the measurement runs in a separate `workflow_dispatch` workflow;
-- a regression counts only when HEAD's median exceeds the old median by more than the larger IQR, and the real-device run points the same way;
-- a cold-boot regression needs a HEAD-on-.NET-10 run before it is blamed on the framework;
-- each regression gets one fix round, then the owner's acceptance or a new phase;
-- for `v0.15.0`, pinning an older runner or toolchain is fine; if it still won't build, stop and ask the owner;
-- #593 fix vs document is decided in 19.5;
-- the #717/#562 remainder bar is set in 19.6;
-- 19.1 runs first but does not hold back 19.2 to 19.6.
+The two OPEN blockers are P3 (the real iPhone) and #600. The partial blocker is A5. Q3 counts as MET, but provisionally: the #12/#13 verdicts are pending in 19.3/19.4.
+
+## Owner rulings, 2026-11-17
+
+- **A5, the Unshipped→Shipped drain.** It is a 1.0 requirement. The new **Phase 19.8, API baseline drain (A5)** owns it. The 1.0 decision moved from 19.8 to **19.9**.
+- **Q2.** It means surfacing, so it is MET. The rc clause is narrowed to the parameter-binding fault.
+- **#210.** Narrowing the docs counts, so it is MET.
+- **#402 and #495.** Both are DOCUMENTED, and their caveats are published. The #402 caveat is the corrected `BlazorNativeApp.cs` xmldoc. The #495 caveat is on quick-start, the Android shell page and the template README.
+- **#600.** It is a BLOCKER. The existing **Phase 19.5** owns it, because its goal already includes the #600 fix with a pin. No phase was inserted for it, and no caveat was published.
+- **Q5.** The `IMobileBridge.cs` xmldoc now says a zeroed `MaxDimension` keeps full resolution, so Q5 is MET.
+- **D3 and R4.** Their caveats are published: the api-stability page, and a README Limitations bullet.
+- **README status paragraph.** Count-free; it points at the 1.0 checklist.
+- **R3.** Reworded to name `BlazorNative.Testing`.
+
+## Owner ruling, 2026-11-22
+
+- **P3's scope.** APNs and universal links are dropped from P3's acceptance items, because neither feature is built and both are published 1.0 limitations. CodeRabbit raised it on #733. P3 now has **five** items, and stays OPEN and a BLOCKER until the 19.7 session. Recorded in the ledger (P3 row and §6), the evidence log (ruling 12), the handover, ROADMAP 19.7, MILESTONE's DoD, the M19 design and `website/docs/api-stability.md`.
+
+## Other fixes made in 19.1
+
+These sentences were found false and corrected:
+
+- the S3 xmldoc in `NativeRenderer.cs`, which called the move non-breaking;
+- the PR baseline of the release-validation lane in `.github/workflows/release.yml`, which credited `main`'s release commit to #733 and red its nuget.org preflight; it now diffs against the merge ref's first parent;
+- the stale package counts and a false "404 today" claim in `scripts/release-preflight.ps1`, which was a prose-only edit that kept the BOM;
+- the NOT-API count in the tiers doc, which is now 29;
+- two "last blocker" claims in `docs/ios-device-verification-handover.md`.
 
 ## Open for the owner
 
-- Merge the milestone-start PR.
+- Merge PR #733 once it is green.
 
 ## Blockers
 
@@ -41,15 +57,15 @@ My calls, written into the design's "Calls made after the builder check" section
 
 ## Recommended Next Step
 
-1. On "Merged ?" for the milestone-start PR, check `reviewDecision` and unresolved threads, not only the checks. Read CodeRabbit's review body even on APPROVED.
-2. Then `start-next-phase` → Phase 19.1 brainstorm. The criteria file is stale since 2026-07-24. Known since then:
-   - #209, #210, #211, #169, #181, #178, #8, #9, #16 and #23 are closed;
-   - #17 (P3), #12, #13, #18 and #25 are open;
-   - a contributor ran on a real iPhone in September and found #338 and #339.
-3. The standing rules still apply:
-   - No Claude signature and no closing keywords unless intended.
-   - Ask with AskUserQuestion.
-   - Execution is subagent-driven.
-   - Never `pkill -f`, and never `&`.
-   - JVM pins need a draft PR, because of #491.
-   - Swift and JVM code cannot compile on Linux, so 19.2's shell marks need a draft PR early.
+1. On "Merged ?" for #733, follow the merge rule. Check `reviewDecision` and the unresolved threads as well as the checks, and read CodeRabbit's review body even when it says APPROVED.
+2. Then run `start-next-phase`, which routes to the Phase 19.2 brainstorm. Use the M19 design's "Calls made after the builder check" section for 19.2:
+   - a `workflow_dispatch` measurement workflow;
+   - marks gated at `Verbose` and silent at `Warn`, proven both ways;
+   - a `v0.15.0` backport branch, with a build-only check of it as the first task;
+   - the dispatch-lane and frame-apply mark points the design proposes.
+3. Swift and JVM code cannot compile on Linux, so 19.2's shell marks need a draft PR early.
+4. The standing rules still apply:
+   - no Claude signature, and no closing keywords unless they are intended;
+   - ask with AskUserQuestion;
+   - execution is subagent-driven;
+   - never `pkill -f`, and never `&`.

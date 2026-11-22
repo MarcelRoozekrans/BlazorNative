@@ -1,9 +1,10 @@
 # Handover — iOS real-device verification (P3)
 
 **Mission:** get BlazorNative's iOS shell running, signed, on a **real iPhone**, and
-verify it there against the seven acceptance criteria below. This is the **last blocker
-for 1.0** — every other 1.0 criterion is met; the project has deliberately refused to
-ship "1.0" with iOS proven only in the simulator.
+verify it there against the five acceptance criteria below. This is **1.0 criterion P3, a
+blocker** — the [1.0 criteria](plans/2026-07-22-phase-11.3-one-point-oh-criteria.md) list
+what else is still open; the project has deliberately refused to ship "1.0" with iOS proven
+only in the simulator.
 
 > **Read this first, then read [`website/docs/shells/ios.md`](../website/docs/shells/ios.md)
 > and [`src/BlazorNative.Apple/project.yml`](../src/BlazorNative.Apple/project.yml).**
@@ -165,11 +166,17 @@ This is the part the simulator skips entirely.
 
 Work each item on the device. For every one, capture **evidence** (screen recording or
 screenshots + the relevant unified-log lines) and a **PASS / FAIL / caveat** note. The
-seven acceptance items come straight from the 1.0 criteria doc
+five acceptance items come straight from the 1.0 criteria doc
 ([`docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md`](plans/2026-07-22-phase-11.3-one-point-oh-criteria.md));
 the extra checks below them are the specific traps this project already knows about.
 
-### The seven P3 acceptance items
+### The five P3 acceptance items
+
+*Owner ruling, 2026-11-22:* this list had seven items. **APNs** and **universal links** were
+dropped, because neither feature is built: remote push (FCM/APNs) and universal links are
+published 1.0 limitations in the README. A device session has nothing of theirs to verify. The
+local-notification and `blazornative://` custom-scheme checks those two items carried are still
+worth a look on the device, but they are not acceptance items.
 
 1. **Camera capture from a real sensor.** Open the camera page, capture a photo. Check: the
    real capture UI appears, permission is requested, a captured image round-trips back into
@@ -185,15 +192,9 @@ the extra checks below them are the specific traps this project already knows ab
    dialog appears; a real fix returns with plausible coordinates and accuracy; denial
    returns a *status*, not an exception or a hang. **Redact the coordinates** from anything
    you post publicly (see Reporting).
-4. **APNs (push notifications).** Check notification permission + scheduling/showing a
-   local notification, and — if wired — a remote push via APNs. Note honestly which half is
-   exercised; local notifications are in scope, real APNs may need additional server setup.
-5. **Universal links.** Open a universal link that targets the app. Check: the OS routes it
-   into the app and the launch route **seeds the initial mount** (HostViewController
-   resolves a deep-link launch component instead of the default `BnDemo`).
-6. **Code-signing and provisioning.** Proven by the app running at all — but record the
+4. **Code-signing and provisioning.** Proven by the app running at all — but record the
    signing identity/profile used and any capability that required a specific entitlement.
-7. **Thermal / background behaviour.** Background the app and return; leave it under load.
+5. **Thermal / background behaviour.** Background the app and return; leave it under load.
    Check: it resumes cleanly (the host session is idempotent; register/mount are last-wins),
    no crash on resume, no runaway CPU. Note any thermal or backgrounding surprises.
 
@@ -335,7 +336,7 @@ P3 can be called **met** when:
    `ios-build-slice` matrix and `ios.yml` — so what remains is the device-execution
    item: someone actually runs the signed app on hardware and records the signing
    recipe (team, profile, entitlements) that CI cannot hold.
-2. All **seven acceptance items** have been exercised with evidence and a PASS/caveat note.
+2. All **five acceptance items** have been exercised with evidence and a PASS/caveat note.
 3. The **secure-storage ACL** (#213 item 1) is confirmed-and-filed or proven-not-a-problem.
    **Met, and closed: confirmed on hardware in September 2026 and fixed in Phase 14.3.**
    What remains open in this area is only the no-enrolled-biometric question, the
@@ -343,7 +344,8 @@ P3 can be called **met** when:
 4. **Q1** has a paired observation (Release quiet at `Warn`, trace at `Verbose`).
 5. **Frame parity** on the demo layout pages is confirmed (or a difference is filed).
 
-At that point the last 1.0 blocker is cleared and the maintainer can cut 1.0.
+At that point P3 is met. Whether the maintainer can then cut 1.0 depends on the rest of the
+[1.0 criteria](plans/2026-07-22-phase-11.3-one-point-oh-criteria.md).
 
 ---
 
@@ -359,4 +361,4 @@ At that point the last 1.0 blocker is cleared and the maintainer can cut 1.0.
 | `samples/BlazorNative.SampleApp` | the publish head — what you publish for `ios-arm64` |
 | `.github/workflows/ios.yml` | the iOS execution lane. Since Phase 14.4 a two-leg matrix: the simulator leg compiles and runs the XCTests, the device leg compiles `ios-arm64` and runs nothing |
 | `.github/workflows/ci.yml` → `ios-build-slice` | the REQUIRED compile gate — both slices, every PR. `ios-build` aggregates it |
-| `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` | the 1.0 criteria; P3 and the seven items |
+| `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md` | the 1.0 criteria; P3 and the five items |

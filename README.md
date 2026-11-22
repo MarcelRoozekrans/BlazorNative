@@ -32,11 +32,12 @@ protocol, and Yoga tree run everywhere.
 > 80-byte / 10-export C-ABI; Android is **device-proven**, diagnostic logging is level-gated
 > and quiet by default, and render faults surface rather than crash.
 
-**1.0 is blocked on exactly one thing: a real iPhone.** iOS today is **simulator-only** —
-real-device iOS (code signing, provisioning, App Store validation, Secure Enclave, APNs)
-needs an Apple Developer account and is deferred. Everything else the 1.0 criteria ask for
-is met. See [API stability](https://marcelroozekrans.github.io/BlazorNative/docs/api-stability)
-for the tier table, the compatibility statement, and the full 1.0 checklist.
+**1.0 is not cut yet.** What still blocks it is tracked in the
+[1.0 checklist](docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md). iOS today is
+**simulator-only** — real-device iOS (code signing, provisioning, App Store validation,
+Secure Enclave, APNs) needs an Apple Developer account and is deferred. See
+[API stability](https://marcelroozekrans.github.io/BlazorNative/docs/api-stability)
+for the tier table and the compatibility statement.
 
 **Honest caveats** (deliberate, documented):
 
@@ -131,6 +132,10 @@ assert the *same numbers* on an Android emulator and an iOS simulator, frame for
 ## Limitations (honest boundaries)
 
 - **iOS is simulator-only** — real-device iOS is deferred pending an Apple Developer account.
+- **Not every platform API is here yet.** The shells ship geolocation, local notifications,
+  biometrics, secure storage and camera as `[Inject]` façades, and clipboard and share on
+  `IMobileBridge`. Haptics, in-app purchases, background tasks and remote push (FCM/APNs) are
+  not built.
 - **No universal links on iOS** — the `blazornative://` custom scheme works on both platforms, but iOS universal links (and Android https App Links) need a domain and per-platform verification files, so they are deferred with real-device iOS.
 - **`onDestroy` is best-effort, and weaker on iOS** — iOS routinely kills a suspended app without calling `applicationWillTerminate`. Persist on `onPause`, which fires every time on both platforms.
 - **No density-aware image sources** — one file pixel = one dp/pt, so a `@2x` asset renders at 2× size.

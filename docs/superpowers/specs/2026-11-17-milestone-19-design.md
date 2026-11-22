@@ -59,8 +59,10 @@ thread, fault classification, thread hops), which is where latency would move if
    report must say so and not attribute a runtime-caused delta to framework code.
 4. **All nine carried-over issues are in scope**: #575, #621, #600, #593, #711, #582, #716, #717,
    #562.
-5. **P3 is worked inside M19**: a phase where the owner runs P3's seven acceptance items on a real
+5. **P3 is worked inside M19**: a phase where the owner runs P3's five acceptance items on a real
    iPhone. The iOS real-device perf numbers come from that same session.
+   *(Seven items when this design was approved. The owner dropped APNs and universal links on
+   2026-11-22, because neither feature is built; see the 1.0 criteria file, §6.)*
 6. **The owner runs the iPhone session and has the Apple Developer account ready.** 19.7 delivers a
    signing and staging script plus a step-by-step session checklist. The session is scheduled as
    soon as 19.2's timing marks land. The plan targets "1.0.0 published" as the expected outcome.
@@ -77,7 +79,7 @@ thread, fault classification, thread hops), which is where latency would move if
   - A "regression" or "improvement" claimed inside measurement noise.
   - Timing marks that print at the default log level, which would falsify Q1.
   - P3 graded MET from the simulator, or from the September contributor run alone without checking
-    it against the seven items.
+    it against the five items.
 
 ## Definition of Done
 
@@ -98,7 +100,7 @@ thread, fault classification, thread hops), which is where latency would move if
       #593, the drop is documented where consumers read it, if the owner chooses that branch.
 - [ ] **#711, #582 and #716 are closed**, and **#717 and #562 are closed or reduced to a written,
       owner-accepted remainder** on the issue.
-- [ ] **P3 is graded** against its seven acceptance items from a real-iPhone session, with a record
+- [ ] **P3 is graded** against its five acceptance items from a real-iPhone session, with a record
       under `docs/plans/`. Any finding from the session is fixed or filed and graded against 1.0.
 - [ ] **The criteria file is re-graded** on the final head: every row has a state and evidence dated
       in M19, the scoreboard is rewritten, and any new blocker found since July is added with its
@@ -142,9 +144,15 @@ release-please owns releases.
    - **Goal:** Close #711, #582 and #716, and work #717 and #562 down to closed or an owner-accepted
      remainder.
 7. **Phase 19.7: Real-iPhone session** — `Surface: Infra`
-   - **Goal:** With a signed device build, run P3's seven acceptance items and the iOS real-device
+   - **Goal:** With a signed device build, run P3's five acceptance items and the iOS real-device
      perf pass on a real iPhone, record both, and fix or file every finding.
-8. **Phase 19.8: The 1.0 decision** — `Surface: Docs`
+8. **Phase 19.8: API baseline drain (A5)** — `Surface: Infra`
+   - **Goal:** Move the shipped API from every `PublicAPI.Unshipped.txt` into
+     `PublicAPI.Shipped.txt` in a release, then hold the baselines unchanged for one release cycle,
+     so 19.9 can grade A5.
+   - *Inserted by 19.1 on the owner's ruling of 2026-11-17, which made the drain a 1.0
+     requirement. Until then this design ended at 19.8, the 1.0 decision.*
+9. **Phase 19.9: The 1.0 decision** — `Surface: Docs`
    - **Goal:** Re-grade the criteria file on the final head, audit M19, and then either cut 1.0.0
      through release-please with the owner, or record the blocker list.
 
@@ -152,7 +160,8 @@ Ordering: 19.1 goes first because it can add blockers that change later phases. 
 chain. 19.5 and 19.6 are independent of the perf chain and of each other. 19.7 waits only on the
 owner's device availability and on 19.2 (the marks must exist for the perf pass); it can run as soon
 as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; Android ones do not.
-19.8 goes last.
+19.8, the A5 drain, runs once 19.2 to 19.6 have landed their API changes, early enough that a
+release cycle passes before 19.9. 19.9 goes last.
 
 ## Dependencies on Prior Milestones
 
@@ -185,7 +194,7 @@ as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; And
 | `v0.15.0` no longer builds on current runners | No comparison at all | 19.2 builds the backport branch first; if it cannot be built, stop and ask the owner for another release rather than silently swapping it. |
 | .NET 10 to 11 confounds the comparison | A runtime delta blamed on framework code | The report separates cold boot (runtime-dominated) from dispatch and frame-apply, and names the SDK of each side. Where it matters, one extra run of HEAD's code on .NET 10 is the builder's call. |
 | Timing marks change what they measure, or leak at `Warn` | Wrong numbers, or Q1 falsified | Marks are a timestamp plus a log call behind the gate; the paired Warn/Verbose check is a DoD item. |
-| The iPhone session slips or finds a blocker | 1.0 cannot be cut in M19 | The owner runs it once 19.2 lands; if it cannot happen or a finding blocks, 19.8 records P3 as the open blocker, which is still a valid M19 outcome. |
+| The iPhone session slips or finds a blocker | 1.0 cannot be cut in M19 | The owner runs it once 19.2 lands; if it cannot happen or a finding blocks, 19.9 records P3 as the open blocker, which is still a valid M19 outcome. |
 | 19.1 finds new blockers | M19 grows | New blockers are added to the criteria file in 19.1; the owner decides whether each is fixed in M19 (a new phase) or left listed. |
 | #717 / #562 are large bookkeeping | 19.6 balloons | The DoD allows an owner-accepted remainder written on the issue. |
 
@@ -232,7 +241,7 @@ as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; And
 - **#717 / #562 remainder:** 19.6's design proposes the bar, and the owner writes the acceptance
   on the issue.
 - **Phase gating.** 19.1 runs first, but it does not hold back 19.2 to 19.6, which may start
-  without waiting. A blocker 19.1 adds becomes a new phase only on the owner's word. 19.8 waits for
+  without waiting. A blocker 19.1 adds becomes a new phase only on the owner's word. 19.9 waits for
   every other phase.
 
 ## Open Questions

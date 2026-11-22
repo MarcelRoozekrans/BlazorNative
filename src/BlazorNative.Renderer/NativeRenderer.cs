@@ -30,7 +30,7 @@ namespace BlazorNative.Renderer;
 /// an internal type here. The members exposed are renderer internals (frame sink, strict-error
 /// switch, dispatch pump); no app author sets them. App code mounts through
 /// <c>BlazorNativePage.Routed&lt;T&gt;</c>, whose mount thunk is itself <c>internal</c>. The
-/// non-breaking fix (<c>internal</c> + <c>InternalsVisibleTo</c>) is recorded as 1.0 criterion S3.
+/// fix (<c>internal</c> + <c>InternalsVisibleTo</c>) is a breaking change, recorded as 1.0 criterion S3.
 /// Tier NOT-API.</remarks>
 // Fully qualified: a file-level `using System.ComponentModel` would make IComponent ambiguous
 // against Microsoft.AspNetCore.Components.IComponent, which this file uses throughout.
