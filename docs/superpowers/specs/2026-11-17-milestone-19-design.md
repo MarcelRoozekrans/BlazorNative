@@ -146,7 +146,13 @@ release-please owns releases.
 7. **Phase 19.7: Real-iPhone session** — `Surface: Infra`
    - **Goal:** With a signed device build, run P3's five acceptance items and the iOS real-device
      perf pass on a real iPhone, record both, and fix or file every finding.
-8. **Phase 19.8: The 1.0 decision** — `Surface: Docs`
+8. **Phase 19.8: API baseline drain (A5)** — `Surface: Infra`
+   - **Goal:** Move the shipped API from every `PublicAPI.Unshipped.txt` into
+     `PublicAPI.Shipped.txt` in a release, then hold the baselines unchanged for one release cycle,
+     so 19.9 can grade A5.
+   - *Inserted by 19.1 on the owner's ruling of 2026-11-17, which made the drain a 1.0
+     requirement. Until then this design ended at 19.8, the 1.0 decision.*
+9. **Phase 19.9: The 1.0 decision** — `Surface: Docs`
    - **Goal:** Re-grade the criteria file on the final head, audit M19, and then either cut 1.0.0
      through release-please with the owner, or record the blocker list.
 
@@ -154,7 +160,8 @@ Ordering: 19.1 goes first because it can add blockers that change later phases. 
 chain. 19.5 and 19.6 are independent of the perf chain and of each other. 19.7 waits only on the
 owner's device availability and on 19.2 (the marks must exist for the perf pass); it can run as soon
 as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; Android ones do not.
-19.8 goes last.
+19.8, the A5 drain, runs once 19.2 to 19.6 have landed their API changes, early enough that a
+release cycle passes before 19.9. 19.9 goes last.
 
 ## Dependencies on Prior Milestones
 
@@ -187,7 +194,7 @@ as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; And
 | `v0.15.0` no longer builds on current runners | No comparison at all | 19.2 builds the backport branch first; if it cannot be built, stop and ask the owner for another release rather than silently swapping it. |
 | .NET 10 to 11 confounds the comparison | A runtime delta blamed on framework code | The report separates cold boot (runtime-dominated) from dispatch and frame-apply, and names the SDK of each side. Where it matters, one extra run of HEAD's code on .NET 10 is the builder's call. |
 | Timing marks change what they measure, or leak at `Warn` | Wrong numbers, or Q1 falsified | Marks are a timestamp plus a log call behind the gate; the paired Warn/Verbose check is a DoD item. |
-| The iPhone session slips or finds a blocker | 1.0 cannot be cut in M19 | The owner runs it once 19.2 lands; if it cannot happen or a finding blocks, 19.8 records P3 as the open blocker, which is still a valid M19 outcome. |
+| The iPhone session slips or finds a blocker | 1.0 cannot be cut in M19 | The owner runs it once 19.2 lands; if it cannot happen or a finding blocks, 19.9 records P3 as the open blocker, which is still a valid M19 outcome. |
 | 19.1 finds new blockers | M19 grows | New blockers are added to the criteria file in 19.1; the owner decides whether each is fixed in M19 (a new phase) or left listed. |
 | #717 / #562 are large bookkeeping | 19.6 balloons | The DoD allows an owner-accepted remainder written on the issue. |
 
@@ -234,7 +241,7 @@ as both are ready. iOS regression fixes in 19.4 wait on 19.7's confirmation; And
 - **#717 / #562 remainder:** 19.6's design proposes the bar, and the owner writes the acceptance
   on the issue.
 - **Phase gating.** 19.1 runs first, but it does not hold back 19.2 to 19.6, which may start
-  without waiting. A blocker 19.1 adds becomes a new phase only on the owner's word. 19.8 waits for
+  without waiting. A blocker 19.1 adds becomes a new phase only on the owner's word. 19.9 waits for
   every other phase.
 
 ## Open Questions
