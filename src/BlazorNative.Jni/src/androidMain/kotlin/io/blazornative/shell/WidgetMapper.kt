@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -882,6 +883,13 @@ class WidgetMapper(
         // closed, take effect in this same runnable, together with the page it shows.
         backState.applyFromBatch(carriedBackState)
         publishBackEnabled()
+        // Phase 19.2: the batch is applied. `frame.applied` is the last statement of
+        // applyBatchBody, after the scroll flush and the back-state publish.
+        BnPerfMark.mark("frame.applied")
+        if (patches.any { it is RenderPatch.CommitFrame }) {
+            // `boot.content` and Fully drawn: the first batch that holds a CommitFrame.
+            BnPerfMark.bootContentOnce { (context as? Activity)?.reportFullyDrawn() }
+        }
     }
 
     /** Hands [backEnabled] to [onBackEnabledChanged] when it changed. Main thread only. */

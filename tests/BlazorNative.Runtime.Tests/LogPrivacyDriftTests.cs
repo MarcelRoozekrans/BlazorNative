@@ -63,6 +63,11 @@ public sealed class LogPrivacyDriftTests
     /// <summary>The one shared-JVM file allowed to touch <c>System.err</c>.</summary>
     private const string ErrSeam = "BnDiagnostics.kt";
 
+    /// <summary>The perf mark writer (19.2). Its one SAFE line is built from a point
+    /// name, two counters and a handler id, so it cannot be a bare literal. It is
+    /// exempt from the literal rule and held to ONE SAFE site per copy.</summary>
+    private const string PerfSeam = "BnPerfMark.kt";
+
     /// <summary>Any use of <c>android.util.Log</c>: the import or a qualified
     /// name, or a <c>Log.</c> member access, a call or a constant. The leading
     /// boundary keeps <c>BnShellLog.</c> and <c>BnLog.</c> out.</summary>
@@ -231,7 +236,12 @@ public sealed class LogPrivacyDriftTests
 
         // The seam compares against SAFE, and the enum declares it; neither is
         // a call site.
-        var sites = hits.Where(h => FileName(h.File) is not (LogSeam or ErrSeam)).ToList();
+        var sites = hits.Where(h => FileName(h.File) is not (LogSeam or ErrSeam or PerfSeam)).ToList();
+
+        var perfSites = hits.Where(h => FileName(h.File) == PerfSeam).ToList();
+        Assert.True(perfSites.Count > 0 && perfSites.GroupBy(h => h.File).All(g => g.Count() == 1),
+            $"{PerfSeam} must hold exactly one SAFE site per copy, the BNPERF line; found "
+            + string.Join(", ", perfSites.GroupBy(h => h.File).Select(g => $"{g.Count()} in {g.Key}")));
 
         int accepted = sites.Count(h => h.Token == Accepted);
         Assert.True(accepted >= 2,
