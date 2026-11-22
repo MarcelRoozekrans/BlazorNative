@@ -631,7 +631,7 @@ jobs:
             > ios-out/usernotifications.log 2>&1 || true
           echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
 
-      - name: Assert XCTest baseline (307 passed / 0 failed)
+      - name: Assert XCTest baseline (312 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1499,9 +1499,12 @@ jobs:
           # Granted while its presentation is held, a late add error goes to the runtime's
           # onError or, with no runtime, to BnLog and is never returned, and schedule still
           # completes with its add's outcome.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 307 ]; then
+          # 307 -> 312 (19.2 Task 6, +5, 2026-11-22): BnPerfMarkTests, the Verbose gate reads no
+          # clock and writes nothing at Warn, the line format, boot.content once, the flag
+          # consumed at Warn, and boot.start.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 312 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 307 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 312 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

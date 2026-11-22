@@ -152,6 +152,11 @@ final class BnRuntime {
         // MainActivity's `WidgetMapper(onUiEvent = { runtime.dispatchEvent(...) })`).
         // `self` weak → no retain cycle (runtime strongly holds the mapper).
         mapper.onUiEvent = { [weak self] handlerId, eventName, payload in
+            // Phase 19.2: `dispatch.post`, on the UI thread, before the hop to the dispatch lane.
+            // It is here, the twin of MainActivity's onUiEvent, and not in dispatchEvent: the scroll
+            // wire has its own seam below and is not marked, and DispatchSurfaceDriftTests reads
+            // dispatchEvent's body for a lane call.
+            BnPerfMark.mark("dispatch.post", id: UInt64(bitPattern: Int64(handlerId)))
             self?.dispatchEvent(handlerId: handlerId, eventName: eventName, payload: payload)
         }
         // Phase 7.2: the scroll wire needs the COMPLETION signal — the conflation
@@ -251,6 +256,9 @@ final class BnRuntime {
         // one. One threshold, declared once, honoured by both shells.
         let logLevel = BnRuntime.resolveLogLevel()
         BnLog.setLevelFromOrdinal(logLevel)
+        // Phase 19.2: `boot.start`, after the level is installed so the gate reads it.
+        // The mark's time is the process start the kernel recorded, not the time of this call.
+        BnPerfMark.bootStart()
 
         // init — nest withCString so the borrowed pointers stay alive across the
         // call (init copies the strings; it does not retain the pointers).
@@ -429,6 +437,8 @@ final class BnRuntime {
     /// mapper (which buffers and flushes to main on CommitFrame). A decode throw
     /// is routed to `onError` — never rethrown into the C callback.
     func handleFrame(_ framePtr: UnsafeRawPointer) {
+        // Phase 19.2: `frame.recv`, the first statement, on the callback thread.
+        BnPerfMark.mark("frame.recv")
         do {
             let frame = try BnFrameAdapter.read(framePtr)
             mapper.apply(frame)
