@@ -10,8 +10,8 @@
     OnAfterRender, nothing that could add a second render. The measured
     interval is therefore click -> the one frame that shows the new count.
 
-      [0]    BnButton  "Click"      the click target   
-      [1]    BnText    "Count: <n>" the settle signal  
+      [0]    BnButton  "Click"      the click target
+      [1]    BnText    "Count: <n>" the settle signal
       [2..51] BnText   50 rows
 
     Row 0 contains the count, so a click changes a FIXED set of nodes: the
@@ -19,7 +19,7 @@
     text; they exist so the frame has a realistic node count to lay out.
 
     The wire has no id or test-tag prop, so none is emitted. Device tests
-    locate the button by its title "Click" and the label by its text
+    locate the button by its label text "Click" and the label by its text
     "Count: <n>". That text must stay UNIQUE on the page: row 0 reads
     "Row 0 count <n>", which differs on purpose, and no other node may carry
     "Click" or "Count: ".
