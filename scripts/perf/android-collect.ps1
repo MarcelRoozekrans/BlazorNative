@@ -6,7 +6,7 @@
   Layout written, which scripts/perf/README.md defines:
     <Out>/<Side>/boot-<run>.log   one cold boot per file
     <Out>/<Side>/click-<run>.log  PerfMeasurementTest's serial clicks per file
-    <Out>/<Side>/meta.json        { "sdk", "commit" }, written when -Sdk and -Commit are given
+    <Out>/<Side>/meta.json        { "sdk", "commit" }, written for boot and click from -Sdk and -Commit
     <Out>/q1-<Side>-default.txt   q1 evidence, kept out of the side directory: the parser rejects any
     <Out>/q1-<Side>-verbose.txt   .log file there that is not named <kind>-<run>.log
 
@@ -21,6 +21,11 @@
            then one Verbose launch asserting boot.start, boot.content, frame.recv and frame.applied.
 
   The parsing and assertion logic is in functions, so the file can be dot-sourced without running.
+
+  Requirements: pwsh 7 (native stderr handling; Windows PowerShell 5.1 can parse the file but is not
+  supported for running it), adb on PATH, and a device that accepts `logcat -G 16M`. The boot and click
+  kinds require -Sdk and -Commit, which become meta.json. To rerun after a failed collection, delete
+  <Out>/<Side> first, or pass -Force, which overwrites the run logs.
 #>
 [CmdletBinding()]
 param(
@@ -33,7 +38,8 @@ param(
     [string]$Out,
     [string]$Sdk,
     [string]$Commit,
-    [int]$WaitSeconds = 60
+    [int]$WaitSeconds = 60,
+    [switch]$Force
 )
 
 Set-StrictMode -Version 2.0
@@ -120,52 +126,94 @@ function Test-InstrumentPassed {
     return ($text -match '(?m)^OK \(\d+ tests?\)') -and ($text -notmatch 'FAILURES!!!') -and ($text -notmatch 'INSTRUMENTATION_FAILED')
 }
 
+# The parser's meta.json rule: a non-empty string without commas, pipes or newlines. Returns an error or $null.
+function Test-MetaValue {
+    param([string]$Name, [string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "-$Name is required for the boot and click kinds" }
+    if ($Value.IndexOfAny([char[]]@(',', '|', "`n", "`r")) -ge 0) { return "-$Name must not contain commas, pipes or newlines" }
+    return $null
+}
+
+function Get-MarkCount {
+    param([string[]]$Lines, [string]$Point)
+    $n = 0
+    foreach ($l in $Lines) { if ($l -match ('BNPERF ' + [regex]::Escape($Point) + ' ')) { $n++ } }
+    return $n
+}
+
+# A click log is complete when every click's post and handler are in, and post equals the click count.
+function Test-ClickLogComplete {
+    param([string[]]$Lines, [int]$Clicks)
+    $post = Get-MarkCount $Lines 'dispatch.post'
+    $handler = Get-MarkCount $Lines 'dispatch.handler'
+    return ($post -eq $Clicks) -and ($handler -ge $post)
+}
+
 # The path for a run's log; throws when it exists, which is how a duplicate run number is refused.
 function Get-RunLogPath {
     param([string]$SideDir, [string]$Kind, [int]$Run)
     $path = Join-Path $SideDir ('{0}-{1}.log' -f $Kind, $Run)
-    if (Test-Path -LiteralPath $path) { throw "refusing to overwrite ${path}: the parser rejects duplicate run numbers" }
+    if ((Test-Path -LiteralPath $path) -and -not $script:Force) {
+        throw "refusing to overwrite ${path}: the parser rejects duplicate run numbers. Delete the side directory $SideDir, or pass -Force."
+    }
     return $path
 }
 
 # ── Device functions ────────────────────────────────────────────────────────
 
+# Runs adb with a deadline. On timeout the process is killed and this throws. Returns stdout lines;
+# a non-zero exit throws with stderr.
 function Invoke-Adb {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$AdbArgs)
-    $output = & adb -s $script:Serial @AdbArgs 2>&1 | ForEach-Object { "$_" }
-    if ($LASTEXITCODE -ne 0) { throw "adb $($AdbArgs -join ' ') failed with exit $LASTEXITCODE`n$($output -join "`n")" }
-    return , @($output)
+    param([int]$TimeoutSeconds = 30, [Parameter(ValueFromRemainingArguments = $true)][string[]]$AdbArgs)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'adb'
+    foreach ($a in (@('-s', $script:Serial) + $AdbArgs)) { [void]$psi.ArgumentList.Add($a) }
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+        try { $proc.Kill($true) } catch { }
+        throw "adb $($AdbArgs -join ' ') timed out after ${TimeoutSeconds}s"
+    }
+    $proc.WaitForExit()
+    $stdout = $outTask.Result
+    if ($proc.ExitCode -ne 0) { throw "adb $($AdbArgs -join ' ') failed with exit $($proc.ExitCode)`n$stdout`n$($errTask.Result)" }
+    return , @($stdout -split "\r?\n" | Where-Object { $_ -ne '' })
 }
 
-function Get-Logcat { return , @(Invoke-Adb 'logcat' '-d' '-v' 'threadtime') }
+function Get-Logcat { return , @(Invoke-Adb 60 'logcat' '-d' '-v' 'threadtime') }
 
 function Reset-Logcat {
     # A 16M buffer keeps the whole run: the default one can wrap and lose the first marks.
-    Invoke-Adb 'logcat' '-G' '16M' | Out-Null
-    Invoke-Adb 'logcat' '-c' | Out-Null
+    Invoke-Adb 30 'logcat' '-G' '16M' | Out-Null
+    Invoke-Adb 30 'logcat' '-c' | Out-Null
 }
 
 # Polls the log until $Test returns true; throws naming $What after $WaitSeconds.
 function Wait-ForLog {
-    param([scriptblock]$Test, [string]$What)
-    $deadline = (Get-Date).AddSeconds($script:WaitSeconds)
+    param([scriptblock]$Test, [string]$What, [int]$Seconds = 0)
+    if ($Seconds -le 0) { $Seconds = $script:WaitSeconds }
+    $deadline = (Get-Date).AddSeconds($Seconds)
     while ((Get-Date) -lt $deadline) {
         $lines = Get-Logcat
         if (& $Test $lines) { return , $lines }
         Start-Sleep -Milliseconds 500
     }
-    throw "timed out after $($script:WaitSeconds)s waiting for $What"
+    throw "timed out after ${Seconds}s waiting for $What"
 }
 
 # Cold-starts the activity. Returns the `am start -W` output.
 function Start-Cold {
     param([bool]$VerboseLevel)
-    Invoke-Adb 'shell' 'am' 'force-stop' $script:Package | Out-Null
+    Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
     Reset-Logcat
     $cmd = @('shell', 'am', 'start', '-W', '-n', "$($script:Package)/$($script:Activity)",
         '-e', $script:ExtraComponent, 'PerfProbe')
     if ($VerboseLevel) { $cmd += @('-e', $script:ExtraLogLevel, 'Verbose') }
-    return , @(Invoke-Adb @cmd)
+    return , @(Invoke-Adb 90 @cmd)
 }
 
 function Invoke-BootRun {
@@ -182,13 +230,16 @@ function Invoke-BootRun {
 function Invoke-ClickRun {
     param([string]$SideDir, [int]$Run)
     $path = Get-RunLogPath $SideDir 'click' $Run
-    Invoke-Adb 'shell' 'am' 'force-stop' $script:Package | Out-Null
+    Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
     Reset-Logcat
     $runner = "$($script:Package).test/$($script:TestRunner)"
-    $result = Invoke-Adb 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$($script:Clicks)" $runner
+    # Bound: a few seconds per click plus a margin for the boot.
+    $instrumentTimeout = 120 + 5 * $script:Clicks
+    $result = Invoke-Adb $instrumentTimeout 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$($script:Clicks)" $runner
     if (-not (Test-InstrumentPassed $result)) { throw "PerfMeasurementTest did not pass:`n$($result -join "`n")" }
-    $lines = Get-Logcat
-    if (-not (Test-LogHasMark $lines 'dispatch.post')) { throw 'the click run logged no dispatch.post mark' }
+    # The .NET marks reach the log late through the writer thread and the stderr pump, so wait for the tail.
+    $clicks = $script:Clicks
+    $lines = Wait-ForLog { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 15
     Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
     Write-Host "click run $Run -> $path"
 }
@@ -206,8 +257,7 @@ function Invoke-Q1 {
     foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
     Start-Cold $true | Out-Null
-    Wait-ForLog { param($l) Test-LogHasMark $l 'boot.content' } 'boot.content at Verbose' | Out-Null
-    $verbose = Get-Logcat
+    $verbose = Wait-ForLog { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose'
     Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
     foreach ($f in (Test-Q1Verbose $verbose)) { $failures.Add($f) }
 
@@ -225,14 +275,18 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Serial', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
-        $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds
+        $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
         $sideDir = Join-Path $Out $Side
-        New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
-
-        if ($Sdk -and $Commit) {
+        if ($Kind -ne 'q1') {
+            foreach ($pair in @(@('Sdk', $Sdk), @('Commit', $Commit))) {
+                $err = Test-MetaValue $pair[0] $pair[1]
+                if ($err) { throw $err }
+            }
+            New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
             $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
             [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
         }
+        else { New-Item -ItemType Directory -Force -Path $Out | Out-Null }
 
         switch ($Kind) {
             'boot'  { foreach ($r in 0..$Runs) { Invoke-BootRun $sideDir $r } }

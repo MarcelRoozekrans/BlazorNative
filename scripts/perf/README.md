@@ -103,3 +103,13 @@ Lists each side's `sdk` and `commit`, then n, median, Q1, Q3 and IQR per side, m
 milliseconds with three decimals. Run 0 is excluded. Quartiles use linear interpolation, numpy's
 default: for `[1,2,3,4,100]` the median is 3, Q1 2, Q3 4 and the IQR 2. A last section lists the
 dropped samples per side and why.
+
+## Collectors
+
+`scripts/perf/android-collect.ps1` writes the layout above from an Android device or emulator, one kind per
+call: `boot`, `click` or `q1`. It needs pwsh 7 (native stderr handling), adb on PATH, and a device that
+accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them,
+under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
+being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. Every
+adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
+`<Out>/q1-<side>-default.txt` and `-verbose.txt`, outside the side directory.
