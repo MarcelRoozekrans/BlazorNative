@@ -4119,6 +4119,8 @@ the app's handler through a forwarding hook.
 
 #### Phase 19.2: Measurement harness [status: pending]
 **Goal:** Add `Verbose`-gated timing marks on both shells and in .NET, external cold-boot scripts, a dispatch-only measurement workflow and the `v0.15.0` backport branch; prove the marks silent at `Warn`.
+**Design:** `docs/superpowers/specs/2026-11-22-phase-19.2-design.md`
+**Plan:** `docs/superpowers/plans/2026-11-22-phase-19.2-measurement-harness.md`
 **Surface:** Infra
 **HelpWanted:** no
 
