@@ -71,7 +71,7 @@ public sealed class NotApiEditorBrowsableTests
     /// <summary>The NOT-API types Gate C marked, all of which live in Runtime and
     /// Renderer (api-tiers §7.1) — the other five swept assemblies contribute none
     /// today. 12 in Runtime + 14 in Renderer = 26 — #256 added ScrollToPatch, the
-    /// 14th Renderer NOT-API type.</summary>
+    /// 14th Renderer NOT-API type. Phase 19.2 added BnPerfMarks in Core, making 27.</summary>
     private static readonly string[] ExpectedNotApiMarked =
     [
         // BlazorNative.Runtime — 12 (Exports + the 9 C-ABI structs/enums + the two
@@ -105,6 +105,9 @@ public sealed class NotApiEditorBrowsableTests
         "BlazorNative.Renderer.RenderFrame",
         "BlazorNative.Renderer.NativeUiEvent",
         "BlazorNative.Renderer.BlazorVersionMismatchException",
+
+        // BlazorNative.Core — 1 (Phase 19.2: the harness mark writer, not consumer API).
+        "BlazorNative.Core.BnPerfMarks",
     ];
 
     /// <summary>The seven shipped assemblies whose NOT-API surface this test
@@ -261,7 +264,7 @@ public sealed class NotApiEditorBrowsableTests
     [Fact]
     public void ExpectedList_IsNonVacuous_AndExcludesKnownStableTypes()
     {
-        Assert.Equal(26, ExpectedNotApiMarked.Length);
+        Assert.Equal(27, ExpectedNotApiMarked.Length);
 
         var expected = new HashSet<string>(ExpectedNotApiMarked, StringComparer.Ordinal);
 
