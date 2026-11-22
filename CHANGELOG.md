@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.22.1...v0.22.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* embed PDBs so Go to Definition shows the package source ([c1dd371](https://github.com/MarcelRoozekrans/BlazorNative/commit/c1dd371de61634867e0d273dc0e92ae452c17a8a))
+
 ## [0.22.1](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.22.0...v0.22.1) (2026-11-16)
 
 
