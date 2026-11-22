@@ -57,7 +57,7 @@ internal static class Program
             // The same ruler set on every side, or the comparison has a number against nothing.
             foreach (var metric in new[] { Metrics.BootFullyDrawn, Metrics.BootTotalTime })
             {
-                var have = sides.Where(s => s.Samples.Any(x => x.Metric == metric)).Select(s => s.Name).ToList();
+                var have = sides.Where(s => s.Samples.Any(x => x.Run > 0 && x.Metric == metric)).Select(s => s.Name).ToList();
                 if (have.Count > 0 && have.Count < sides.Count)
                     failures.Add($"{metric} is reported for {string.Join(", ", have)} but not for every side");
             }
@@ -101,7 +101,12 @@ internal static class Program
         {
             var m = LogName.Match(Path.GetFileName(path));
             if (!m.Success) throw new UsageException($"{path}: expected <boot|click>-<run>.log");
-            files.Add((m.Groups["kind"].Value, int.Parse(m.Groups["run"].Value, CultureInfo.InvariantCulture), path));
+            var kind = m.Groups["kind"].Value;
+            var run = int.Parse(m.Groups["run"].Value, CultureInfo.InvariantCulture);
+            var twin = files.FirstOrDefault(f => f.Kind == kind && f.Run == run);
+            if (twin.Path is not null)
+                throw new UsageException($"{name}: {Path.GetFileName(twin.Path)} and {Path.GetFileName(path)} are both {kind} run {run}");
+            files.Add((kind, run, path));
         }
         foreach (var (kind, run, path) in files.OrderBy(f => f.Kind == "boot" ? 0 : 1).ThenBy(f => f.Run))
         {
@@ -134,7 +139,8 @@ internal static class Program
         var bootRuns = files.Where(f => f.Kind == "boot" && f.Run > 0).Select(f => f.Run).ToList();
         foreach (var metric in new[] { Metrics.BootFullyDrawn, Metrics.BootTotalTime })
         {
-            if (!side.Samples.Any(s => s.Metric == metric)) continue;
+            // Presence is judged from runs above 0: a ruler seen only in warm-up is not reported.
+            if (!side.Samples.Any(s => s.Run > 0 && s.Metric == metric)) continue;
             var have = side.Samples.Where(s => s.Run > 0 && s.Metric == metric).Select(s => s.Run).ToHashSet();
             var missing = bootRuns.Where(run => !have.Contains(run)).ToList();
             foreach (var run in missing) side.Drops.Add($"{name}/boot-{run}.log: no {metric}");

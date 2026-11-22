@@ -339,12 +339,16 @@ public sealed class PerfReportTests : IDisposable
         var (code, err, _) = Run(input);
 
         Assert.True(code == 0, err);
-        var csv = Csv();
-        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1", csv);
-        Assert.Contains("head,10.0.100,abc1234,dispatch,lane,1,0.5", csv);
-        Assert.Contains("head,10.0.100,abc1234,dispatch,dotnet,1,0.5", csv);
-        Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,1", csv);
-        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,3", csv);
+        // The whole file, line by line: a prefix or a wrong row cannot pass.
+        Assert.Equal(
+        [
+            "side,sdk,commit,metric,part,run,value_ms",
+            "head,10.0.100,abc1234,dispatch,total,1,1",
+            "head,10.0.100,abc1234,dispatch,lane,1,0.5",
+            "head,10.0.100,abc1234,dispatch,dotnet,1,0.5",
+            "head,10.0.100,abc1234,frame_apply,total,1,1",
+            "head,10.0.100,abc1234,click_to_content,total,1,3"
+        ], Csv());
     }
 
     [Fact]
@@ -360,13 +364,20 @@ public sealed class PerfReportTests : IDisposable
         var (code, err, _) = Run(input);
 
         Assert.True(code == 0, err);
-        var csv = Csv();
-        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1", csv);
-        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,3", csv);
-        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1.5", csv);
-        Assert.Contains("head,10.0.100,abc1234,dispatch,lane,1,0.8", csv);
-        Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,2", csv);
-        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,4", csv);
+        Assert.Equal(
+        [
+            "side,sdk,commit,metric,part,run,value_ms",
+            "head,10.0.100,abc1234,dispatch,total,1,1",
+            "head,10.0.100,abc1234,dispatch,lane,1,0.5",
+            "head,10.0.100,abc1234,dispatch,dotnet,1,0.5",
+            "head,10.0.100,abc1234,frame_apply,total,1,1",
+            "head,10.0.100,abc1234,click_to_content,total,1,3",
+            "head,10.0.100,abc1234,dispatch,total,1,1.5",
+            "head,10.0.100,abc1234,dispatch,lane,1,0.8",
+            "head,10.0.100,abc1234,dispatch,dotnet,1,0.7",
+            "head,10.0.100,abc1234,frame_apply,total,1,2",
+            "head,10.0.100,abc1234,click_to_content,total,1,4"
+        ], Csv());
     }
 
     [Fact]
@@ -549,6 +560,43 @@ public sealed class PerfReportTests : IDisposable
 
         Assert.True(code == 0, err);
         Assert.DoesNotContain(Csv(), l => l.Contains(",boot_fully_drawn,") || l.Contains(",boot_total_time,"));
+    }
+
+    [Fact]
+    public void DuplicateRunNumbers_FailNamingBothFiles()
+    {
+        // boot-1.log and boot-01.log are both run 1: their samples would double.
+        var input = WriteSide("head", ("boot-1.log", BootLog(false, false)), ("boot-01.log", BootLog(false, false)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(2, code);
+        Assert.Contains("boot-1.log", err);
+        Assert.Contains("boot-01.log", err);
+    }
+
+    [Fact]
+    public void Ruler_SeenOnlyInWarmup_DoesNotDropLaterRuns()
+    {
+        // The warm-up boot has a ruler, runs 1 and 2 do not: no ruler is reported, so nothing is dropped.
+        var input = WriteSide("head",
+            ("boot-0.log", BootLog(true, true)), ("boot-1.log", BootLog(false, false)), ("boot-2.log", BootLog(false, false)));
+
+        var (code, err, _) = Run(input, minRuns: 2);
+
+        Assert.True(code == 0, err);
+        Assert.DoesNotContain("no boot_fully_drawn", File.ReadAllText(Path.Combine(_root, "out", "summary.md")));
+    }
+
+    [Fact]
+    public void Ruler_SeenOnlyInWarmupOnOneSide_IsNotASideMismatch()
+    {
+        WriteSide("head", ("boot-0.log", BootLog(true, true)), ("boot-1.log", BootLog(false, false)));
+        var input = WriteSide("base", ("boot-0.log", BootLog(false, false)), ("boot-1.log", BootLog(false, false)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
     }
 
     private static void CopyDirectory(string from, string to)

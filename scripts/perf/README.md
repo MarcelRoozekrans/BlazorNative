@@ -29,7 +29,7 @@ dotnet run --project tools/BlazorNative.PerfReport -- --input <dir> --out <dir> 
 ```
 
 `sdk` and `commit` are non-empty strings without commas, pipes or newlines. `<run>` is a number;
-run 0 is warm-up. A kind (`boot` or `click`) present for one side must be present for every side.
+run 0 is warm-up. Two files with the same kind and run number (`boot-1.log` and `boot-01.log`) are an error, exit 2. A kind (`boot` or `click`) present for one side must be present for every side.
 
 ## Mark lines
 
@@ -74,7 +74,7 @@ shared clock.
   samples of `boot`, of `dispatch` (and so of every click metric), or of a ruler fails the run. Drops
   count against it.
 - At most one `Fully drawn` and one `TotalTime` per boot log; more is an error naming the file. Once any
-  boot log of a side has a ruler, a boot log with run above 0 and no such line is a dropped sample for
+  boot log of a side with run above 0 has a ruler (warm-up alone does not count), a boot log with run above 0 and no such line is a dropped sample for
   that metric. Both sides must report the same rulers; neither side reporting them, as on iOS, is fine.
 - `frame.applied` must not precede its `frame.recv`; `boot.content` must not precede `boot.start`.
 
