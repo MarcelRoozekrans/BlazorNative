@@ -54,6 +54,14 @@ internal static class Program
                     failures.Add($"{kind} logs exist for {string.Join(", ", have)} but not for every side");
             }
 
+            // The same ruler set on every side, or the comparison has a number against nothing.
+            foreach (var metric in new[] { Metrics.BootFullyDrawn, Metrics.BootTotalTime })
+            {
+                var have = sides.Where(s => s.Samples.Any(x => x.Metric == metric)).Select(s => s.Name).ToList();
+                if (have.Count > 0 && have.Count < sides.Count)
+                    failures.Add($"{metric} is reported for {string.Join(", ", have)} but not for every side");
+            }
+
             Directory.CreateDirectory(output);
             // Written even on failure: the partial files are what a person debugs from.
             File.WriteAllText(Path.Combine(output, "samples.csv"), Writers.Csv(sides));
@@ -115,20 +123,32 @@ internal static class Program
 
         if (files.Count == 0) { failures.Add($"{name}: no boot-<run>.log or click-<run>.log files"); return side; }
 
-        Check(side, "boot", side.BootFiles, side.BootsAttempted, side.BootsDropped,
-            side.Samples.Count(s => s.Run > 0 && s.Metric == Metrics.Boot), minRuns, failures);
-        Check(side, "click", side.ClickFiles, side.ClicksAttempted, side.ClicksDropped,
-            side.Samples.Count(s => s.Run > 0 && s.Metric == Metrics.Dispatch && s.Part == Metrics.Total), minRuns, failures);
+        if (side.BootFiles > 0)
+            Check(side, Metrics.Boot, side.BootsAttempted, side.BootsDropped,
+                side.Samples.Count(s => s.Run > 0 && s.Metric == Metrics.Boot), minRuns, failures);
+        if (side.ClickFiles > 0)
+            Check(side, "click", side.ClicksAttempted, side.ClicksDropped,
+                side.Samples.Count(s => s.Run > 0 && s.Metric == Metrics.Dispatch && s.Part == Metrics.Total), minRuns, failures);
+
+        // An Android ruler: once any boot log of this side has it, every run above 0 must.
+        var bootRuns = files.Where(f => f.Kind == "boot" && f.Run > 0).Select(f => f.Run).ToList();
+        foreach (var metric in new[] { Metrics.BootFullyDrawn, Metrics.BootTotalTime })
+        {
+            if (!side.Samples.Any(s => s.Metric == metric)) continue;
+            var have = side.Samples.Where(s => s.Run > 0 && s.Metric == metric).Select(s => s.Run).ToHashSet();
+            var missing = bootRuns.Where(run => !have.Contains(run)).ToList();
+            foreach (var run in missing) side.Drops.Add($"{name}/boot-{run}.log: no {metric}");
+            Check(side, metric, bootRuns.Count, missing.Count, have.Count, minRuns, failures);
+        }
         return side;
     }
 
-    private static void Check(SideReport side, string kind, int files, int attempted, int dropped, int samples, int minRuns, List<string> failures)
+    private static void Check(SideReport side, string label, int attempted, int dropped, int samples, int minRuns, List<string> failures)
     {
-        if (files == 0) return;
         if (attempted > 0 && dropped > MaxDropRate * attempted)
-            failures.Add($"{side.Name}: {dropped} of {attempted} {kind} samples dropped, over the 5% limit");
+            failures.Add($"{side.Name}: {dropped} of {attempted} {label} samples dropped, over the 5% limit");
         if (samples < minRuns)
-            failures.Add($"{side.Name}: {samples} {kind} samples, fewer than --min-runs {minRuns}");
+            failures.Add($"{side.Name}: {samples} {label} samples, fewer than --min-runs {minRuns}");
     }
 
     private static (string Sdk, string Commit) ReadMeta(string dir)

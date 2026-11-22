@@ -36,72 +36,94 @@ internal static class Metrics
 internal static class Pairing
 {
     /// <summary>
-    /// Pairs one boot log. One boot per file: the first boot.start and the first boot.content
-    /// after it. The Android rulers are read from the same file when present.
+    /// Pairs one boot log. One boot per file: the first boot.start and the first boot.content.
+    /// The Android rulers are read from the same file when present, at most one value each.
     /// </summary>
     public static PairingResult PairBoot(IReadOnlyList<Mark> marks, IEnumerable<string> lines, int run, string where)
     {
         var r = new PairingResult { Attempted = 1 };
         var start = marks.FirstOrDefault(m => m.Point == MarkLine.BootStart);
-        var content = start.Point is null ? default : marks.FirstOrDefault(m => m.Point == MarkLine.BootContent && m.Line > start.Line);
+        var content = marks.FirstOrDefault(m => m.Point == MarkLine.BootContent);
         if (start.Point is null) r.Drops.Add($"{where}: no boot.start");
-        else if (content.Point is null) r.Drops.Add($"{where}: no boot.content after boot.start");
+        else if (content.Point is null) r.Drops.Add($"{where}: no boot.content");
         else if (content.T < start.T)
             r.Violations.Add($"{where}: boot.content (t={content.T}) precedes boot.start (t={start.T})");
         else r.Samples.Add(new Sample(Metrics.Boot, Metrics.Total, run, Metrics.NsToMs(content.T - start.T)));
 
+        long? fullyDrawn = null, totalTime = null;
         foreach (var line in lines)
         {
             if (MarkLine.TryParseFullyDrawnMs(line) is { } fd)
-                r.Samples.Add(new Sample(Metrics.BootFullyDrawn, Metrics.Total, run, fd));
+            {
+                if (fullyDrawn is not null) throw new PerfFormatException($"{where}: more than one Fully drawn line");
+                fullyDrawn = fd;
+            }
             if (MarkLine.TryParseTotalTimeMs(line) is { } tt)
-                r.Samples.Add(new Sample(Metrics.BootTotalTime, Metrics.Total, run, tt));
+            {
+                if (totalTime is not null) throw new PerfFormatException($"{where}: more than one TotalTime line");
+                totalTime = tt;
+            }
         }
+        if (fullyDrawn is { } f) r.Samples.Add(new Sample(Metrics.BootFullyDrawn, Metrics.Total, run, f));
+        if (totalTime is { } t) r.Samples.Add(new Sample(Metrics.BootTotalTime, Metrics.Total, run, t));
         return r;
     }
 
     /// <summary>
-    /// Pairs one click log, in log order. The k-th dispatch.post owns the window up to the next
-    /// post. Inside it: the first dispatch.enter, then the first dispatch.handler after it with
-    /// the same id, then exactly one frame.recv and exactly one frame.applied after the handler.
-    /// A window with a missing point, no frame, or more than one frame is a dropped sample.
+    /// Pairs one click log. Log position across points means nothing: the .NET marks reach the
+    /// log late, through a writer thread, the log queue and the stderr pump, while the shell
+    /// marks are logged directly. Within ONE point, log order is emit order. So marks are split
+    /// by point and paired by per-point order and id:
+    /// the k-th dispatch.post with id X takes the k-th dispatch.enter and dispatch.handler with
+    /// id X. The click's frame is the one frame.recv with handler.t le recv.t lt the next post's t;
+    /// its frame.applied is the applied mark with the same per-point index. A click with a missing
+    /// point, no frame, or more than one frame is a dropped sample.
     /// </summary>
     public static PairingResult PairClicks(IReadOnlyList<Mark> marks, int run, string where)
     {
         var r = new PairingResult();
-        var posts = new List<int>();
-        for (var i = 0; i < marks.Count; i++)
-            if (marks[i].Point == MarkLine.PostPoint) posts.Add(i);
+        var posts = marks.Where(m => m.Point == MarkLine.PostPoint).ToList();
+        var recvs = marks.Where(m => m.Point == MarkLine.RecvPoint).ToList();
+        var applieds = marks.Where(m => m.Point == MarkLine.AppliedPoint).ToList();
+        if (recvs.Count != applieds.Count)
+        {
+            r.Violations.Add($"{where}: {recvs.Count} frame.recv marks but {applieds.Count} frame.applied marks, the frames cannot be matched");
+            return r;
+        }
+        var enters = ById(marks, MarkLine.EnterPoint);
+        var handlers = ById(marks, MarkLine.HandlerPoint);
+        var seen = new Dictionary<long, int>();
 
         for (var k = 0; k < posts.Count; k++)
         {
             r.Attempted++;
-            var pi = posts[k];
-            var end = k + 1 < posts.Count ? posts[k + 1] : marks.Count;
-            var post = marks[pi];
-            var tag = $"{where}:{post.Line} (click {k + 1})";
+            var post = posts[k];
+            var id = post.Id!.Value;
+            var j = seen.GetValueOrDefault(id);
+            seen[id] = j + 1;
+            var tag = $"{where}:{post.Line} (click {k + 1}, id={id})";
 
-            var ei = IndexOf(marks, pi + 1, end, m => m.Point == MarkLine.EnterPoint && (post.Id is null || m.Id == post.Id));
-            if (ei < 0) { r.Drops.Add($"{tag}: no dispatch.enter before the next post"); continue; }
-            var enter = marks[ei];
-            var hi = IndexOf(marks, ei + 1, end, m => m.Point == MarkLine.HandlerPoint && m.Id == enter.Id);
-            if (hi < 0) { r.Drops.Add($"{tag}: no dispatch.handler with id={enter.Id} before the next post"); continue; }
-            var handler = marks[hi];
+            if (!enters.TryGetValue(id, out var e) || j >= e.Count) { r.Drops.Add($"{tag}: no dispatch.enter with this id"); continue; }
+            if (!handlers.TryGetValue(id, out var h) || j >= h.Count) { r.Drops.Add($"{tag}: no dispatch.handler with this id"); continue; }
+            var enter = e[j];
+            var handler = h[j];
 
-            // The clock proof: a single violation fails the run, whatever happens to the frame.
+            // The clock proof. The triple was chosen by order and id, not by t, so a violation
+            // means the two sides really do not share a clock.
             if (enter.T < post.T)
                 r.Violations.Add($"{tag}: dispatch.enter (t={enter.T}) precedes dispatch.post (t={post.T})");
             if (handler.T < enter.T)
                 r.Violations.Add($"{tag}: dispatch.handler (t={handler.T}) precedes dispatch.enter (t={enter.T})");
             if (enter.T < post.T || handler.T < enter.T) continue;
 
-            var recvs = Count(marks, hi + 1, end, MarkLine.RecvPoint);
-            var applieds = Count(marks, hi + 1, end, MarkLine.AppliedPoint);
-            if (recvs == 0 || applieds == 0) { r.Drops.Add($"{tag}: no frame before the next post"); continue; }
-            if (recvs > 1 || applieds > 1) { r.Drops.Add($"{tag}: more than one frame ({recvs} recv, {applieds} applied)"); continue; }
-            var recv = marks[IndexOf(marks, hi + 1, end, m => m.Point == MarkLine.RecvPoint)];
-            var applied = marks[IndexOf(marks, hi + 1, end, m => m.Point == MarkLine.AppliedPoint)];
-            if (applied.Line < recv.Line) { r.Drops.Add($"{tag}: frame.applied logged before frame.recv"); continue; }
+            var upper = k + 1 < posts.Count ? posts[k + 1].T : long.MaxValue;
+            var inWindow = new List<int>();
+            for (var i = 0; i < recvs.Count; i++)
+                if (recvs[i].T >= handler.T && recvs[i].T < upper) inWindow.Add(i);
+            if (inWindow.Count == 0) { r.Drops.Add($"{tag}: no frame before the next post"); continue; }
+            if (inWindow.Count > 1) { r.Drops.Add($"{tag}: more than one frame ({inWindow.Count} recv)"); continue; }
+            var recv = recvs[inWindow[0]];
+            var applied = applieds[inWindow[0]];
             if (applied.T < recv.T)
             {
                 r.Violations.Add($"{tag}: frame.applied (t={applied.T}) precedes frame.recv (t={recv.T})");
@@ -117,16 +139,6 @@ internal static class Pairing
         return r;
     }
 
-    private static int IndexOf(IReadOnlyList<Mark> marks, int from, int to, Func<Mark, bool> match)
-    {
-        for (var i = from; i < to; i++) if (match(marks[i])) return i;
-        return -1;
-    }
-
-    private static int Count(IReadOnlyList<Mark> marks, int from, int to, string point)
-    {
-        var n = 0;
-        for (var i = from; i < to; i++) if (marks[i].Point == point) n++;
-        return n;
-    }
+    private static Dictionary<long, List<Mark>> ById(IReadOnlyList<Mark> marks, string point) =>
+        marks.Where(m => m.Point == point).GroupBy(m => m.Id!.Value).ToDictionary(g => g.Key, g => g.ToList());
 }

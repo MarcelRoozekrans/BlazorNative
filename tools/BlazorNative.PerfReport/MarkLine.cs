@@ -22,9 +22,9 @@ internal static class MarkLine
     private static readonly HashSet<string> Points =
         [BootStart, BootContent, PostPoint, EnterPoint, HandlerPoint, RecvPoint, AppliedPoint];
 
-    // enter and handler must carry id=<handlerId>; the shell's post may carry one (the shell
-    // knows the handler id of the button it clicked) or not; every other point must not.
-    private static readonly HashSet<string> IdRequired = [EnterPoint, HandlerPoint];
+    // The three dispatch points must carry id=<handlerId>: pairing keys on it, because the
+    // .NET marks reach the log late and out of order against the shell marks. Others must not.
+    private static readonly HashSet<string> IdRequired = [PostPoint, EnterPoint, HandlerPoint];
 
     private const string Marker = "BNPERF ";
 
@@ -64,7 +64,7 @@ internal static class MarkLine
         }
         if (seq is null || t is null) throw new PerfFormatException(Bad("seq and t are required"));
         if (IdRequired.Contains(point) && !id.HasValue) throw new PerfFormatException(Bad("dispatch point without id"));
-        if (id.HasValue && !IdRequired.Contains(point) && point != PostPoint)
+        if (id.HasValue && !IdRequired.Contains(point))
             throw new PerfFormatException(Bad("id on a non-dispatch point"));
         mark = new Mark(point, seq.Value, t.Value, id, lineNumber);
         return true;

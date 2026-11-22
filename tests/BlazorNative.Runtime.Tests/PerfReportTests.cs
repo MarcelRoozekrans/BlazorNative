@@ -26,7 +26,7 @@ public sealed class PerfReportTests : IDisposable
     {
         var lines = new List<string>
         {
-            $"{Prefix} dispatch.post seq={seq} t={post}",
+            $"{Prefix} dispatch.post seq={seq} t={post} id={id}",
             $"{Prefix} dispatch.enter seq={seq} t={enter} id={id}",
             $"{Prefix} dispatch.handler seq={seq} t={handler} id={id}",
         };
@@ -77,7 +77,7 @@ public sealed class PerfReportTests : IDisposable
         Assert.True(code == 0, err);
         var csv = Csv();
         Assert.Equal("side,sdk,commit,metric,part,run,value_ms", csv[0]);
-        Assert.Equal(25, csv.Length - 1);
+        Assert.Equal(27, csv.Length - 1);
         string[] expected =
         [
             "head,10.0.100,abc1234,boot,total,0,300",
@@ -96,6 +96,8 @@ public sealed class PerfReportTests : IDisposable
             "head,10.0.100,abc1234,frame_apply,total,1,1.5",
             "head,10.0.100,abc1234,click_to_content,total,1,2.5",
             "base,10.0.100,def5678,boot,total,1,400",
+            "base,10.0.100,def5678,boot_fully_drawn,total,1,900",
+            "base,10.0.100,def5678,boot_total_time,total,1,700",
             "base,10.0.100,def5678,dispatch,total,1,1",
             "base,10.0.100,def5678,dispatch,lane,1,0.5",
             "base,10.0.100,def5678,dispatch,dotnet,1,0.5",
@@ -148,7 +150,7 @@ public sealed class PerfReportTests : IDisposable
     public void MissingPoint_IsDroppedSample()
     {
         // 40 good clicks and one whose handler never arrived: 1/41 is under 5%, so the run passes and the click is dropped.
-        var broken = $"{Prefix} dispatch.post seq=99 t=9000000000\n{Prefix} dispatch.enter seq=99 t=9001000000 id=7\n";
+        var broken = $"{Prefix} dispatch.post seq=99 t=9000000000 id=7\n{Prefix} dispatch.enter seq=99 t=9001000000 id=7\n";
         var input = WriteSide("head", ("click-1.log", GoodClicks(40) + broken));
 
         var (code, err, _) = Run(input);
@@ -162,16 +164,19 @@ public sealed class PerfReportTests : IDisposable
     [Fact]
     public void Pairing_ExtraFrameInWindow_IsDropped()
     {
-        // A click that produced two frames is never paired: its frame is ambiguous.
-        var twoFrames = Click(9_000_000_000, 9_001_000_000, 9_002_000_000, 9_003_000_000, 9_004_000_000)
-            + $"{Prefix} frame.recv seq=2 t=9005000000\n{Prefix} frame.applied seq=2 t=9006000000\n";
+        // A click that produced two frames is never paired: its frame is ambiguous. Frame one would
+        // give click_to_content 7, frame two 9; the 40 good clicks all give 4.
+        var twoFrames = Click(9_000_000_000, 9_001_000_000, 9_002_000_000, 9_003_000_000, 9_007_000_000)
+            + $"{Prefix} frame.recv seq=2 t=9005000000\n{Prefix} frame.applied seq=2 t=9009000000\n";
         var input = WriteSide("head", ("click-1.log", GoodClicks(40) + twoFrames));
 
         var (code, err, _) = Run(input);
 
         Assert.True(code == 0, err);
-        Assert.Equal(40, Csv().Count(l => l.Contains(",frame_apply,")));
-        Assert.DoesNotContain(Csv(), l => l.Contains(",click_to_content,") && l.EndsWith(",9.004", StringComparison.Ordinal));
+        var csv = Csv();
+        Assert.Equal(40, csv.Count(l => l.Contains(",click_to_content,")));
+        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,7", csv);
+        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,9", csv);
     }
 
     [Fact]
@@ -190,16 +195,18 @@ public sealed class PerfReportTests : IDisposable
     public void Pairing_FrameAfterTheNextPost_IsNotPairedToTheEarlierClick()
     {
         // Click A has no frame of its own; the only frame in the log lands after click B's post.
-        // That frame belongs to B. A is dropped, never handed B's frame.
-        var a = $"{Prefix} dispatch.post seq=1 t=9000000000\n{Prefix} dispatch.enter seq=1 t=9001000000 id=7\n{Prefix} dispatch.handler seq=1 t=9002000000 id=7\n";
-        var b = Click(9_100_000_000, 9_101_000_000, 9_102_000_000, 9_103_000_000, 9_104_000_000, seq: 2);
+        // That frame belongs to B (click_to_content 8). Handing it to A would give 108.
+        var a = $"{Prefix} dispatch.post seq=1 t=9000000000 id=7\n{Prefix} dispatch.enter seq=1 t=9001000000 id=7\n{Prefix} dispatch.handler seq=1 t=9002000000 id=7\n";
+        var b = Click(9_100_000_000, 9_101_000_000, 9_102_000_000, 9_103_000_000, 9_108_000_000, seq: 2);
         var input = WriteSide("head", ("click-1.log", GoodClicks(40) + a + b));
 
         var (code, err, _) = Run(input);
 
         Assert.True(code == 0, err);
-        Assert.Equal(41, Csv().Count(l => l.Contains(",frame_apply,")));
-        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,", Csv().Where(l => l.EndsWith(",105", StringComparison.Ordinal)));
+        var csv = Csv();
+        Assert.Equal(41, csv.Count(l => l.Contains(",frame_apply,")));
+        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,8", csv);
+        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,108", csv);
         Assert.Contains("dropped", File.ReadAllText(Path.Combine(_root, "out", "summary.md")));
     }
 
@@ -313,6 +320,235 @@ public sealed class PerfReportTests : IDisposable
         var input = WriteSide("head");
 
         Assert.Equal(1, Run(input).Code);
+    }
+
+    // ---- 19.2 Task 4 fix round: pairing by per-point order and id, not by log position. On a
+    // device the .NET marks reach the log late, so their position against shell marks means nothing.
+
+    private string Mk(string point, long t, long? id = null) =>
+        $"{Prefix} {point} seq=1 t={t}" + (id is { } i ? $" id={i}" : "") + "\n";
+
+    [Fact]
+    public void DotNetLinesAfterFrameLines_StillPair()
+    {
+        // Log order: post, recv, applied, enter, handler. A log-position pairer finds no frame after the handler.
+        var log = Mk("dispatch.post", 1_000_000, 7) + Mk("frame.recv", 3_000_000) + Mk("frame.applied", 4_000_000)
+            + Mk("dispatch.enter", 1_500_000, 7) + Mk("dispatch.handler", 2_000_000, 7);
+        var input = WriteSide("head", ("click-1.log", log));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1", csv);
+        Assert.Contains("head,10.0.100,abc1234,dispatch,lane,1,0.5", csv);
+        Assert.Contains("head,10.0.100,abc1234,dispatch,dotnet,1,0.5", csv);
+        Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,1", csv);
+        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,3", csv);
+    }
+
+    [Fact]
+    public void DotNetLinesAfterNextPost_StillPair()
+    {
+        // Click 1's enter and handler are logged after click 2's post. A window bounded by the next post loses them.
+        var log = Mk("dispatch.post", 1_000_000, 7) + Mk("frame.recv", 3_000_000) + Mk("frame.applied", 4_000_000)
+            + Mk("dispatch.post", 10_000_000, 7) + Mk("frame.recv", 12_000_000) + Mk("frame.applied", 14_000_000)
+            + Mk("dispatch.enter", 1_500_000, 7) + Mk("dispatch.handler", 2_000_000, 7)
+            + Mk("dispatch.enter", 10_800_000, 7) + Mk("dispatch.handler", 11_500_000, 7);
+        var input = WriteSide("head", ("click-1.log", log));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1", csv);
+        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,3", csv);
+        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1.5", csv);
+        Assert.Contains("head,10.0.100,abc1234,dispatch,lane,1,0.8", csv);
+        Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,2", csv);
+        Assert.Contains("head,10.0.100,abc1234,click_to_content,total,1,4", csv);
+    }
+
+    [Fact]
+    public void ForeignIdDispatch_IsNotPaired()
+    {
+        // An enter and handler for id 9 sit between the post of id 7 and its own lines. They are another handler's.
+        var log = Mk("dispatch.post", 1_000_000, 7)
+            + Mk("dispatch.enter", 1_100_000, 9) + Mk("dispatch.handler", 1_200_000, 9)
+            + Mk("dispatch.enter", 1_500_000, 7) + Mk("dispatch.handler", 2_000_000, 7)
+            + Mk("frame.recv", 3_000_000) + Mk("frame.applied", 4_000_000);
+        var input = WriteSide("head", ("click-1.log", log));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Contains("head,10.0.100,abc1234,dispatch,total,1,1", csv);
+        Assert.Contains("head,10.0.100,abc1234,dispatch,lane,1,0.5", csv);
+        Assert.DoesNotContain("head,10.0.100,abc1234,dispatch,total,1,0.2", csv);
+    }
+
+    [Fact]
+    public void ForeignIdDispatch_WithNoOwnLines_DropsTheClick()
+    {
+        var log = GoodClicks(40) + Mk("dispatch.post", 9_000_000_000, 5)
+            + Mk("dispatch.enter", 9_001_000_000, 9) + Mk("dispatch.handler", 9_002_000_000, 9);
+        var input = WriteSide("head", ("click-1.log", log));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        Assert.Equal(40, Csv().Count(l => l.Contains(",dispatch,total,")));
+    }
+
+    [Fact]
+    public void PostWithoutId_IsMalformed()
+    {
+        var input = WriteSide("head", ("click-1.log", Mk("dispatch.post", 1_000_000)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("click-1.log:1", err);
+    }
+
+    [Fact]
+    public void RecvAppliedCountMismatch_FailsTheFile()
+    {
+        var input = WriteSide("head", ("click-1.log", GoodClicks(3) + Mk("frame.recv", 9_000_000_000)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("frame.recv", err);
+        Assert.Contains("frame.applied", err);
+    }
+
+    [Fact]
+    public void FrameAppliedBeforeRecv_FailsTheRun()
+    {
+        var input = WriteSide("head", ("click-1.log", Click(1_000_000, 2_000_000, 3_000_000, 5_000_000, 4_000_000)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("frame.applied", err);
+        Assert.Contains("frame.recv", err);
+    }
+
+    [Fact]
+    public void BootContentBeforeStart_FailsTheRun()
+    {
+        var input = WriteSide("head", ("boot-1.log", Mk("boot.start", 500_000_000) + Mk("boot.content", 100_000_000)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot.content", err);
+        Assert.Contains("boot.start", err);
+    }
+
+    [Fact]
+    public void DropsThatPushASideBelowMinRuns_ExitOne()
+    {
+        // 24 good clicks and one with no frame: 4% dropped passes the rate, but 24 samples is under 25.
+        var input = WriteSide("head", ("click-1.log", GoodClicks(24) + Click(9_000_000_000, 9_001_000_000, 9_002_000_000, null, null)));
+
+        var (code, err, _) = Run(input, minRuns: 25);
+
+        Assert.Equal(1, code);
+        Assert.Contains("min-runs", err);
+        Assert.DoesNotContain("5% limit", err);
+    }
+
+    private static string BootLog(bool fullyDrawn, bool totalTime, bool twoFullyDrawn = false)
+    {
+        var s = $"{Prefix} boot.start seq=1 t=100000000\n{Prefix} boot.content seq=1 t=350000000\n";
+        if (fullyDrawn) s += "I ActivityTaskManager: Fully drawn a.b/.Main: +850ms\n";
+        if (twoFullyDrawn) s += "I ActivityTaskManager: Fully drawn a.b/.Main: +900ms\n";
+        if (totalTime) s += "I ActivityManager: TotalTime: 842\n";
+        return s;
+    }
+
+    private string WriteBoots(string side, int count, int? withoutFullyDrawn = null) =>
+        WriteSide(side, Enumerable.Range(1, count)
+            .Select(run => ($"boot-{run}.log", BootLog(fullyDrawn: run != withoutFullyDrawn, totalTime: true))).ToArray());
+
+    [Fact]
+    public void Ruler_TwoValuesInOneFile_FailsNamingTheFile()
+    {
+        var input = WriteSide("head", ("boot-3.log", BootLog(true, true, twoFullyDrawn: true)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot-3.log", err);
+        Assert.Contains("Fully drawn", err);
+    }
+
+    [Fact]
+    public void Ruler_MissingInALaterRun_IsADroppedSample()
+    {
+        // 1 of 20 is exactly 5%: it passes, but the sample is dropped and reported.
+        var input = WriteBoots("head", 20, withoutFullyDrawn: 7);
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Equal(19, csv.Count(l => l.Contains(",boot_fully_drawn,")));
+        Assert.Equal(20, csv.Count(l => l.Contains(",boot_total_time,")));
+        Assert.Contains("boot-7.log: no boot_fully_drawn", File.ReadAllText(Path.Combine(_root, "out", "summary.md")));
+    }
+
+    [Fact]
+    public void Ruler_MissingInHalfTheRuns_FailsTheDropRule()
+    {
+        var input = WriteBoots("head", 2, withoutFullyDrawn: 2);
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot_fully_drawn", err);
+        Assert.Contains("5% limit", err);
+    }
+
+    [Fact]
+    public void Ruler_BelowMinRuns_FailsEvenWhenBootPasses()
+    {
+        // 20 boots meet --min-runs 20, but the ruler has 19.
+        var input = WriteBoots("head", 20, withoutFullyDrawn: 7);
+
+        var (code, err, _) = Run(input, minRuns: 20);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot_fully_drawn", err);
+        Assert.Contains("min-runs", err);
+    }
+
+    [Fact]
+    public void Ruler_OnOneSideOnly_FailsTheRun()
+    {
+        WriteBoots("head", 2);
+        var input = WriteSide("base", ("boot-1.log", BootLog(false, false)), ("boot-2.log", BootLog(false, false)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot_fully_drawn", err);
+        Assert.Contains("not for every side", err);
+    }
+
+    [Fact]
+    public void Ruler_OnNeitherSide_IsFine()
+    {
+        WriteSide("head", ("boot-1.log", BootLog(false, false)));
+        var input = WriteSide("base", ("boot-1.log", BootLog(false, false)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        Assert.DoesNotContain(Csv(), l => l.Contains(",boot_fully_drawn,") || l.Contains(",boot_total_time,"));
     }
 
     private static void CopyDirectory(string from, string to)

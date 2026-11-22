@@ -34,7 +34,8 @@ run 0 is warm-up. A kind (`boot` or `click`) present for one side must be presen
 ## Mark lines
 
 A mark is `BNPERF <point> seq=<n> t=<ns>`, plus `id=<handlerId>` on `dispatch.enter` and
-`dispatch.handler`. `dispatch.post` may carry an `id` too. The parser finds `BNPERF ` anywhere in a
+`dispatch.handler`, and on `dispatch.post` too: the id is required on all three dispatch points, and a
+post without one is a malformed mark. The parser finds `BNPERF ` anywhere in a
 line, so a logcat or os_log prefix is fine, and ignores every line without it. A line with the marker
 that is not well formed fails the run, naming file and line. Points: `boot.start`, `boot.content`,
 `dispatch.post`, `dispatch.enter`, `dispatch.handler`, `frame.recv`, `frame.applied`.
@@ -44,24 +45,43 @@ Boot logs may also hold Android's `Fully drawn <activity>: +<n>ms` line (`+1s234
 
 ## Pairing
 
-"After" means log order within one run file. In a click log the k-th `dispatch.post` owns the window
-up to the next post. Inside it the parser takes the first `dispatch.enter`, then the first
-`dispatch.handler` after it with the same `id`, then the `frame.recv` and `frame.applied` after the
-handler. A window with a missing point, no frame, or more than one frame is a dropped sample, never
-paired. In a boot log the first `boot.start` and the first `boot.content` after it are paired.
+Log position across points means nothing. On a device the .NET marks (`dispatch.enter`,
+`dispatch.handler`) reach the log late: they go through the `BnPerfMarks` writer thread, then
+`BnLog`'s queue, then stderr and the stderr pump. The shell marks are logged directly. So a .NET line
+can land after the frame lines of its own click, or after the next click's post. Within ONE point, log
+order is emit order, because each point has one writer. The parser therefore splits a click log's marks
+by point, keeps each point's log order, and pairs by order and id:
+
+- The k-th `dispatch.post` has an id X. It takes the next unused `dispatch.enter` with id X and the next
+  unused `dispatch.handler` with id X, in per-point order filtered by X. If either is missing, the
+  sample is dropped.
+- The click's frame is the one `frame.recv` with `handler.t <= recv.t < next post's t`. The last click
+  has no upper bound. Zero or several such marks drop the sample. Its `frame.applied` is the applied mark
+  with the same per-point index as that recv. A file with different numbers of `frame.recv` and
+  `frame.applied` marks fails.
+- In a boot log the first `boot.start` and the first `boot.content` are paired.
+
+The triple is chosen by order and id, not by timestamp, so the clock check below still tests the
+shared clock.
 
 ## Checks
 
 - Every sample, warm-up included, must satisfy `dispatch.post <= dispatch.enter <= dispatch.handler`
   and `frame.recv <= frame.applied`. One violation fails the run: it means the shell and .NET are not
   reading the same clock.
-- Per side and kind (run 0 not counted), more than 5% dropped fails the run. Exactly 5% passes.
-- Per side, fewer samples than `--min-runs` fails the run, for `boot` and for `dispatch`.
+- Per side and metric (run 0 not counted), more than 5% dropped fails the run. Exactly 5% passes.
+- `--min-runs` counts samples per side per metric, not run files. A side with fewer than `--min-runs`
+  samples of `boot`, of `dispatch` (and so of every click metric), or of a ruler fails the run. Drops
+  count against it.
+- At most one `Fully drawn` and one `TotalTime` per boot log; more is an error naming the file. Once any
+  boot log of a side has a ruler, a boot log with run above 0 and no such line is a dropped sample for
+  that metric. Both sides must report the same rulers; neither side reporting them, as on iOS, is fine.
+- `frame.applied` must not precede its `frame.recv`; `boot.content` must not precede `boot.start`.
 
 ## samples.csv
 
 Columns, exactly: `side,sdk,commit,metric,part,run,value_ms`. Invariant culture, `.` decimal point,
-no quoting. Run 0 rows are included. `value_ms` has up to six decimals.
+no quoting. Run 0 rows are included, with `run=0`: it is warm-up, and every consumer must exclude it. `value_ms` has up to six decimals.
 
 | metric | definition | parts |
 |---|---|---|
