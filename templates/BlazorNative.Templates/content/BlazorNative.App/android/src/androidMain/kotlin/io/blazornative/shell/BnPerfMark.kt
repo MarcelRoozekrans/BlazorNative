@@ -56,7 +56,7 @@ object BnPerfMark {
     @JvmStatic
     @JvmOverloads
     fun mark(point: String, id: Long? = null) {
-        if (!BnShellLog.isEnabled(BnLogLevel.VERBOSE)) return
+        if (BnShellLog.level() < 0) return
         val t = (clockForTest ?: System::nanoTime)()
         write(point, t, id)
     }
