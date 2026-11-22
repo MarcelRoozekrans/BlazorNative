@@ -94,11 +94,6 @@ object BnPerfMark {
     @JvmStatic
     fun bootContentPending(): Boolean = !bootContentFired.get()
 
-    /** True until [bootContentOnce] has run once in this process: a cheap read, so a caller
-     * can skip the work of deciding whether a batch is the first with content. */
-    @JvmStatic
-    fun bootContentPending(): Boolean = !bootContentFired.get()
-
     private fun write(point: String, t: Long, id: Long) {
         val seq = seqs.getOrPut(point) { AtomicLong() }.incrementAndGet()
         val line = if (id != 0L) "BNPERF $point seq=$seq t=$t id=$id" else "BNPERF $point seq=$seq t=$t"
