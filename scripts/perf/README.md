@@ -120,14 +120,15 @@ exit 1 on every failure. It needs pwsh 7, macOS with Xcode, and a booted simulat
 and `xcodebuild` call has a deadline. It enables debug persistence for the `io.blazornative` subsystem
 and reads `log show --debug` over a window that starts before each run's launch.
 
-- `boot` terminates the app, sets `BN_LOG_LEVEL=Verbose` in the simulator's launchd, and cold-launches
-  `blazornative://perf` with `simctl openurl`, which `BnDeepLink.routeComponents` maps to `PerfProbe`.
-  On iOS 26 `simctl openurl` raises an `Open in` confirmation sheet, so this kind may need a tap there.
+- `boot` terminates the app and cold-launches it with `simctl launch`, passing
+  `SIMCTL_CHILD_BN_LAUNCH_COMPONENT=PerfProbe` and `SIMCTL_CHILD_BN_LOG_LEVEL=Verbose`. The shell reads
+  `BN_LAUNCH_COMPONENT` like `BN_LOG_LEVEL` (see `BnDeepLink.resolveLaunchComponent`), so no URL and no
+  `Open in` sheet is involved. `blazornative://perf` still opens PerfProbe for manual runs.
 - `click` runs `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` with
   `TEST_RUNNER_PERF_CLICKS` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
   build-for-testing, and waits for every click's `dispatch.post` and `dispatch.handler` before dumping.
   The PR lane skips that class.
-- `q1` asserts no `BNPERF` line and no debug or info line from the subsystem at the default level, with
+- `q1` launches PerfProbe the same way and asserts no `BNPERF` line and no debug or info line from the subsystem at the default level, with
   a control that the launched process logged, then all four marks at Verbose.
 
 `BN_LOG_LEVEL` takes the name `Verbose`, not a digit: `BnLogLevel.fromName` reads names only.

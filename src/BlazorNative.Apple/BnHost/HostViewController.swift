@@ -180,9 +180,10 @@ final class HostViewController: UIViewController {
             // right answer to THAT question. What #282 changed is the route seed
             // above — the shell no longer lets this map's silence overwrite the route
             // the user asked for.
-            let component = BnDeepLink.shared.resolvedLaunchComponent()
-                ?? runtime.bridge.notifications.resolvedLaunchComponent()
-                ?? "BnDemo"
+            let component = BnDeepLink.resolveLaunchComponent(
+                deepLink: BnDeepLink.shared.resolvedLaunchComponent(),
+                env: ProcessInfo.processInfo.environment[BnDeepLink.launchComponentEnvVar],
+                notification: runtime.bridge.notifications.resolvedLaunchComponent())
             do {
                 try runtime.start(component: component, os: "ios")
 

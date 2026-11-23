@@ -142,6 +142,29 @@ final class BnDeepLinkTests: XCTestCase {
         XCTAssertNil(BnDeepLink.shared.pendingLaunchRouteForTest())
     }
 
+    // ── Launch component precedence (19.2) ───────────────────────────────────
+
+    func testALaunchDeepLinkOutranksTheEnvComponent() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: "BnGeolocationDemo", env: "PerfProbe",
+                                                         notification: "BnNotificationsDemo"),
+                       "BnGeolocationDemo")
+    }
+
+    func testTheEnvComponentOutranksTheNotificationAndTheDefault() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "PerfProbe",
+                                                         notification: "BnNotificationsDemo"),
+                       "PerfProbe")
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "PerfProbe", notification: nil),
+                       "PerfProbe")
+    }
+
+    func testAnEmptyOrAbsentEnvComponentFallsThrough() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "  ",
+                                                         notification: "BnNotificationsDemo"),
+                       "BnNotificationsDemo")
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: nil, notification: nil), "BnDemo")
+    }
+
     /// The map is shared with notifications rather than copied — a second copy is
     /// how the two launch surfaces would come to disagree about where a route goes.
     func testTheRouteMapHasOneSource() {

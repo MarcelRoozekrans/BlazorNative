@@ -19,12 +19,11 @@
   starts just before that run's launch, so runs do not bleed into each other.
 
   Kinds:
-    boot   terminate, set BN_LOG_LEVEL=Verbose in the simulator's launchd, then `simctl openurl
-           blazornative://perf`, which cold-launches the app with the stashed route that BnDeepLink maps to
-           PerfProbe. Waits for boot.start and boot.content, dumps the window, then unsets the variable.
+    boot   terminate, then `simctl launch` with BN_LAUNCH_COMPONENT=PerfProbe and BN_LOG_LEVEL=Verbose, passed
+           as SIMCTL_CHILD_ variables. Waits for boot.start and boot.content and dumps the window.
     click  `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` for -Clicks
            serial clicks, then waits for every dispatch.post and dispatch.handler mark and dumps the window.
-    q1     one default launch asserting zero BNPERF lines and zero debug or info lines from the subsystem,
+    q1     one default launch of PerfProbe asserting zero BNPERF lines and zero debug or info lines from the subsystem,
            with a positive control that the process ran, then one Verbose launch asserting boot.start,
            boot.content, frame.recv and frame.applied.
 
@@ -65,7 +64,7 @@ $ErrorActionPreference = 'Stop'
 
 $script:Subsystem = 'io.blazornative'
 $script:PerfClass = 'BnHostTests/BnPerfMeasurementTests'
-$script:PerfUrl = 'blazornative://perf'
+$script:PerfComponent = 'PerfProbe'
 
 # ── Pure functions: no simulator, testable by dot-sourcing ──────────────────
 
@@ -191,6 +190,15 @@ function Format-LogStart {
     return $When.ToString('yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
+# The environment simctl launch hands the app: SIMCTL_CHILD_ variables, PerfProbe always, Verbose on request.
+# BN_LOG_LEVEL takes a name, because BnLogLevel.fromName does not read digits.
+function Get-LaunchEnv {
+    param([bool]$VerboseLevel, [string]$Component = 'PerfProbe')
+    $envVars = @{ SIMCTL_CHILD_BN_LAUNCH_COMPONENT = $Component }
+    if ($VerboseLevel) { $envVars['SIMCTL_CHILD_BN_LOG_LEVEL'] = 'Verbose' }
+    return $envVars
+}
+
 # The path for a run's log; throws when it exists, which is how a duplicate run number is refused.
 function Get-RunLogPath {
     param([string]$SideDir, [string]$Kind, [int]$Run)
@@ -262,12 +270,6 @@ function Stop-App {
     try { Invoke-Simctl 15 -AllowFail 'terminate' $script:Udid $script:Bundle | Out-Null } catch { }
 }
 
-function Set-LogLevelEnv {
-    param([bool]$VerboseLevel)
-    if ($VerboseLevel) { Invoke-Simctl 15 'spawn' $script:Udid 'launchctl' 'setenv' 'BN_LOG_LEVEL' 'Verbose' | Out-Null }
-    else { Invoke-Simctl 15 -AllowFail 'spawn' $script:Udid 'launchctl' 'unsetenv' 'BN_LOG_LEVEL' | Out-Null }
-}
-
 # Reads the subsystem's log from -Start on. Style compact for the parser, ndjson for the q1 checks.
 function Get-OsLog {
     param([string]$Start, [string]$Style = 'compact')
@@ -297,22 +299,14 @@ function Wait-ForLog {
 function Invoke-BootRun {
     param([string]$SideDir, [int]$Run)
     $path = Get-RunLogPath $SideDir 'boot' $Run
-    Stop-App
     try {
-        Set-LogLevelEnv $true
-        $start = Get-WindowStart
-        # A terminated app opened by URL is a cold launch: AppDelegate stashes the route and
-        # HostViewController mounts the component BnDeepLink maps it to, PerfProbe for /perf.
-        Invoke-Simctl 30 'openurl' $script:Udid $script:PerfUrl | Out-Null
-        $lines = Wait-ForLog $start { param($l) (Test-LogHasMark $l 'boot.start') -and (Test-LogHasMark $l 'boot.content') } `
-            'the boot.start and boot.content marks (on iOS 26 simctl openurl raises an Open in sheet that needs a tap)'
+        $launch = Start-Launch $true
+        $lines = Wait-ForLog $launch.Start { param($l) (Test-LogHasMark $l 'boot.start') -and (Test-LogHasMark $l 'boot.content') } `
+            'the boot.start and boot.content marks'
         Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
         Write-Host "boot run $Run -> $path"
     }
-    finally {
-        Stop-App
-        try { Set-LogLevelEnv $false } catch { }
-    }
+    finally { Stop-App }
 }
 
 function Invoke-ClickRun {
@@ -346,9 +340,7 @@ function Invoke-ClickRun {
 function Start-Launch {
     param([bool]$VerboseLevel)
     Stop-App
-    Set-LogLevelEnv $false
-    $envVars = @{}
-    if ($VerboseLevel) { $envVars['SIMCTL_CHILD_BN_LOG_LEVEL'] = 'Verbose' }
+    $envVars = Get-LaunchEnv $VerboseLevel $script:PerfComponent
     $start = Get-WindowStart
     $r = Invoke-Simctl 60 -EnvVars $envVars 'launch' $script:Udid $script:Bundle
     $procId = Get-LaunchPid $r.Lines
@@ -387,9 +379,8 @@ function Invoke-Q1 {
         Write-Host 'q1 passed: quiet at the default level, all marks at Verbose'
     }
     finally {
-        # A timeout or failed assertion must not leave the app running or an env override behind.
+        # A timeout or failed assertion must not leave the app running.
         Stop-App
-        try { Set-LogLevelEnv $false } catch { }
     }
 }
 

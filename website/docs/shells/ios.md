@@ -202,6 +202,19 @@ whatever the foreground app is. The link still routes correctly once you confirm
 command no longer completes unattended, so do not put it in a script and expect a result.
 :::
 
+**Launch a specific component with `BN_LAUNCH_COMPONENT`.** The environment variable names the
+registered component a cold launch mounts, the iOS twin of Android's `EXTRA_COMPONENT`. It needs no
+tap, unlike `simctl openurl`, so it suits scripts:
+
+```bash
+SIMCTL_CHILD_BN_LAUNCH_COMPONENT=PerfProbe xcrun simctl launch booted com.example.myapp
+```
+
+Set it from an Xcode scheme's *Run → Arguments → Environment Variables* for a debug run. Precedence:
+a deep link that resolves to a component, then a non-empty `BN_LAUNCH_COMPONENT`, then a tapped
+notification's component, then `BnDemo`. Like `BN_LOG_LEVEL` ([Logging](../logging.md)) it is read at
+launch only.
+
 **Universal links are still not supported.** They need an `associated-domains`
 entitlement, a domain you own, and an `apple-app-site-association` file served from it —
 the same Apple Developer account that gates real-device iOS. The custom scheme needs none
