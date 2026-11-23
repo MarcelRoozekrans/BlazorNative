@@ -6,8 +6,8 @@
 // tools/BlazorNative.PerfReport.
 //
 // NOT a PR-lane test. ios.yml's `xcodebuild test` step passes
-// `-skip-testing:BnHostTests/BnPerfMeasurementTests`, so the 312-test baseline does not
-// count it. The collector runs it with `-only-testing:` and
+// `-skip-testing:BnHostTests/BnPerfMeasurementTests`, so the lane's asserted baseline (315)
+// does not count it. The collector runs it with `-only-testing:` and
 // `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, because BnRuntime.start resolves the level from
 // that environment variable and would otherwise reset it to the default.
 //

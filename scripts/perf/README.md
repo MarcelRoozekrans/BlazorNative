@@ -101,10 +101,18 @@ no quoting. Run 0 rows are included, with `run=0`: it is warm-up, and every cons
 
 Lists each side's `sdk` and `commit`, then n, median, Q1, Q3 and IQR per side, metric and part, in
 milliseconds with three decimals. Run 0 is excluded. Quartiles use linear interpolation, numpy's
-default: for `[1,2,3,4,100]` the median is 3, Q1 2, Q3 4 and the IQR 2. A last section lists the
-dropped samples per side and why.
+default: for `[1,2,3,4,100]` the median is 3, Q1 2, Q3 4 and the IQR 2. A `Per process` section
+follows: the number of processes per side and kind (each `<kind>-<run>.log` is one process, run 0
+excluded), and for every click metric one median per run file, so a slow mode confined to some
+processes is visible instead of averaged away. A last section lists the dropped samples per side and why.
 
 ## Collectors
+
+Both collectors dot-source `scripts/perf/perf-common.ps1` from their own directory. It holds the pure
+functions they share: the mark counts, `Test-Q1Verbose`, `Test-ClickLogComplete`, `Test-SideId`,
+`Test-MetaValue`, the run list and path rules, and `Select-RunningAppJobs`, which `interleave.ps1` uses.
+`tests/BlazorNative.Runtime.Tests/PerfCollectorTests.cs` feeds each detector a passing input and planted
+violations, through `BoundedScript`, in the required .NET lane.
 
 `scripts/perf/android-collect.ps1` writes the layout above from an Android device or emulator, one kind per
 call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
@@ -116,7 +124,10 @@ adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evide
 `q1` is: a default launch, asserting no `BNPERF` line and no V, D or I line from a `BlazorNative*` tag, with
 a control that the launch's `Fully drawn` line parsed as a logcat line of its own; then `PerfMeasurementTest`
 for `-Q1Clicks` clicks (default 3) with `perfLevel=default`, through the click kind's `am instrument` and
-logcat, asserting no `BNPERF` line; then a Verbose launch asserting the four boot marks.
+logcat, asserting no `BNPERF` line and the same tag check, with the androidTest sources' own tags
+(`BlazorNative.Test`, `BlazorNativeTest`) excluded and a control that the test's `Displayed` line parsed;
+then a Verbose launch asserting the four boot marks. The app and its test package are force-stopped
+afterwards, also when a step failed.
 
 `scripts/perf/ios-collect.ps1` is the simulator counterpart, with the same layout, the same `-Sdk` and
 `-Commit` rules, run numbering, refusal to overwrite (delete `<Out>/<Side>` or pass `-Force`), and
@@ -140,11 +151,17 @@ and reads `log show --debug` over a window that starts before each run's launch.
   in the boot and q1 launches. Each dispatch point must appear exactly once per click, or the run fails; a
   failed wait writes every `BNPERF` record of the window, with its subsystem and category, to
   `<Out>/click-diag-<side>-<run>.txt`.
-- `q1` launches PerfProbe the same way and asserts no `BNPERF` line and no debug or info line from the subsystem at the default level, with
-  a control that the launched process logged. It then runs the measurement class for `-Q1Clicks` clicks (default 3) at the default level,
-  reads the window with the click kind's predicate, and asserts no `BNPERF` line, with a control that the window holds the host's records.
-  Last, it asserts all four boot marks at Verbose. That the dispatch marks are present at Verbose is the click kind's exactly-once check.
-  The q1 kind needs `-DerivedData` too.
+- `q1` launches PerfProbe the same way and reads the whole launched process, not only the subsystem. It
+  asserts no `BNPERF` line, no debug or info line from the subsystem, and no .NET line below Warn at the
+  default level, with a control that the launched process logged. The .NET lines carry no level in the
+  unified log: NSLog records them as the app's Default records and the stderr pump relays them as Default
+  records of category `native`, so a record whose text holds `[BN|I|`, `[BN|D|` or `[BN|V|` is the
+  violation. It then runs the measurement class for `-Q1Clicks` clicks (default 3) at the default level,
+  reads the window with the click kind's predicate and asserts no `BNPERF` line, and reads the test host's
+  whole window, `<Out>/q1-<side>-default-click-host.txt`, and asserts no .NET line below Warn there, with a
+  control that it holds the host's records. Last, it asserts all four boot marks at Verbose. That the
+  dispatch marks are present at Verbose is the click kind's exactly-once check. The q1 kind needs
+  `-DerivedData` too.
 
 `BN_LOG_LEVEL` takes the name `Verbose`, not a digit: `BnLogLevel.fromName` reads names only.
 
@@ -161,3 +178,12 @@ without a reinstall. The backport branch adds the `.v015` suffix:
 Both collectors refuse a mismatch with exit 1 before they create any directory: `-Side v015` with an id
 that does not end in `.v015`, or `-Side head` with one that does (`Test-SideId`). The defaults are HEAD's
 ids, so a `v015` run must pass its id explicitly; without the check it would silently measure HEAD's app.
+
+### Interleaving and load
+
+`scripts/perf/interleave.ps1` drives one collector for both sides, alternating which side goes first per
+run or block, and stops the other side's app before every call. Click blocks are 5 clicks by default
+(`-Clicks`), and there are `ceil(Runs / Clicks) + 1` blocks after the warm-up block 0, so `runs=20` gives
+25 samples per side from 5 measured processes. Before every collector call it appends one line to
+`<Out>/load.txt`: the UTC time, side, kind, run, and the host's load average, `/proc/loadavg` on Linux and
+`sysctl -n vm.loadavg` on macOS. The parser ignores files at the root of `<Out>`.
