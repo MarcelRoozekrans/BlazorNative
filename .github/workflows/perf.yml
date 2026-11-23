@@ -712,6 +712,10 @@ jobs:
           xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 3h --debug --info --style compact \
             --predicate 'subsystem == "io.blazornative"' > perf-out/subsystem.log 2>&1 || true
           echo "subsystem.log: $(wc -l < perf-out/subsystem.log) lines"
+          # Where each dispatch mark travelled, per side: subsystem, category and process of every record.
+          xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 3h --debug --info --style ndjson \
+            --predicate 'process == "BnHost" AND eventMessage CONTAINS "BNPERF dispatch."' > perf-out/dispatch-sources.ndjson 2>&1 || true
+          echo "dispatch-sources.ndjson: $(wc -l < perf-out/dispatch-sources.ndjson) lines"
 
       - name: Upload perf-ios
         if: always()

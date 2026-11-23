@@ -17,7 +17,9 @@
   Before the first run the script enables debug persistence for the subsystem, with
   `simctl spawn <udid> log config --subsystem io.blazornative --mode "level:debug,persist:debug"`, and
   every run reads `log show --debug --predicate 'subsystem == "io.blazornative"'` over a window that
-  starts just before that run's launch, so runs do not bleed into each other.
+  starts just before that run's launch, so runs do not bleed into each other. The click kind widens the
+  predicate to the app's NSLog records that carry BNPERF, because that is where the .NET marks are under
+  `xcodebuild test`; see Get-ClickPredicate.
 
   Kinds:
     boot   terminate, then `simctl launch` with BN_LAUNCH_COMPONENT=PerfProbe and BN_LOG_LEVEL=Verbose, passed
@@ -67,6 +69,8 @@ $ErrorActionPreference = 'Stop'
 $script:Subsystem = 'io.blazornative'
 $script:PerfClass = 'BnHostTests/BnPerfMeasurementTests'
 $script:PerfComponent = 'PerfProbe'
+# The app's process name, the executable of BnHost.app on both sides.
+$script:Process = 'BnHost'
 
 # ── Pure functions: no simulator, testable by dot-sourcing ──────────────────
 
@@ -148,12 +152,13 @@ function Test-LogHasMark {
     return $false
 }
 
-# `xcodebuild test` prints "** TEST SUCCEEDED **" and an "Executed 1 test" summary; both are required, so a
+# `xcodebuild test` prints "** TEST SUCCEEDED **", `test-without-building` "** TEST EXECUTE SUCCEEDED **", and
+# both an "Executed 1 test" summary; the marker and the summary are both required, so a
 # run that executed nothing (a class name that matched no test) is not a pass.
 function Test-XcodebuildPassed {
     param([string[]]$Lines)
     $text = $Lines -join "`n"
-    return ($text -match '\*\* TEST SUCCEEDED \*\*') -and ($text -match 'Executed 1 test, with 0 failures') -and ($text -notmatch '\*\* TEST FAILED \*\*')
+    return ($text -match '\*\* TEST (EXECUTE )?SUCCEEDED \*\*') -and ($text -match 'Executed 1 test, with 0 failures') -and ($text -notmatch '\*\* TEST (EXECUTE )?FAILED \*\*')
 }
 
 # The parser's meta.json rule: a non-empty string without commas, pipes or newlines. Returns an error or $null.
@@ -290,10 +295,25 @@ function Stop-App {
     try { Invoke-Simctl 15 -AllowFail 'terminate' $script:Udid $script:Bundle | Out-Null } catch { }
 }
 
-# Reads the subsystem's log from -Start on. Style compact for the parser, ndjson for the q1 checks.
+# The subsystem's records: the shell's lines and, when the stderr pump runs, the .NET lines it relays.
+function Get-SubsystemPredicate { return 'subsystem == "' + $script:Subsystem + '"' }
+
+# The click log's records: each mark exactly once, whichever way it travelled.
+#  - Shell marks are os_log records of the subsystem, category Perf, on both sides.
+#  - .NET marks are written to stderr by .NET's Console, which on iOS is NSLog. NSLog makes an os_log record
+#    of its own, outside the subsystem, in every case. Under `xcodebuild test` Xcode sets OS_ACTIVITY_DT_MODE:
+#    HEAD's pump then stands aside, so the subsystem holds no .NET line at all, while the v0.15.0 pump has no
+#    such check and still relays NSLog's stderr copy as category native. Taking the NSLog record and never the
+#    native relay gives one copy on both sides.
+function Get-ClickPredicate {
+    return '(subsystem == "' + $script:Subsystem + '" AND category == "Perf") OR (process == "' + $script:Process + '" AND subsystem != "' + $script:Subsystem + '" AND eventMessage CONTAINS "BNPERF ")'
+}
+
+# Reads the log from -Start on, the subsystem by default. Style compact for the parser, ndjson for the q1 checks.
 function Get-OsLog {
-    param([string]$Start, [string]$Style = 'compact')
-    $r = Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--debug' '--style' $Style '--start' $Start '--predicate' ('subsystem == "' + $script:Subsystem + '"')
+    param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '')
+    if (-not $Predicate) { $Predicate = Get-SubsystemPredicate }
+    $r = Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--debug' '--style' $Style '--start' $Start '--predicate' $Predicate
     return , @($r.Lines)
 }
 
@@ -305,11 +325,11 @@ function Get-WindowStart {
 
 # Polls the log until $Test returns true; throws naming $What after $WaitSeconds.
 function Wait-ForLog {
-    param([string]$Start, [scriptblock]$Test, [string]$What, [int]$Seconds = 0, [string]$Style = 'compact')
+    param([string]$Start, [scriptblock]$Test, [string]$What, [int]$Seconds = 0, [string]$Style = 'compact', [string]$Predicate = '')
     if ($Seconds -le 0) { $Seconds = $script:WaitSeconds }
     $deadline = (Get-Date).AddSeconds($Seconds)
     while ((Get-Date) -lt $deadline) {
-        $lines = Get-OsLog $Start $Style
+        $lines = Get-OsLog $Start $Style $Predicate
         if (& $Test $lines) { return , $lines }
         Start-Sleep -Milliseconds 500
     }
@@ -350,9 +370,22 @@ function Invoke-ClickRun {
         Stop-App
         throw "BnPerfMeasurementTests did not pass (exit $($result.ExitCode)):`n$((@($result.Lines) | Select-Object -Last 40) -join "`n")"
     }
-    # The .NET marks reach the log late through the writer thread and the stderr pump, so wait for the tail.
+    # The .NET marks reach the log late through the writer thread, so wait for the tail.
     $clicks = $script:Clicks
-    $lines = Wait-ForLog $start { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 30
+    try {
+        $lines = Wait-ForLog $start { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 30 -Predicate (Get-ClickPredicate)
+    }
+    catch {
+        # Evidence for the failure: every BNPERF record of the window, from any source, with its subsystem and category.
+        $diag = Join-Path (Split-Path -Parent $SideDir) ("click-diag-{0}-{1}.txt" -f (Split-Path -Leaf $SideDir), $Run)
+        try { Set-Content -LiteralPath $diag -Value (Get-OsLog $start 'ndjson' ('process == "' + $script:Process + '" AND eventMessage CONTAINS "BNPERF "')) -Encoding UTF8 } catch { }
+        throw
+    }
+    # A mark seen twice would be paired with the wrong click, so a second transport is refused here.
+    foreach ($point in 'dispatch.post', 'dispatch.enter', 'dispatch.handler') {
+        $n = Get-MarkCount $lines $point
+        if ($n -ne $clicks) { throw "click run ${Run}: $n $point marks for $clicks clicks; each must appear once" }
+    }
     Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
     Write-Host "click run $Run -> $path"
 }

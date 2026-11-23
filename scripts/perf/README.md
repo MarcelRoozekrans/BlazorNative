@@ -127,7 +127,13 @@ and reads `log show --debug` over a window that starts before each run's launch.
 - `click` runs `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` with
   `TEST_RUNNER_PERF_CLICKS` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
   build-for-testing, and waits for every click's `dispatch.post` and `dispatch.handler` before dumping.
-  The PR lane skips that class.
+  The PR lane skips that class. Its log is not the subsystem alone: under `xcodebuild test` Xcode sets
+  `OS_ACTIVITY_DT_MODE`, HEAD's stderr pump stands aside, and the .NET marks reach the unified log only as
+  the app's own NSLog records. The click predicate therefore takes the subsystem's `Perf` category for the
+  shell marks and the app's non-subsystem records carrying `BNPERF ` for the .NET marks, and never the
+  pump's `native` relay, which the `v0.15.0` pump still writes. Each dispatch point must then appear exactly
+  once per click, or the run fails; a failed wait writes every `BNPERF` record of the window, with its
+  subsystem and category, to `<Out>/click-diag-<side>-<run>.txt`.
 - `q1` launches PerfProbe the same way and asserts no `BNPERF` line and no debug or info line from the subsystem at the default level, with
   a control that the launched process logged, then all four marks at Verbose.
 
