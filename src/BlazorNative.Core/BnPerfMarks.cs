@@ -203,13 +203,14 @@ internal static class BnPerfMarks
     /// timeout elapses.</summary>
     internal static bool Flush(TimeSpan timeout)
     {
-        DateTime deadline = DateTime.UtcNow + timeout;
+        // Monotonic: a wall-clock step while the exit handler waits must not stretch or cut the budget.
+        long started = Stopwatch.GetTimestamp();
         lock (s_lock)
         {
             Monitor.PulseAll(s_lock);
             while (s_queue.Count > 0 || s_busy)
             {
-                TimeSpan left = deadline - DateTime.UtcNow;
+                TimeSpan left = timeout - Stopwatch.GetElapsedTime(started);
                 if (left <= TimeSpan.Zero) return false;
                 Monitor.Wait(s_lock, left);
             }
