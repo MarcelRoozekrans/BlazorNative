@@ -57,5 +57,3 @@ static BlazorNative.Core.BnSafeAreaInsets.operator ==(BlazorNative.Core.BnSafeAr
 static readonly BlazorNative.Core.BnSafeAreaInsets.Zero -> BlazorNative.Core.BnSafeAreaInsets
 ~override BlazorNative.Core.BnSafeAreaInsets.Equals(object obj) -> bool
 ~override BlazorNative.Core.BnSafeAreaInsets.ToString() -> string
-BlazorNative.Core.BnPerfMarks
-static BlazorNative.Core.BnPerfMarks.Mark(string! point, ulong handlerId = 0) -> void

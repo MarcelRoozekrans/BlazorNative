@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -16,34 +15,60 @@ namespace BlazorNative.Core;
 //
 // COST BELOW VERBOSE: one BnLog.IsEnabled check. No clock read, no formatting.
 //
-// OWN WRITER ON PURPOSE. The same file is copied verbatim onto the v0.15.0
-// backport branch, whose BnLog writes stderr synchronously. So this type does
-// not use BnLogQueue or anything newer than v0.15.0, only BnLog.IsEnabled,
-// BnLog.Verbose and BCL types, and a mark costs the same on both sides: a clock
-// read, a counter bump and a short lock. The line is written by one lazily
-// started background thread, never on the caller's thread.
+// OWN WRITER ON PURPOSE. The same file is copied onto the v0.15.0 backport
+// branch, whose BnLog writes stderr synchronously. So this type does not use
+// BnLogQueue or anything newer than v0.15.0, only BnLog.IsEnabled, BnLog.Verbose
+// and BCL types, and a mark costs the same on both sides: a clock read, a
+// counter bump and a short lock. The line is written by one lazily started
+// background thread, never on the caller's thread. The backport's copy differs
+// from this one only in its access: it is public there, with
+// [EditorBrowsable(Never)], because that release's Core grants Renderer and
+// Runtime no InternalsVisibleTo.
+//
+// THE WRITER IS NOT WOKEN BY A MARK. A mark sits inside a measured span, often
+// just before the thread that took it must itself be woken, so a mark that
+// pulsed the writer would wake a second thread at the worst moment. The writer
+// instead polls: it waits up to `PollInterval` for lines, and a mark pulses it
+// only once the queue is `WakeDepth` deep, half its capacity, so a burst cannot
+// fill the queue between polls. Lines still drain in the order they were
+// queued, by the one writer, and at the latest one poll interval after they
+// were queued. `Flush`, which the process-exit and unhandled-exception handlers
+// call, wakes the writer and waits, bounded, until the queue is empty.
 //
 // NO INHERITED CONTEXT. The thread is started with UnsafeStart, as BnLogQueue
 // does, so it does not root the first caller's AsyncLocals (dispatch scope,
 // renderer) for the life of the process.
 //
-// BOUNDED. A full queue drops the line and counts it; the count is readable
-// through DroppedForTest.
+// BOUNDED, AND NEVER THROWS INTO A MARK. A full queue drops the line and counts
+// it. A thread that fails to start drops the line the same way and leaves the
+// thread unset, so the next mark retries the start. A failed write is
+// swallowed on the writer thread. The count is readable through DroppedForTest.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Verbose-gated perf mark writer used by the measurement harness.
 /// Not part of the supported API surface.</summary>
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class BnPerfMarks
+internal static class BnPerfMarks
 {
     private const int Capacity = 4096;
+
+    /// <summary>The queue depth from which a mark wakes the writer instead of leaving the
+    /// line for the writer's next poll.</summary>
+    internal const int WakeDepth = Capacity / 2;
+
+    /// <summary>How long the writer waits for lines before it looks at the queue again.</summary>
+    internal static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(25);
+
+    /// <summary>How long the exit handlers wait for the queue to drain.</summary>
+    private static readonly TimeSpan ExitDrainBudget = TimeSpan.FromMilliseconds(500);
 
     private static readonly ConcurrentDictionary<string, long[]> s_seq = new();
     private static readonly Queue<string> s_queue = new();
     private static readonly object s_lock = new();
     private static Thread? s_thread;
     private static bool s_busy;
+    private static bool s_exitHooked;
     private static long s_dropped;
+    private static long s_wakes;
 
     /// <summary>Test seam: receives each line instead of <see cref="BnLog.Verbose"/>,
     /// on the writer thread.</summary>
@@ -52,8 +77,24 @@ public static class BnPerfMarks
     /// <summary>Test seam: replaces <see cref="Stopwatch.GetTimestamp"/>.</summary>
     internal static Func<long>? ClockForTest { get; set; }
 
-    /// <summary>Lines dropped because the queue was full.</summary>
+    /// <summary>Test seam: replaces <see cref="Thread.UnsafeStart()"/> for the writer thread.</summary>
+    internal static Action<Thread>? StartForTest { get; set; }
+
+    private static int s_pollMsForTest;
+
+    /// <summary>Test seam: the writer's poll in milliseconds instead of <see cref="PollInterval"/>;
+    /// 0 restores it. Read before each wait.</summary>
+    internal static int PollMillisecondsForTest
+    {
+        get => Volatile.Read(ref s_pollMsForTest);
+        set => Volatile.Write(ref s_pollMsForTest, value);
+    }
+
+    /// <summary>Lines dropped because the queue was full or the writer did not start.</summary>
     internal static long DroppedForTest => Interlocked.Read(ref s_dropped);
+
+    /// <summary>How many marks woke the writer, because the queue was <see cref="WakeDepth"/> deep.</summary>
+    internal static long WakesForTest => Interlocked.Read(ref s_wakes);
 
     /// <summary>Records one mark. Does nothing unless Verbose logging is enabled.</summary>
     /// <param name="point">The mark point, for example <c>dispatch.enter</c>.</param>
@@ -86,16 +127,37 @@ public static class BnPerfMarks
                 Interlocked.Increment(ref s_dropped);
                 return;
             }
-            s_queue.Enqueue(line);
             if (s_thread is null)
             {
-                var t = new Thread(Drain) { IsBackground = true, Name = "BnPerfMarks" };
-                // Assigned only after a successful start, so a failed start is retried by the
-                // next mark. The lock keeps the start single.
-                t.UnsafeStart();
-                s_thread = t;
+                try
+                {
+                    var t = new Thread(Drain) { IsBackground = true, Name = "BnPerfMarks" };
+                    Action<Thread>? start = StartForTest;
+                    if (start is null) t.UnsafeStart();
+                    else start(t);
+                    // Assigned only after a successful start, so a failed start is retried by the
+                    // next mark. The lock keeps the start single.
+                    s_thread = t;
+                }
+                catch
+                {
+                    // No writer, so the line has nowhere to go: drop and count it.
+                    Interlocked.Increment(ref s_dropped);
+                    return;
+                }
+                if (!s_exitHooked)
+                {
+                    s_exitHooked = true;
+                    AppDomain.CurrentDomain.ProcessExit += (_, _) => Flush(ExitDrainBudget);
+                    AppDomain.CurrentDomain.UnhandledException += (_, _) => Flush(ExitDrainBudget);
+                }
             }
-            Monitor.PulseAll(s_lock);
+            s_queue.Enqueue(line);
+            if (s_queue.Count >= WakeDepth)
+            {
+                Interlocked.Increment(ref s_wakes);
+                Monitor.PulseAll(s_lock);
+            }
         }
     }
 
@@ -108,9 +170,12 @@ public static class BnPerfMarks
             {
                 while (s_queue.Count == 0)
                 {
+                    // Retired by RetireWriterForTest: a new writer may take over.
+                    if (!ReferenceEquals(s_thread, Thread.CurrentThread)) return;
                     s_busy = false;
                     Monitor.PulseAll(s_lock);
-                    Monitor.Wait(s_lock);
+                    int pollMs = PollMillisecondsForTest;
+                    Monitor.Wait(s_lock, pollMs > 0 ? TimeSpan.FromMilliseconds(pollMs) : PollInterval);
                 }
                 line = s_queue.Dequeue();
                 s_busy = true;
@@ -123,17 +188,19 @@ public static class BnPerfMarks
             }
             catch
             {
-                // A mark must never take the process down.
+                // A failed write is dropped on this thread and never reaches a mark's caller.
             }
         }
     }
 
-    /// <summary>Waits until every queued line has been written, or the timeout elapses.</summary>
-    internal static bool DrainForTest(TimeSpan timeout)
+    /// <summary>Wakes the writer and waits until every queued line has been written, or the
+    /// timeout elapses.</summary>
+    internal static bool Flush(TimeSpan timeout)
     {
         DateTime deadline = DateTime.UtcNow + timeout;
         lock (s_lock)
         {
+            Monitor.PulseAll(s_lock);
             while (s_queue.Count > 0 || s_busy)
             {
                 TimeSpan left = deadline - DateTime.UtcNow;
@@ -144,10 +211,29 @@ public static class BnPerfMarks
         }
     }
 
-    /// <summary>Clears the per-point sequence counters and the drop count.</summary>
+    /// <summary>Waits until every queued line has been written, or the timeout elapses.</summary>
+    internal static bool DrainForTest(TimeSpan timeout) => Flush(timeout);
+
+    /// <summary>Drains the queue, then retires the writer thread and waits for it to end, so the
+    /// next mark starts a new one. Returns false if either step ran out of time.</summary>
+    internal static bool RetireWriterForTest(TimeSpan timeout)
+    {
+        if (!Flush(timeout)) return false;
+        Thread? old;
+        lock (s_lock)
+        {
+            old = s_thread;
+            s_thread = null;
+            Monitor.PulseAll(s_lock);
+        }
+        return old is null || old.Join(timeout);
+    }
+
+    /// <summary>Clears the per-point sequence counters, the drop count and the wake count.</summary>
     internal static void ResetForTest()
     {
         s_seq.Clear();
         Interlocked.Exchange(ref s_dropped, 0);
+        Interlocked.Exchange(ref s_wakes, 0);
     }
 }

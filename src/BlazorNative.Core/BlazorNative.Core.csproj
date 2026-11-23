@@ -55,7 +55,9 @@
     <InternalsVisibleTo Include="BlazorNative.Renderer" />
     <!-- Phase 17.4: ForwardingHookTests calls IForwardsUiEvent directly. -->
     <InternalsVisibleTo Include="BlazorNative.Runtime.Tests" />
-    <!-- Phase 18.1: blazornative_shutdown drains BnLog's queue through the internal BnLog.Flush. -->
+    <!-- Phase 18.1: blazornative_shutdown drains BnLog's queue through the internal BnLog.Flush.
+         Phase 19.2: Exports' dispatch.enter mark calls the internal BnPerfMarks.Mark; Renderer's
+         dispatch.handler mark reaches it through the Renderer grant above. -->
     <InternalsVisibleTo Include="BlazorNative.Runtime" />
   </ItemGroup>
 
