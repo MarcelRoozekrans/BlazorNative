@@ -17,7 +17,7 @@ so an earlier invocation's files never survive it. Exit codes:
 |---|---|
 | 0 | Success. |
 | 1 | The data fails the run: a clock order violation, more than 5% of samples dropped, fewer samples than `--min-runs`, a malformed `BNPERF` line or a duplicate ruler, or a side with no logs. The files are still written, for debugging: a malformed file adds no samples, and every other file is still read. |
-| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log`, a side directory name with a comma, pipe or newline. No files are written. |
+| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log` or whose run number does not fit a 32-bit integer, a side directory name with a comma, pipe or newline. No files are written. |
 
 ## Input layout
 

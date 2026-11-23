@@ -107,7 +107,8 @@ internal static class Program
             var m = LogName.Match(Path.GetFileName(path));
             if (!m.Success) throw new UsageException($"{path}: expected <boot|click>-<run>.log");
             var kind = m.Groups["kind"].Value;
-            var run = int.Parse(m.Groups["run"].Value, CultureInfo.InvariantCulture);
+            if (!int.TryParse(m.Groups["run"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var run))
+                throw new UsageException($"{path}: the run number is out of range");
             var twin = files.FirstOrDefault(f => f.Kind == kind && f.Run == run);
             if (twin.Path is not null)
                 throw new UsageException($"{name}: {Path.GetFileName(twin.Path)} and {Path.GetFileName(path)} are both {kind} run {run}");

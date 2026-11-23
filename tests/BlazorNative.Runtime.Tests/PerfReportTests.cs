@@ -771,6 +771,20 @@ public sealed class PerfReportTests : IDisposable
         Assert.Contains("side directory name", err);
     }
 
+    // ---- CodeRabbit on #740, second review: a run number that overflows an int is a layout error
+    // naming the file, not a crash.
+    [Fact]
+    public void RunNumberOutOfRange_ExitTwo_NamingTheFile()
+    {
+        var input = WriteSide("head", ("click-1.log", GoodClicks(3)), ("click-99999999999.log", GoodClicks(3)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(2, code);
+        Assert.Contains("click-99999999999.log", err);
+        Assert.Contains("out of range", err);
+    }
+
     // ---- CodeRabbit on #740, second review: an out-of-range ruler is a malformed line of its own
     // file, so the other files' samples are kept and the run exits 1, naming the file and line.
     [Theory]
