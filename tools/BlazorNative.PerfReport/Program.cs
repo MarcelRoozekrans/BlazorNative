@@ -181,6 +181,8 @@ internal static class Program
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                throw new UsageException($"{path}: the root must be a JSON object");
             string Get(string key)
             {
                 if (!doc.RootElement.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String

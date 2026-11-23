@@ -771,6 +771,21 @@ public sealed class PerfReportTests : IDisposable
         Assert.Contains("side directory name", err);
     }
 
+    // ---- CodeRabbit on #740, second review: a meta.json whose root is not an object is a layout
+    // error, not an InvalidOperationException out of TryGetProperty.
+    [Fact]
+    public void MetaJsonRootNotAnObject_ExitTwo()
+    {
+        var input = WriteSide("head", ("click-1.log", GoodClicks(3)));
+        File.WriteAllText(Path.Combine(input, "head", "meta.json"), "[\"10.0.100\", \"abc1234\"]");
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(2, code);
+        Assert.Contains("meta.json", err);
+        Assert.Contains("JSON object", err);
+    }
+
     // ---- CodeRabbit on #740, second review: a run number that overflows an int is a layout error
     // naming the file, not a crash.
     [Fact]
