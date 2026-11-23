@@ -1,0 +1,719 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BlazorNative perf measurement (Phase 19.2) — dispatch only, never a PR gate.
+#
+# Builds two sides and measures them interleaved on one device per platform:
+#   head  this workflow's commit, on its own global.json SDK (or the head_sdk input);
+#         Android io.blazornative.shell, iOS io.blazornative.bnhost.
+#   v015  the baseline_ref backport (default perf/v0.15.0-marks), on ITS global.json SDK;
+#         Android io.blazornative.shell.v015, iOS io.blazornative.bnhost.v015.
+# Both apps install side by side. The baseline supplies only built apps and test
+# bundles: the collectors (scripts/perf/*-collect.ps1), the interleaver
+# (scripts/perf/interleave.ps1) and the parser (tools/BlazorNative.PerfReport)
+# always run from HEAD's checkout.
+#
+# Jobs:
+#   validate       checks the inputs (runs >= 20) and turns metrics into phases.
+#   publish-so     [head, v015] windows: the linux-bionic-x64 .so, as android-instrumented.yml.
+#   build-android  [head, v015] ubuntu: Gradle assembles the app and test APKs with the .so.
+#   build-ios      [head, v015] macos: publish, Yoga, XcodeGen and build-for-testing, as ios.yml.
+#   emulator       installs both sides, q1 per side, alternating boot runs and click
+#                  blocks, the parser; uploads perf-android.
+#   simulator      the same on an iOS simulator; uploads perf-ios.
+#
+# The parser exits 1 on bad data (a clock order violation, over 5% dropped, fewer
+# than `runs` samples) and 2 on a bad layout; either fails the job, after the
+# raw logs and any partial report are uploaded. The report's numbers are not
+# judged here: 19.3 owns that.
+#
+# See docs/superpowers/specs/2026-11-22-phase-19.2-design.md, "The workflow",
+# and scripts/perf/README.md for the collector and parser contracts.
+# ─────────────────────────────────────────────────────────────────────────────
+name: perf
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Ref of the baseline backport
+        default: perf/v0.15.0-marks
+        type: string
+      runs:
+        description: Samples per side per metric, at least 20
+        default: '20'
+        type: string
+      metrics:
+        description: Which metrics to collect
+        default: all
+        type: choice
+        options: [all, boot, click]
+      head_sdk:
+        description: .NET SDK for HEAD; empty means its global.json
+        default: ''
+        type: string
+  push: # TEMPORARY 19.2, removed in Task 11
+    branches: [docs/19.2-measurement-harness] # TEMPORARY 19.2, removed in Task 11
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NDK_PIN: 26.3.11579264
+  YOGA_VERSION: 3.2.1
+
+jobs:
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runs: ${{ steps.v.outputs.runs }}
+      phases: ${{ steps.v.outputs.phases }}
+      baseline_ref: ${{ steps.v.outputs.baseline_ref }}
+    steps:
+      - name: Validate the inputs
+        id: v
+        env:
+          # A push carries no inputs, so it takes the dispatch defaults.
+          RUNS: ${{ inputs.runs || '20' }}
+          METRICS: ${{ inputs.metrics || 'all' }}
+          BASELINE_REF: ${{ inputs.baseline_ref || 'perf/v0.15.0-marks' }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 20 ]; then
+            echo "::error::runs must be a whole number of at least 20, got '$RUNS'" >&2
+            exit 1
+          fi
+          case "$METRICS" in
+            all)   phases=q1,boot,click ;;
+            boot)  phases=q1,boot ;;
+            click) phases=q1,click ;;
+            *) echo "::error::metrics must be all, boot or click, got '$METRICS'" >&2; exit 1 ;;
+          esac
+          if [ -z "$BASELINE_REF" ]; then echo "::error::baseline_ref is empty" >&2; exit 1; fi
+          {
+            echo "runs=$RUNS"
+            echo "phases=$phases"
+            echo "baseline_ref=$BASELINE_REF"
+          } >> "$GITHUB_OUTPUT"
+          echo "runs=$RUNS phases=$phases baseline_ref=$BASELINE_REF"
+
+  # ── Android: the bionic .so per side (android-instrumented.yml's publish-so) ─
+  publish-so:
+    name: publish-so ${{ matrix.side }}
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [head, v015]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+
+      - name: Pin HEAD's SDK (head_sdk input)
+        if: ${{ matrix.side == 'head' && inputs.head_sdk != '' }}
+        env:
+          HEAD_SDK: ${{ inputs.head_sdk }}
+        run: |
+          $j = Get-Content global.json -Raw | ConvertFrom-Json
+          $j.sdk.version = $env:HEAD_SDK
+          $j | ConvertTo-Json -Depth 5 | Set-Content global.json
+          Get-Content global.json
+
+      - name: Setup .NET SDK (the side's global.json)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Setup JDK 25 (Temurin — sdkmanager)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Resolve toolchain paths (NDK root)
+        run: |
+          if (-not $env:ANDROID_HOME) { throw "ANDROID_HOME is not set on the runner image" }
+          "ANDROID_NDK_ROOT=$env:ANDROID_HOME\ndk\$env:NDK_PIN" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Check for pinned NDK on the runner image
+        id: check-ndk
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          $present = (Test-Path $props) -and
+            ((Get-Content $props -Raw) -match ('(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'))
+          "present=$present" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "NDK $env:NDK_PIN preinstalled: $present"
+
+      - name: Cache NDK ${{ env.NDK_PIN }}
+        if: steps.check-ndk.outputs.present != 'True'
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.ANDROID_NDK_ROOT }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_PIN }}
+
+      - name: Install NDK ${{ env.NDK_PIN }} (sdkmanager, on cache miss)
+        if: steps.check-ndk.outputs.present != 'True'
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (Test-Path $props) { Write-Host "NDK restored from cache — skipping sdkmanager"; exit 0 }
+          $sdkmanager = Join-Path $env:ANDROID_HOME "cmdline-tools\latest\bin\sdkmanager.bat"
+          if (-not (Test-Path $sdkmanager)) { throw "sdkmanager not found at $sdkmanager" }
+          "y" | & $sdkmanager --install "ndk;$env:NDK_PIN"
+          if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed to install ndk;$env:NDK_PIN (exit $LASTEXITCODE)" }
+
+      - name: Publish linux-bionic-x64
+        run: |
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r linux-bionic-x64 -tl:off -nologo
+          if ($LASTEXITCODE -ne 0) { throw "linux-bionic-x64 publish failed (exit $LASTEXITCODE)" }
+
+      - name: Stage the .so, the route resource and meta.json
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'perf-so'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item samples/BlazorNative.SampleApp/bin/Release/net10.0/linux-bionic-x64/publish/BlazorNative.Runtime.so $dir
+          Copy-Item src/BlazorNative.Jni/src/androidMain/res/raw/blazornative_routes.json $dir
+          # The side's SDK as the build used it, and its commit: the parser's meta.json.
+          $meta = [ordered]@{ sdk = (dotnet --version).Trim(); commit = (git rev-parse HEAD).Trim() } | ConvertTo-Json
+          [System.IO.File]::WriteAllText((Join-Path $dir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
+          Get-ChildItem $dir | Format-Table Name, Length | Out-String | Write-Host
+          Get-Content (Join-Path $dir 'meta.json')
+
+      - name: Upload the side's .so
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-so-${{ matrix.side }}
+          path: ${{ runner.temp }}/perf-so
+          if-no-files-found: error
+
+  # ── Android: the app and test APKs per side (android-instrumented.yml's Gradle) ─
+  build-android:
+    name: build-android ${{ matrix.side }}
+    needs: [validate, publish-so]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - side: head
+            jdk: '25'
+            app_id: io.blazornative.shell
+          - side: v015
+            # The v0.15.0 tag's lanes ran Gradle on JDK 21.
+            jdk: '21'
+            app_id: io.blazornative.shell.v015
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+
+      - name: Setup JDK ${{ matrix.jdk }} (Temurin — Gradle daemon)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+
+      - name: Download the side's .so
+        uses: actions/download-artifact@v8
+        with:
+          name: perf-so-${{ matrix.side }}
+          path: ${{ runner.temp }}/ci-so
+
+      - name: Place the generated deep-link route resource
+        run: cp "$RUNNER_TEMP/ci-so/blazornative_routes.json" src/BlazorNative.Jni/src/androidMain/res/raw/blazornative_routes.json
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-perf-${{ matrix.side }}-${{ runner.os }}-${{ hashFiles('src/BlazorNative.Jni/**/*.gradle.kts', 'src/BlazorNative.Jni/gradle/wrapper/gradle-wrapper.properties', 'src/BlazorNative.Jni/gradle.properties') }}
+
+      - name: Assemble the app and test APKs
+        working-directory: src/BlazorNative.Jni
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest -PperfOnly "-PciSoDir=$RUNNER_TEMP/ci-so"
+
+      - name: Stage the APKs and check their package ids
+        env:
+          APP_ID: ${{ matrix.app_id }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          out="$RUNNER_TEMP/perf-apk"
+          mkdir -p "$out"
+          app=(src/BlazorNative.Jni/build/outputs/apk/debug/*.apk)
+          tst=(src/BlazorNative.Jni/build/outputs/apk/androidTest/debug/*.apk)
+          if [ "${#app[@]}" -ne 1 ] || [ "${#tst[@]}" -ne 1 ]; then
+            echo "::error::expected one app and one test APK, got ${#app[@]} and ${#tst[@]}" >&2
+            find src/BlazorNative.Jni/build/outputs/apk -name '*.apk' >&2 || true
+            exit 1
+          fi
+          cp "${app[0]}" "$out/app.apk"
+          cp "${tst[0]}" "$out/test.apk"
+          cp "$RUNNER_TEMP/ci-so/meta.json" "$out/meta.json"
+          aapt2="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt2"
+          got_app=$("$aapt2" dump packagename "$out/app.apk")
+          got_test=$("$aapt2" dump packagename "$out/test.apk")
+          echo "app=$got_app test=$got_test"
+          if [ "$got_app" != "$APP_ID" ] || [ "$got_test" != "$APP_ID.test" ]; then
+            echo "::error::side ${{ matrix.side }} must build $APP_ID and $APP_ID.test, got $got_app and $got_test" >&2
+            exit 1
+          fi
+          ls -la "$out"; cat "$out/meta.json"
+
+      - name: Upload the side's APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-apk-${{ matrix.side }}
+          path: ${{ runner.temp }}/perf-apk
+          if-no-files-found: error
+
+  # ── iOS: BnHost and its test bundle per side (ios.yml's simulator leg) ──────
+  build-ios:
+    name: build-ios ${{ matrix.side }}
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - side: head
+            dir: .
+            bundle_id: io.blazornative.bnhost
+            yoga_min: -mios-simulator-version-min=15.0
+          - side: v015
+            # The same path in the simulator job, so the derived data's project path holds.
+            dir: baseline
+            bundle_id: io.blazornative.bnhost.v015
+            # The v0.15.0 tag's deployment target is iOS 13.0.
+            yoga_min: -mios-simulator-version-min=13.0
+    env:
+      RID: iossimulator-arm64
+      SIDE: ${{ matrix.side }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+          path: ${{ matrix.dir }}
+
+      - name: Pin HEAD's SDK (head_sdk input)
+        if: ${{ matrix.side == 'head' && inputs.head_sdk != '' }}
+        shell: pwsh
+        working-directory: ${{ matrix.dir }}
+        env:
+          HEAD_SDK: ${{ inputs.head_sdk }}
+        run: |
+          $j = Get-Content global.json -Raw | ConvertFrom-Json
+          $j.sdk.version = $env:HEAD_SDK
+          $j | ConvertTo-Json -Depth 5 | Set-Content global.json
+          Get-Content global.json
+
+      - name: Setup .NET SDK (the side's global.json)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: ${{ matrix.dir }}/global.json
+          dotnet-version: 10.0.x
+
+      - name: Write meta.json
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/perf-ios"
+          jq -n --arg sdk "$(dotnet --version)" --arg commit "$(git rev-parse HEAD)" '{sdk: $sdk, commit: $commit}' \
+            > "$RUNNER_TEMP/perf-ios/meta.json"
+          cat "$RUNNER_TEMP/perf-ios/meta.json"
+
+      - name: Publish ${{ env.RID }} (NativeLib=Static)
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set -o pipefail
+          dotnet publish samples/BlazorNative.SampleApp -c Release -r "$RID" -tl:off -nologo
+
+      - name: Stage libBlazorNative.Runtime.a, the bootstrapper and the runtime support libs
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set -euo pipefail
+          tree_root="samples/BlazorNative.SampleApp/bin/Release/net10.0/$RID"
+          archive="$tree_root/publish/BlazorNative.Runtime.a"
+          [ -f "$archive" ] || archive="$tree_root/native/BlazorNative.Runtime.a"
+          if [ ! -f "$archive" ]; then
+            echo "No BlazorNative.Runtime.a under $tree_root (publish/ or native/)" >&2
+            exit 1
+          fi
+          mkdir -p src/BlazorNative.Apple/vendor
+          cp "$archive" src/BlazorNative.Apple/vendor/libBlazorNative.Runtime.a
+          pack_native=$(find "$HOME/.nuget/packages/microsoft.netcore.app.runtime.nativeaot.$RID" \
+            -type d -path "*runtimes/$RID/native" 2>/dev/null | sort | tail -1)
+          if [ -z "$pack_native" ] || [ ! -d "$pack_native" ]; then
+            echo "NativeAOT $RID runtime pack native dir not found" >&2
+            exit 1
+          fi
+          if [ ! -f "$pack_native/libbootstrapperdll.o" ]; then
+            echo "libbootstrapperdll.o missing under $pack_native" >&2; exit 1
+          fi
+          cp "$pack_native/libbootstrapperdll.o" src/BlazorNative.Apple/vendor/bootstrapperdll.o
+          support=()
+          for f in "$pack_native"/*.a; do
+            case "$(basename "$f")" in
+              libRuntime.ServerGC.a|libeventpipe-enabled.a|libstandalonegc-enabled.a) continue;;
+            esac
+            support+=("$f")
+          done
+          if [ "${#support[@]}" -eq 0 ]; then
+            echo "No support .a under $pack_native" >&2; exit 1
+          fi
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libBnRuntimeSupport.a "${support[@]}"
+          ls -la src/BlazorNative.Apple/vendor
+
+      - name: "Yoga: build libyoga.a (v${{ env.YOGA_VERSION }})"
+        working-directory: ${{ matrix.dir }}
+        env:
+          IOS_MIN_FLAG: ${{ matrix.yoga_min }}
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/facebook/yoga/archive/refs/tags/v${YOGA_VERSION}.tar.gz" -o "$RUNNER_TEMP/yoga-src.tgz"
+          tar xzf "$RUNNER_TEMP/yoga-src.tgz" -C "$RUNNER_TEMP"
+          yroot="$RUNNER_TEMP/yoga-${YOGA_VERSION}"
+          [ -f "$yroot/yoga/Yoga.h" ] || { echo "Yoga.h not found under $yroot/yoga" >&2; exit 1; }
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          mkdir -p "$RUNNER_TEMP/yoga-obj"
+          count=0
+          while IFS= read -r cpp; do
+            obj="$RUNNER_TEMP/yoga-obj/$(echo "$cpp" | tr '/.' '__').o"
+            xcrun -sdk iphonesimulator clang++ -arch arm64 -isysroot "$sdk" \
+              "$IOS_MIN_FLAG" -std=c++20 -O2 -fPIC \
+              -I"$yroot" -c "$cpp" -o "$obj"
+            count=$((count+1))
+          done < <(find "$yroot/yoga" -name '*.cpp' | sort)
+          echo "Compiled $count Yoga translation units"
+          [ "$count" -gt 0 ] || { echo "no Yoga .cpp compiled" >&2; exit 1; }
+          xcrun libtool -static -o src/BlazorNative.Apple/vendor/libyoga.a "$RUNNER_TEMP"/yoga-obj/*.o
+          mkdir -p src/BlazorNative.Apple/vendor/yoga-include
+          cp -R "$yroot/yoga" src/BlazorNative.Apple/vendor/yoga-include/yoga
+          rm -f src/BlazorNative.Apple/vendor/yoga-include/yoga/module.modulemap
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate BnHost.xcodeproj
+        working-directory: ${{ matrix.dir }}/src/BlazorNative.Apple
+        run: xcodegen generate --spec project.yml
+
+      - name: Pin the SwiftPM graph to the committed Package.resolved, where the side has one
+        working-directory: ${{ matrix.dir }}/src/BlazorNative.Apple
+        run: |
+          set -euo pipefail
+          if [ -f Package.resolved ]; then
+            dest=BnHost.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+            mkdir -p "$dest"
+            cp Package.resolved "$dest/Package.resolved"
+            echo "pinned graph:"; cat Package.resolved
+          else
+            echo "no Package.resolved on this side: its project.yml pins the packages"
+          fi
+
+      - name: Select an available iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name|test("^iPhone")) | .udid] | .[0] // empty')
+          if [ -z "$udid" ]; then
+            echo "No available iPhone simulator found" >&2
+            xcrun simctl list devices available || true
+            exit 1
+          fi
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: xcodebuild build-for-testing
+        working-directory: ${{ matrix.dir }}/src/BlazorNative.Apple
+        run: |
+          set -o pipefail
+          pinned=()
+          [ -f Package.resolved ] && pinned=(-onlyUsePackageVersionsFromResolvedFile)
+          xcodebuild build-for-testing \
+            -project BnHost.xcodeproj \
+            -scheme BnHost \
+            "${pinned[@]}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd-$SIDE" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES \
+            2>&1 | tee "$RUNNER_TEMP/perf-ios/build-for-testing.log" | tail -n 200
+
+      - name: Check the bundle id and package the build
+        env:
+          BUNDLE_ID: ${{ matrix.bundle_id }}
+          SIDE_DIR: ${{ matrix.dir }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/dd-$SIDE/Build/Products/Debug-iphonesimulator/BnHost.app"
+          got=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          echo "CFBundleIdentifier=$got"
+          if [ "$got" != "$BUNDLE_ID" ]; then
+            echo "::error::side $SIDE must build $BUNDLE_ID, got $got" >&2
+            exit 1
+          fi
+          ls "$RUNNER_TEMP/dd-$SIDE/Build/Products"/*.xctestrun
+          # tar keeps the executable bits and symlinks that upload-artifact drops.
+          tar -czf "$RUNNER_TEMP/perf-ios/project.tgz" -C "$GITHUB_WORKSPACE" "$SIDE_DIR/src/BlazorNative.Apple/BnHost.xcodeproj"
+          dd_parts=("dd-$SIDE/Build/Products")
+          [ -d "$RUNNER_TEMP/dd-$SIDE/SourcePackages" ] && dd_parts+=("dd-$SIDE/SourcePackages")
+          tar -czf "$RUNNER_TEMP/perf-ios/derived-data.tgz" -C "$RUNNER_TEMP" "${dd_parts[@]}"
+          ls -la "$RUNNER_TEMP/perf-ios"
+
+      - name: Upload the side's build
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-ios-build-${{ matrix.side }}
+          path: ${{ runner.temp }}/perf-ios
+          if-no-files-found: error
+
+  # ── Android emulator: q1, interleaved boot and click, the parser ────────────
+  emulator:
+    needs: [validate, build-android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUNS: ${{ needs.validate.outputs.runs }}
+      PHASES: ${{ needs.validate.outputs.phases }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET SDK (global.json, for the parser)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download head's APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: perf-apk-head
+          path: ${{ runner.temp }}/apk/head
+
+      - name: Download v015's APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: perf-apk-v015
+          path: ${{ runner.temp }}/apk/v015
+
+      - name: Build the parser
+        run: dotnet build tools/BlazorNative.PerfReport -c Release -nologo
+
+      # android-emulator-runner runs each script line in its own shell, so a failure
+      # is recorded in a flag file and the logcat is still dumped before the step fails.
+      - name: Collect (API 34 google_apis x86_64 Pixel 6, as android-instrumented.yml)
+        timeout-minutes: 120
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            mkdir -p perf-out/data
+            adb logcat -c || true
+            adb shell settings put global hide_error_dialogs 1 || true
+            bash scripts/android-emulator-settle.sh || touch "${{ runner.temp }}/perf-failed"
+            test -f "${{ runner.temp }}/perf-failed" || adb install -r -t "${{ runner.temp }}/apk/head/app.apk" || touch "${{ runner.temp }}/perf-failed"
+            test -f "${{ runner.temp }}/perf-failed" || adb install -r -t "${{ runner.temp }}/apk/head/test.apk" || touch "${{ runner.temp }}/perf-failed"
+            test -f "${{ runner.temp }}/perf-failed" || adb install -r -t "${{ runner.temp }}/apk/v015/app.apk" || touch "${{ runner.temp }}/perf-failed"
+            test -f "${{ runner.temp }}/perf-failed" || adb install -r -t "${{ runner.temp }}/apk/v015/test.apk" || touch "${{ runner.temp }}/perf-failed"
+            adb shell pm list packages io.blazornative > perf-out/packages.txt || true
+            test -f "${{ runner.temp }}/perf-failed" || pwsh -NoProfile -File scripts/perf/interleave.ps1 -Platform android -Phases "$PHASES" -Runs "$RUNS" -Out perf-out/data -HeadMeta "${{ runner.temp }}/apk/head/meta.json" -BaseMeta "${{ runner.temp }}/apk/v015/meta.json" -Serial "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" || touch "${{ runner.temp }}/perf-failed"
+            adb logcat -d > perf-out/logcat-last.txt || true
+            test ! -f "${{ runner.temp }}/perf-failed"
+
+      - name: Parse (tools/BlazorNative.PerfReport)
+        if: ${{ !cancelled() }}
+        run: |
+          code=0
+          dotnet run --project tools/BlazorNative.PerfReport -c Release --no-build -- \
+            --input perf-out/data --out perf-out/report --min-runs "$RUNS" || code=$?
+          echo "parser exit $code (0 ok, 1 data failure, 2 usage or layout)"
+          [ -f perf-out/report/summary.md ] && cat perf-out/report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      - name: Upload perf-android
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-android
+          path: perf-out
+          if-no-files-found: warn
+
+  # ── iOS simulator: q1, interleaved boot and click, the parser ───────────────
+  simulator:
+    needs: [validate, build-ios]
+    runs-on: macos-latest
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUNS: ${{ needs.validate.outputs.runs }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # At the same path as in build-ios, so the derived data's project path holds.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.baseline_ref }}
+          path: baseline
+
+      - name: Setup .NET SDK (global.json, for the parser)
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Download head's build
+        uses: actions/download-artifact@v8
+        with:
+          name: perf-ios-build-head
+          path: ${{ runner.temp }}/ios-build/head
+
+      - name: Download v015's build
+        uses: actions/download-artifact@v8
+        with:
+          name: perf-ios-build-v015
+          path: ${{ runner.temp }}/ios-build/v015
+
+      - name: Unpack both builds
+        run: |
+          set -euo pipefail
+          for side in head v015; do
+            tar -xzf "$RUNNER_TEMP/ios-build/$side/project.tgz" -C "$GITHUB_WORKSPACE"
+            tar -xzf "$RUNNER_TEMP/ios-build/$side/derived-data.tgz" -C "$RUNNER_TEMP"
+            ls "$RUNNER_TEMP/dd-$side/Build/Products"
+          done
+          ls -d src/BlazorNative.Apple/BnHost.xcodeproj baseline/src/BlazorNative.Apple/BnHost.xcodeproj
+
+      - name: Build the parser
+        run: dotnet build tools/BlazorNative.PerfReport -c Release -nologo
+
+      - name: Select an available iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          udid=$(xcrun simctl list devices available -j \
+            | jq -r '[.devices[][] | select(.name|test("^iPhone")) | .udid] | .[0] // empty')
+          if [ -z "$udid" ]; then
+            echo "No available iPhone simulator found" >&2
+            xcrun simctl list devices available || true
+            exit 1
+          fi
+          name=$(xcrun simctl list devices available -j \
+            | jq -r --arg u "$udid" '[.devices[][] | select(.udid==$u)] | .[0].name')
+          echo "Selected simulator: $name ($udid)"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Boot the simulator and install both apps
+        run: |
+          set -euo pipefail
+          udid="${{ steps.sim.outputs.udid }}"
+          if ! out=$(xcrun simctl boot "$udid" 2>&1); then
+            case "$out" in
+              *"current state: Booted"*) echo "Simulator $udid was already booted" ;;
+              *) echo "$out" >&2; echo "::error::xcrun simctl boot $udid failed" >&2; exit 1 ;;
+            esac
+          fi
+          xcrun simctl bootstatus "$udid" -b
+          for side in head v015; do
+            xcrun simctl install "$udid" "$RUNNER_TEMP/dd-$side/Build/Products/Debug-iphonesimulator/BnHost.app"
+          done
+          xcrun simctl listapps "$udid" | grep -o '"io\.blazornative[^"]*"' | sort -u
+
+      - name: Collect q1
+        timeout-minutes: 20
+        run: |
+          pwsh -NoProfile -File scripts/perf/interleave.ps1 -Platform ios -Phases q1 -Runs "$RUNS" -Out perf-out/data \
+            -HeadMeta "$RUNNER_TEMP/ios-build/head/meta.json" -BaseMeta "$RUNNER_TEMP/ios-build/v015/meta.json" \
+            -Udid "${{ steps.sim.outputs.udid }}" \
+            -HeadProject "$GITHUB_WORKSPACE/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -BaseProject "$GITHUB_WORKSPACE/baseline/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -HeadDerivedData "$RUNNER_TEMP/dd-head" -BaseDerivedData "$RUNNER_TEMP/dd-v015"
+
+      - name: Collect boot
+        if: ${{ contains(needs.validate.outputs.phases, 'boot') }}
+        timeout-minutes: 50
+        run: |
+          pwsh -NoProfile -File scripts/perf/interleave.ps1 -Platform ios -Phases boot -Runs "$RUNS" -Out perf-out/data \
+            -HeadMeta "$RUNNER_TEMP/ios-build/head/meta.json" -BaseMeta "$RUNNER_TEMP/ios-build/v015/meta.json" \
+            -Udid "${{ steps.sim.outputs.udid }}" \
+            -HeadProject "$GITHUB_WORKSPACE/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -BaseProject "$GITHUB_WORKSPACE/baseline/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -HeadDerivedData "$RUNNER_TEMP/dd-head" -BaseDerivedData "$RUNNER_TEMP/dd-v015"
+
+      - name: Collect click
+        if: ${{ contains(needs.validate.outputs.phases, 'click') }}
+        timeout-minutes: 60
+        run: |
+          pwsh -NoProfile -File scripts/perf/interleave.ps1 -Platform ios -Phases click -Runs "$RUNS" -Out perf-out/data \
+            -HeadMeta "$RUNNER_TEMP/ios-build/head/meta.json" -BaseMeta "$RUNNER_TEMP/ios-build/v015/meta.json" \
+            -Udid "${{ steps.sim.outputs.udid }}" \
+            -HeadProject "$GITHUB_WORKSPACE/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -BaseProject "$GITHUB_WORKSPACE/baseline/src/BlazorNative.Apple/BnHost.xcodeproj" \
+            -HeadDerivedData "$RUNNER_TEMP/dd-head" -BaseDerivedData "$RUNNER_TEMP/dd-v015"
+
+      - name: Parse (tools/BlazorNative.PerfReport)
+        if: ${{ !cancelled() }}
+        run: |
+          code=0
+          dotnet run --project tools/BlazorNative.PerfReport -c Release --no-build -- \
+            --input perf-out/data --out perf-out/report --min-runs "$RUNS" || code=$?
+          echo "parser exit $code (0 ok, 1 data failure, 2 usage or layout)"
+          [ -f perf-out/report/summary.md ] && cat perf-out/report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      - name: Collect crash reports and the subsystem log
+        if: always()
+        run: |
+          mkdir -p perf-out/crash
+          cp "$HOME"/Library/Logs/DiagnosticReports/BnHost* perf-out/crash/ 2>/dev/null || true
+          xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 3h --debug --info --style compact \
+            --predicate 'subsystem == "io.blazornative"' > perf-out/subsystem.log 2>&1 || true
+          echo "subsystem.log: $(wc -l < perf-out/subsystem.log) lines"
+
+      - name: Upload perf-ios
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-ios
+          path: perf-out
+          if-no-files-found: warn
