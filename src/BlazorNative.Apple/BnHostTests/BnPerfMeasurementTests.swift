@@ -22,6 +22,7 @@
 
 import XCTest
 import UIKit
+import OSLog
 @testable import BnHost
 
 final class BnPerfMeasurementTests: BnHostTestCase {
@@ -47,6 +48,8 @@ final class BnPerfMeasurementTests: BnHostTestCase {
         XCTAssertTrue(pollUntil(deadline: 60) { self.findLabel(in: root, exact: "Count: 0") != nil },
                       "the PerfProbe counter 'Count: 0' never appeared within 60s")
 
+        let clicksStarted = Date()
+
         for n in 1...clicks {
             let button = try XCTUnwrap(findButton(in: root, title: "Click"),
                                        "the 'Click' button was not on the page at click \(n)")
@@ -54,6 +57,39 @@ final class BnPerfMeasurementTests: BnHostTestCase {
             XCTAssertTrue(pollUntil(deadline: 10) { self.findLabel(in: root, exact: "Count: \(n)") != nil },
                           "the counter never showed 'Count: \(n)' within 10s of click \(n)")
         }
+
+        // The .NET marks trail the clicks: they pass BnPerfMarks' writer thread and .NET's Console,
+        // which on iOS is NSLog, and on CI they reached the unified log up to hundreds of
+        // milliseconds after the click's frame. The test host is terminated when this method
+        // returns, and a mark still queued then is lost; on CI one run lost 7 of its 10
+        // dispatch.enter marks. So wait until this process's own log holds every click's
+        // dispatch.handler. The writer is one FIFO queue, so the last handler means every enter
+        // before it is out too. A drain that runs out does not fail here: the collector requires
+        // each dispatch point exactly once per click and fails the run by name.
+        waitForDispatchMarks(clicks, since: clicksStarted)
+    }
+
+    private func waitForDispatchMarks(_ clicks: Int, since: Date) {
+        let end = Date().addingTimeInterval(30)
+        guard #available(iOS 15.0, *) else {
+            // No OSLogStore before iOS 15; only the backport's iOS 13 floor compiles this path,
+            // and the perf simulator runs a current iOS.
+            RunLoop.current.run(until: Date().addingTimeInterval(5))
+            return
+        }
+        while Date() < end {
+            if countLogEntries(containing: "BNPERF dispatch.handler ", since: since) >= clicks { return }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+    }
+
+    @available(iOS 15.0, *)
+    private func countLogEntries(containing text: String, since: Date) -> Int {
+        guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
+              let entries = try? store.getEntries(at: store.position(date: since)) else { return 0 }
+        var n = 0
+        for entry in entries where entry.composedMessage.contains(text) { n += 1 }
+        return n
     }
 
     private func findLabel(in view: UIView, exact text: String) -> UILabel? {
