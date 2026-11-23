@@ -11,7 +11,13 @@
     click  blocks 0..Blocks of -Clicks serial clicks each, one collector call per side per block, alternating the
            same way. Block 0 is the warm-up. Blocks = ceil(Runs / Clicks) + 1: enough for Runs samples per side
            after the warm-up, plus one spare block so that a single dropped sample (the parser allows up to 5%)
-           does not take a side below --min-runs.
+           does not take a side below --min-runs. -Clicks defaults to 5, so runs=20 gives 5 measured processes
+           per side, not 3: each block is one test process, and a slow mode confined to some processes needs
+           several of them to show in the parser's per-process medians.
+
+  Load: before every collector call one line goes to <Out>/load.txt: the UTC time, the side, the kind, the run
+  or block, and the host's load average, `/proc/loadavg` on the Android runner and `sysctl -n vm.loadavg` on
+  macOS. The parser ignores files at the root of <Out>; the file is evidence for reading the per-process medians.
 
   Each side's run numbers are unique per kind, so the collectors' refusal to overwrite never fires, and the parser
   sees boot-0..boot-Runs and click-0..click-Blocks per side.
@@ -34,7 +40,7 @@ param(
     [Parameter(Mandatory)][string]$HeadMeta,
     [Parameter(Mandatory)][string]$BaseMeta,
     [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
-    [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 10,
+    [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 5,
     # Android
     [string]$Serial,
     # iOS
@@ -67,6 +73,24 @@ function Get-SideOrder {
 function Get-ClickBlocks {
     param([int]$Runs, [int]$Clicks)
     return [int][math]::Ceiling($Runs / $Clicks) + 1
+}
+
+# The host's load average as one line: /proc/loadavg on Linux, vm.loadavg on macOS. Never throws: a
+# missing sample is written as `unavailable` with the reason, and does not stop a collection.
+function Get-LoadSample {
+    try {
+        if (Test-Path -LiteralPath '/proc/loadavg') { return (Get-Content -LiteralPath '/proc/loadavg' -TotalCount 1).Trim() }
+        $out = & sysctl -n vm.loadavg 2>&1
+        if ($LASTEXITCODE -eq 0) { return ((@($out) -join ' ').Trim()) }
+        return "unavailable: sysctl exit $LASTEXITCODE"
+    }
+    catch { return "unavailable: $($_.Exception.Message)" }
+}
+
+function Write-LoadSample {
+    param([string]$Label)
+    $line = '{0} {1} load={2}' -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture), $Label, (Get-LoadSample)
+    Add-Content -LiteralPath (Join-Path $Out 'load.txt') -Value $line -Encoding UTF8
 }
 
 function Stop-Side {
@@ -126,6 +150,7 @@ function Invoke-Collector {
     if ($Kind -ne 'q1') { $a += @('-Sdk', $Side.Meta.sdk, '-Commit', $Side.Meta.commit, '-Run', "$Run") }
     if ($Kind -eq 'click') { $a += @('-Clicks', "$Clicks") }
     $label = "$($Side.Name) $Kind$(if ($Run -ge 0) { " run $Run" })"
+    Write-LoadSample $label
     Write-Host "::group::$label"
     $started = Get-Date
     & pwsh -NoProfile -File $collector @a

@@ -80,6 +80,7 @@ internal static class Writers
                 sb.Append($"| {s.Name} | {g.Key.Metric} | {g.Key.Part} | {g.Count()} | {Fixed(q.Median)} | {Fixed(q.Q1)} | {Fixed(q.Q3)} | {Fixed(q.Iqr)} |\n");
             }
         }
+        AppendPerProcess(sb, sides);
         sb.Append("\n## Dropped samples\n\n| side | clicks dropped | boots dropped |\n|---|---|---|\n");
         foreach (var s in sides)
             sb.Append($"| {s.Name} | {s.ClicksDropped} of {s.ClicksAttempted} | {s.BootsDropped} of {s.BootsAttempted} |\n");
@@ -88,6 +89,38 @@ internal static class Writers
         sb.Append($"\n\nA run fails above 5% dropped or with fewer than {minRuns} samples (--min-runs).\n");
         return sb.ToString();
     }
+
+    // Each <kind>-<run>.log is one process: one cold boot, or one test run of serial clicks. A
+    // slow mode confined to some processes is averaged away in the pooled table, so the click
+    // metrics, which have many samples per process, are also given per run file.
+    private static void AppendPerProcess(StringBuilder sb, IReadOnlyList<SideReport> sides)
+    {
+        sb.Append("\n## Per process\n\n");
+        sb.Append("Each `<kind>-<run>.log` is one process. Run 0 is excluded. The click metrics have one median per process.\n\n");
+        sb.Append("| side | kind | processes |\n|---|---|---|\n");
+        foreach (var s in sides)
+        {
+            sb.Append($"| {s.Name} | boot | {Processes(s, IsBootMetric)} |\n");
+            sb.Append($"| {s.Name} | click | {Processes(s, m => !IsBootMetric(m))} |\n");
+        }
+        sb.Append("\n| side | metric | part | run | n | median |\n|---|---|---|---|---|---|\n");
+        foreach (var s in sides)
+        {
+            var groups = s.Samples.Where(x => x.Run > 0 && !IsBootMetric(x.Metric))
+                .GroupBy(x => (x.Metric, x.Part, x.Run))
+                .OrderBy(g => MetricOrder(g.Key.Metric)).ThenBy(g => PartOrder(g.Key.Part)).ThenBy(g => g.Key.Run);
+            foreach (var g in groups)
+            {
+                var q = Stats.Compute(g.Select(x => x.ValueMs).ToList());
+                sb.Append($"| {s.Name} | {g.Key.Metric} | {g.Key.Part} | {g.Key.Run.ToString(CultureInfo.InvariantCulture)} | {g.Count()} | {Fixed(q.Median)} |\n");
+            }
+        }
+    }
+
+    private static int Processes(SideReport s, Func<string, bool> metric) =>
+        s.Samples.Where(x => x.Run > 0 && metric(x.Metric)).Select(x => x.Run).Distinct().Count();
+
+    private static bool IsBootMetric(string m) => m is Metrics.Boot or Metrics.BootFullyDrawn or Metrics.BootTotalTime;
 
     private static int MetricOrder(string m) => Array.IndexOf(
         [Metrics.Boot, Metrics.BootFullyDrawn, Metrics.BootTotalTime, Metrics.Dispatch, Metrics.FrameApply, Metrics.ClickToContent], m);

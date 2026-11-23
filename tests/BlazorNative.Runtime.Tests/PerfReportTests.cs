@@ -111,6 +111,31 @@ public sealed class PerfReportTests : IDisposable
         Assert.Contains("| head | dispatch | total | 2 | 0.700 | 0.600 | 0.800 | 0.200 |", summary);
     }
 
+    // I1 a: a slow mode confined to some processes must be visible, so the summary gives the
+    // process count per kind and one median per click run file next to the pooled table.
+    [Fact]
+    public void Summary_ReportsProcessCountsAndPerProcessClickMedians()
+    {
+        var input = Path.Combine(_root, "known");
+        CopyDirectory(Path.Combine(Fixtures, "known"), input);
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var summary = File.ReadAllText(Path.Combine(_root, "out", "summary.md"));
+        Assert.Contains("## Per process", summary);
+        Assert.Contains("| head | boot | 1 |", summary);
+        Assert.Contains("| head | click | 1 |", summary);
+        Assert.Contains("| base | click | 1 |", summary);
+        // head's click-1.log holds two clicks, 0.5 and 0.9 ms: one process, one median.
+        Assert.Contains("| head | dispatch | total | 1 | 2 | 0.700 |", summary);
+        Assert.Contains("| base | dispatch | total | 1 | 1 | 1.000 |", summary);
+        // Run 0 is warm-up here too.
+        Assert.DoesNotContain("| head | dispatch | total | 0 |", summary);
+        // The pooled table is still there.
+        Assert.Contains("| head | dispatch | total | 2 | 0.700 | 0.600 | 0.800 | 0.200 |", summary);
+    }
+
     [Fact]
     public void ClockOrderViolation_FailsTheRun()
     {
