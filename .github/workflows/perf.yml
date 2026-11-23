@@ -50,8 +50,6 @@ on:
         description: .NET SDK for HEAD; empty means its global.json
         default: ''
         type: string
-  push: # TEMPORARY 19.2, removed in Task 11
-    branches: [docs/19.2-measurement-harness] # TEMPORARY 19.2, removed in Task 11
 
 permissions:
   contents: read
@@ -80,10 +78,9 @@ jobs:
       - name: Validate the inputs
         id: v
         env:
-          # A push carries no inputs, so it takes the dispatch defaults.
-          RUNS: ${{ inputs.runs || '20' }}
-          METRICS: ${{ inputs.metrics || 'all' }}
-          BASELINE_REF: ${{ inputs.baseline_ref || 'perf/v0.15.0-marks' }}
+          RUNS: ${{ inputs.runs }}
+          METRICS: ${{ inputs.metrics }}
+          BASELINE_REF: ${{ inputs.baseline_ref }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
