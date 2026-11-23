@@ -158,8 +158,8 @@ final class BnDeepLink {
     /// request. Then a non-empty [env] value, then [notification], then `BnDemo`. Pure, so a test
     /// pins the precedence without a process environment.
     static func resolveLaunchComponent(deepLink: String?, env: String?, notification: String?) -> String {
-        if let e = env?.trimmingCharacters(in: .whitespacesAndNewlines), !e.isEmpty { return e }
         if let d = deepLink { return d }
+        if let e = env?.trimmingCharacters(in: .whitespacesAndNewlines), !e.isEmpty { return e }
         return notification ?? "BnDemo"
     }
 
