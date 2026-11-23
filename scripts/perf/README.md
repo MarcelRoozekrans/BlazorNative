@@ -17,7 +17,7 @@ so an earlier invocation's files never survive it. Exit codes:
 |---|---|
 | 0 | Success. |
 | 1 | The data fails the run: a clock order violation, more than 5% of samples dropped, fewer samples than `--min-runs`, a malformed `BNPERF` line or a duplicate ruler, or a side with no logs. The files are still written, for debugging: a malformed file adds no samples, and every other file is still read. |
-| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log` or whose run number does not fit a 32-bit integer, a side directory name with a comma, pipe or newline. No files are written. |
+| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log` or whose run number does not fit a 32-bit integer, a side directory name or a `meta.json` value with a comma, pipe, double quote or newline, or a `meta.json` whose root is not an object. No files are written. |
 
 ## Input layout
 
@@ -29,7 +29,7 @@ so an earlier invocation's files never survive it. Exit codes:
     click-<run>.log     many serial clicks per file
 ```
 
-The side directory's name, `sdk` and `commit` are non-empty strings without commas, pipes or newlines:
+The side directory's name, `sdk` and `commit` are non-empty strings without commas, pipes, double quotes or newlines:
 both outputs write them unquoted. `<run>` is a number;
 run 0 is warm-up. Two files with the same kind and run number (`boot-1.log` and `boot-01.log`) are an error, exit 2. A kind (`boot` or `click`) present for one side must be present for every side.
 
@@ -126,8 +126,8 @@ violations, through `BoundedScript`, in the required .NET lane.
 
 `scripts/perf/android-collect.ps1` writes the layout above from an Android device or emulator, one kind per
 call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
-accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them,
-under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
+accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them.
+Each must be non-empty, with no commas, pipes or newlines; the parser also refuses a double quote. Runs are numbered 0 to `-Runs`, run 0
 being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Before anything is written, every requested run's log must be absent unless `-Force` is passed, and when any `<kind>-<n>.log` of either kind will remain in the side directory, its `meta.json` must already name the same `-Sdk` and `-Commit`, so a call cannot relabel samples it did not collect. Failures go to stderr with exit 1. Every
 adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
 `<Out>/q1-<side>-default.txt`, `-default-click.txt` and `-verbose.txt`, outside the side directory. Android's

@@ -758,17 +758,36 @@ public sealed class PerfReportTests : IDisposable
     }
 
     // ---- CodeRabbit on #740: the side name is written unquoted, so a delimiter in it is refused.
-    [Theory]
-    [InlineData("he,ad")]
-    [InlineData("he|ad")]
-    public void SideNameWithADelimiter_ExitTwo(string side)
+    // A comma is the one delimiter every platform allows in a directory name; Windows rejects a
+    // pipe or a double quote there. The side name and meta.json's values share one character set,
+    // and MetaValueWithADelimiter_ExitTwo covers every character of it on every platform.
+    [Fact]
+    public void SideNameWithADelimiter_ExitTwo()
     {
-        var input = WriteSide(side, ("click-1.log", GoodClicks(3)));
+        var input = WriteSide("he,ad", ("click-1.log", GoodClicks(3)));
 
         var (code, err, _) = Run(input);
 
         Assert.Equal(2, code);
         Assert.Contains("side directory name", err);
+    }
+
+    // ---- CodeRabbit on #740, second review: sdk and commit are written unquoted too. A double
+    // quote would open a quoted field for an RFC 4180 reader, so it is refused like a delimiter.
+    [Theory]
+    [InlineData("10.0,100")]
+    [InlineData("10.0|100")]
+    [InlineData("10.0\\\"100")]
+    [InlineData("10.0\\n100")]
+    public void MetaValueWithADelimiter_ExitTwo(string jsonSdk)
+    {
+        var input = WriteSide("head", ("click-1.log", GoodClicks(3)));
+        File.WriteAllText(Path.Combine(input, "head", "meta.json"), $"{{ \"sdk\": \"{jsonSdk}\", \"commit\": \"abc1234\" }}");
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(2, code);
+        Assert.Contains("\"sdk\" must be", err);
     }
 
     // ---- CodeRabbit on #740, second review: a meta.json whose root is not an object is a layout

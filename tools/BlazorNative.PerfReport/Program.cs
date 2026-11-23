@@ -12,7 +12,7 @@ namespace BlazorNative.PerfReport;
 internal static class Program
 {
     private const double MaxDropRate = 0.05;
-    private static readonly char[] Forbidden = [',', '|', '\n', '\r'];
+    private static readonly char[] Forbidden = [',', '|', '"', '\n', '\r'];
     private static readonly Regex LogName = new(@"^(?<kind>boot|click)-(?<run>\d+)\.log$", RegexOptions.CultureInvariant);
 
     public static int Main(string[] args) => Run(args, Console.Error, Console.Out);
@@ -97,7 +97,7 @@ internal static class Program
         // The side name is a CSV field and a Markdown cell, both written without quoting: the same
         // rule as meta.json's values.
         if (name.IndexOfAny(Forbidden) >= 0)
-            throw new UsageException($"{dir}: a side directory name must not contain commas, pipes or newlines");
+            throw new UsageException($"{dir}: a side directory name must not contain commas, pipes, double quotes or newlines");
         var (sdk, commit) = ReadMeta(dir);
         var side = new SideReport(name, sdk, commit);
 
@@ -187,7 +187,7 @@ internal static class Program
             {
                 if (!doc.RootElement.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String
                     || string.IsNullOrWhiteSpace(v.GetString()) || v.GetString()!.IndexOfAny(Forbidden) >= 0)
-                    throw new UsageException($"{path}: \"{key}\" must be a non-empty string without commas, pipes or newlines");
+                    throw new UsageException($"{path}: \"{key}\" must be a non-empty string without commas, pipes, double quotes or newlines");
                 return v.GetString()!;
             }
             return (Get("sdk"), Get("commit"));
