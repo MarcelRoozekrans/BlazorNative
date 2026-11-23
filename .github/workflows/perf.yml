@@ -236,7 +236,10 @@ jobs:
           path: ${{ runner.temp }}/ci-so
 
       - name: Place the generated deep-link route resource
-        run: cp "$RUNNER_TEMP/ci-so/blazornative_routes.json" src/BlazorNative.Jni/src/androidMain/res/raw/blazornative_routes.json
+        run: |
+          # res/raw is generated, not committed, so the directory may not exist in a fresh checkout.
+          mkdir -p src/BlazorNative.Jni/src/androidMain/res/raw
+          cp "$RUNNER_TEMP/ci-so/blazornative_routes.json" src/BlazorNative.Jni/src/androidMain/res/raw/blazornative_routes.json
 
       - name: Cache Gradle
         uses: actions/cache@v6
