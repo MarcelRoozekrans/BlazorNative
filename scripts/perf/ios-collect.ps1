@@ -68,6 +68,9 @@ param(
     [int]$SettleSeconds = 10,
     [switch]$Force
 )
+# ValidateSet matches case-insensitively; every file and directory name below is lowercase.
+$Kind = $Kind.ToLowerInvariant()
+$Side = $Side.ToLowerInvariant()
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'

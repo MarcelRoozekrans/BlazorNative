@@ -486,6 +486,7 @@ public sealed class PerfCollectorTests
             string relabel = Dir("relabel", "boot-0.log");
             string interleaved = Dir("interleaved", "boot-0.log", "click-0.log");
             string refused = Dir("refused", "boot-0.log", "click-0.log");
+            string cased = Dir("cased", "boot-0.log");
 
             (JsonElement Value, string? Error)[] r = await RunCatchingAsync("common",
                 // -Force -Run 0 under another build: boot-0 is the only log, so the relabel is allowed, and
@@ -494,7 +495,9 @@ public sealed class PerfCollectorTests
                 // The next interleaved run under the same build touches no log.
                 new Call("Initialize-SideDir", interleaved, "boot", new[] { 1 }, false, false, "10.0.100", "aaaa"),
                 // A relabel click-0 would keep is refused before anything is written.
-                new Call("Initialize-SideDir", refused, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"));
+                new Call("Initialize-SideDir", refused, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"),
+                // ValidateSet lets -Kind Boot through; the replaced file is still the lowercase boot-0.log.
+                new Call("Initialize-SideDir", cased, "Boot", new[] { 0 }, true, false, "10.0.101", "bbbb"));
 
             Assert.Null(r[0].Error);
             Assert.Equal(relabel, r[0].Value.GetString());
@@ -509,6 +512,9 @@ public sealed class PerfCollectorTests
             Assert.Contains("such as click-0.log would keep that label", r[2].Error);
             Assert.True(File.Exists(Path.Combine(refused, "boot-0.log")));
             Assert.Equal(Meta, File.ReadAllText(Path.Combine(refused, "meta.json")));
+
+            Assert.Null(r[3].Error);
+            Assert.False(File.Exists(Path.Combine(cased, "boot-0.log")), "-Kind Boot left the old build's boot-0.log under the new label");
         }
         finally
         {

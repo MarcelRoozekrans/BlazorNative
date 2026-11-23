@@ -214,6 +214,8 @@ function Remove-KindLogs {
 function Initialize-SideDir {
     param([string]$SideDir, [string]$Kind, [int[]]$RunList, [bool]$Force, [bool]$ReplaceKind, [string]$Sdk, [string]$Commit)
     $SideDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SideDir)
+    # ValidateSet matches case-insensitively, so a caller's Boot must still name the boot-<n>.log files.
+    $Kind = $Kind.ToLowerInvariant()
     $err = Get-SideWriteError $SideDir $Kind $RunList $Force $ReplaceKind $Sdk $Commit
     if ($err) { throw $err }
     New-Item -ItemType Directory -Force -Path $SideDir | Out-Null
