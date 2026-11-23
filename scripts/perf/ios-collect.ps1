@@ -68,9 +68,6 @@ param(
     [int]$SettleSeconds = 10,
     [switch]$Force
 )
-# ValidateSet matches case-insensitively; every file and directory name below is lowercase.
-$Kind = $Kind.ToLowerInvariant()
-$Side = $Side.ToLowerInvariant()
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -454,6 +451,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Udid', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
+        # ValidateSet matches case-insensitively; every file and directory name below is lowercase.
+        $Kind = $Kind.ToLowerInvariant()
+        $Side = $Side.ToLowerInvariant()
         $idErr = Test-SideId $Side $Bundle 'Bundle'
         if ($idErr) { throw $idErr }
         if ('click', 'q1' -contains $Kind -and -not $DerivedData) { throw '-DerivedData is required for the click and q1 kinds: the directory of a build-for-testing result' }

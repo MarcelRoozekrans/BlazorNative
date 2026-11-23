@@ -50,9 +50,6 @@ param(
     [int]$WaitSeconds = 60,
     [switch]$Force
 )
-# ValidateSet matches case-insensitively; every file and directory name below is lowercase.
-$Kind = $Kind.ToLowerInvariant()
-$Side = $Side.ToLowerInvariant()
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -316,6 +313,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Serial', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
+        # ValidateSet matches case-insensitively; every file and directory name below is lowercase.
+        $Kind = $Kind.ToLowerInvariant()
+        $Side = $Side.ToLowerInvariant()
         $idErr = Test-SideId $Side $Package 'Package'
         if ($idErr) { throw $idErr }
         $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
