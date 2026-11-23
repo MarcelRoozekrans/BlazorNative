@@ -1,5 +1,6 @@
 package io.blazornative.shell
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -793,6 +794,15 @@ class WidgetMapper(
         // AFTER the guard dropped — a dispatch from inside the guard would be
         // swallowed, and the re-clamped offset would never reach .NET.
         flushScrollWires()
+        // Phase 19.2: the batch is applied. `frame.applied` is the last statement of
+        // applyBatch, after the scroll flush; this release has no back-state publish.
+        // A batch that throws leaves before this line, so it is never marked.
+        BnPerfMark.mark("frame.applied")
+        // The scan runs only until boot.content has fired; after that it is one flag read.
+        if (BnPerfMark.bootContentPending() && patches.any { it is RenderPatch.CommitFrame }) {
+            // `boot.content` and Fully drawn: the first batch that holds a CommitFrame.
+            BnPerfMark.bootContentOnce { (context as? Activity)?.reportFullyDrawn() }
+        }
     }
 
     /**

@@ -472,6 +472,9 @@ public sealed class TemplateDriftTests
             // boot narration prints at the quiet default on a consumer's device,
             // which is the defect #200 reports.
             "android/src/androidMain/kotlin/io/blazornative/shell/BnShellLog.kt",
+            // Phase 19.2: the perf marks. MainActivity and WidgetMapper call
+            // BnPerfMark, so a template without it does not compile.
+            "android/src/androidMain/kotlin/io/blazornative/shell/BnPerfMark.kt",
             // Phase 11.4 Gate B (#155/#164): the stderr → logcat pump's Android half
             // — the Os.pipe()/Os.dup2() install that MainActivity calls as onCreate's
             // first statement. A generated app without it runs a shell whose runtime

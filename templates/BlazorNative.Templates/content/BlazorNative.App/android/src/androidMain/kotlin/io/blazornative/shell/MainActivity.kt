@@ -263,6 +263,9 @@ class MainActivity : FragmentActivity() {
         // #200 observed through at Warn.
         val logLevel = resolveLogLevel()
         BnShellLog.setLevelFromOrdinal(logLevel)
+        // Phase 19.2: `boot.start`, after the level is installed so the gate reads it.
+        // The mark's time is the process start the OS recorded, not the time of this call.
+        BnPerfMark.bootStart()
 
         // Phase 6.1: Yoga's JNI core loads through SoLoader, which must be
         // initialised once per process BEFORE the first YogaNode — and every
@@ -294,6 +297,9 @@ class MainActivity : FragmentActivity() {
         // dispatchEvent is a non-blocking submit — UI-thread safe.
         mapper = WidgetMapper(this, widgetRoot,
             onUiEvent = { h, n, p ->
+                // Phase 19.2: `dispatch.post`, on the UI thread, before the hop to the
+                // dispatch lane. Every event kind is marked; the report filters by id.
+                BnPerfMark.mark("dispatch.post", h.toLong())
                 runtime.dispatchEvent(h, n, p)
             },
             // Phase 7.2: the scroll wire needs the COMPLETION signal — the
@@ -309,6 +315,10 @@ class MainActivity : FragmentActivity() {
         runtime = BlazorNativeRuntime(
             onFrame = { frame -> mapper.apply(frame) },
             onError = onError,
+            // Phase 19.2: `frame.recv`, at the frame callback's entry. This release has no
+            // render thread: the callback runs inside the export, on the calling thread,
+            // which for a click is the dispatch lane.
+            perfMark = { BnPerfMark.mark("frame.recv") },
         )
 
         // Phase 5.1 (M5 DoD #5): a VIEW-intent deep link (blazornative://<route>)

@@ -36,10 +36,15 @@ class BlazorNativeRuntime(
     // own path with the tag "System.err", losing the level and the category. So
     // the pluggable sink stays, and the Activity still passes Log.e.)
     private val onError: (String, Throwable) -> Unit = { msg, t -> System.err.println("$msg: $t") },
+    // Phase 19.2: a perf mark hook, called with "frame.recv" at the entry of the frame
+    // callback. This file is shared JVM code with no android.util.Log, so the shell
+    // supplies the writer. Null costs one null check per frame.
+    private val perfMark: ((String) -> Unit)? = null,
 ) {
     private val callback = object : NativeBindings.FrameCallback {
         override fun invoke(frame: Pointer) {
             try {
+                perfMark?.invoke("frame.recv")
                 // NativeFrameAdapter.read copies everything (arena memory is
                 // valid only during this invocation), so onFrame receives a
                 // fully detached RenderFrame.
