@@ -129,6 +129,24 @@ function Get-RunningAppJobs {
     return , @(Select-RunningAppJobs @($list) $BundleId)
 }
 
+# Runs $Body, then $Stop for every side, also when $Body failed, so a failed collection does not leave
+# either app running. A failure stopping one side does not skip the other. $Body's error is rethrown
+# first, so a cleanup failure cannot replace it; with no $Body error, the first stop error is thrown.
+function Invoke-WithSideCleanup {
+    param([object[]]$Sides, [scriptblock]$Body, [scriptblock]$Stop)
+    $bodyError = $null
+    try { & $Body } catch { $bodyError = $_ }
+    $stopError = $null
+    foreach ($s in $Sides) {
+        try { & $Stop $s }
+        catch {
+            [Console]::Error.WriteLine("interleave: stopping a side failed: $($_.Exception.Message)")
+            if ($null -eq $stopError) { $stopError = $_ }
+        }
+    }
+    if ($null -ne $bodyError) { throw $bodyError }
+    if ($null -ne $stopError) { throw $stopError }
+}
 
 function Invoke-Collector {
     param([object]$Side, [object]$Other, [string]$Kind, [int]$Run = -1)
@@ -169,32 +187,33 @@ if ($MyInvocation.InvocationName -ne '.') {
         $sides = @($head, $base)
         New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
-        foreach ($phase in @($Phases -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
-            switch ($phase) {
-                'q1' {
-                    Invoke-Collector $head $base 'q1'
-                    Invoke-Collector $base $head 'q1'
-                }
-                'boot' {
-                    foreach ($r in 0..$Runs) {
-                        $order = Get-SideOrder $sides $r
-                        Invoke-Collector $order[0] $order[1] 'boot' $r
-                        Invoke-Collector $order[1] $order[0] 'boot' $r
+        Invoke-WithSideCleanup $sides {
+            foreach ($phase in @($Phases -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                switch ($phase) {
+                    'q1' {
+                        Invoke-Collector $head $base 'q1'
+                        Invoke-Collector $base $head 'q1'
                     }
-                }
-                'click' {
-                    $blocks = Get-ClickBlocks $Runs $Clicks
-                    Write-Host "click: $blocks blocks of $Clicks clicks per side after the warm-up block 0"
-                    foreach ($b in 0..$blocks) {
-                        $order = Get-SideOrder $sides $b
-                        Invoke-Collector $order[0] $order[1] 'click' $b
-                        Invoke-Collector $order[1] $order[0] 'click' $b
+                    'boot' {
+                        foreach ($r in 0..$Runs) {
+                            $order = Get-SideOrder $sides $r
+                            Invoke-Collector $order[0] $order[1] 'boot' $r
+                            Invoke-Collector $order[1] $order[0] 'boot' $r
+                        }
                     }
+                    'click' {
+                        $blocks = Get-ClickBlocks $Runs $Clicks
+                        Write-Host "click: $blocks blocks of $Clicks clicks per side after the warm-up block 0"
+                        foreach ($b in 0..$blocks) {
+                            $order = Get-SideOrder $sides $b
+                            Invoke-Collector $order[0] $order[1] 'click' $b
+                            Invoke-Collector $order[1] $order[0] 'click' $b
+                        }
+                    }
+                    default { throw "unknown phase '$phase': expected q1, boot or click" }
                 }
-                default { throw "unknown phase '$phase': expected q1, boot or click" }
             }
-        }
-        foreach ($s in $sides) { Stop-Side $s }
+        } { param($s) Stop-Side $s }
     }
     catch {
         [Console]::Error.WriteLine("interleave: $($_.Exception.Message)")

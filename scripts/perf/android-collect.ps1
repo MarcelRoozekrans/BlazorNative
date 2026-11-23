@@ -91,17 +91,18 @@ function Get-GatedTagFailure {
 # `Fully drawn` line parses as a record of its own: a read that joined the lines into one string, as
 # one did in 19.2, parses as one record whose message runs on past that line, and fails here.
 function Test-Q1Default {
-    param([string[]]$Lines)
+    param([string[]]$Lines, [string]$Package, [string]$Activity)
     $failures = New-Object System.Collections.Generic.List[string]
     $fullyDrawn = $false
+    $pattern = '^' + (Get-FullyDrawnPattern $Package $Activity)
     foreach ($l in $Lines) {
         if ($l -match 'BNPERF ') { $failures.Add("BNPERF line at the default level: $l"); continue }
         $p = ConvertFrom-LogcatLine $l
-        if ($null -ne $p -and $p.Message -match '^Fully drawn \S+: \+[0-9ms]+$') { $fullyDrawn = $true }
+        if ($null -ne $p -and $p.Message -match $pattern) { $fullyDrawn = $true }
         $gated = Get-GatedTagFailure $p $l 'at the default level'
         if ($gated) { $failures.Add($gated) }
     }
-    if (-not $fullyDrawn) { $failures.Add("control failed: no Fully drawn line parsed as a logcat line of its own among $(@($Lines).Count) lines, so the tag check is not shown to have read the log line by line") }
+    if (-not $fullyDrawn) { $failures.Add("control failed: no Fully drawn line for $Package parsed as a logcat line of its own among $(@($Lines).Count) lines, so the tag check is not shown to have read the log line by line") }
     return , $failures
 }
 
@@ -127,9 +128,24 @@ function Test-Q1DefaultClick {
     return , $failures
 }
 
+# The message of the platform's `Fully drawn <component>: +<time>` record for $Package's $Activity, as a
+# regex without a start anchor. The component is either form ActivityTaskManager prints: the full
+# <package>/<class>, or the short <package>/.<rest> when the class starts with the package, as head's does.
+# The backport's package carries the .v015 suffix and its class does not, so it prints the full form.
+# Another app's record, a launcher's or the other side's, does not match.
+function Get-FullyDrawnPattern {
+    param([string]$Package, [string]$Activity)
+    $forms = @([regex]::Escape("$Package/$Activity"))
+    if ($Activity.StartsWith("$Package.", [System.StringComparison]::Ordinal)) {
+        $forms += [regex]::Escape("$Package/" + $Activity.Substring($Package.Length))
+    }
+    return 'Fully drawn (?:' + ($forms -join '|') + '): \+[0-9ms]+$'
+}
+
 function Test-LogHasFullyDrawn {
-    param([string[]]$Lines)
-    foreach ($l in $Lines) { if ($l -match 'Fully drawn \S+: \+') { return $true } }
+    param([string[]]$Lines, [string]$Package, [string]$Activity)
+    $pattern = Get-FullyDrawnPattern $Package $Activity
+    foreach ($l in $Lines) { if ($l -match $pattern) { return $true } }
     return $false
 }
 
@@ -143,36 +159,24 @@ function Get-TotalTime {
     return $null
 }
 
-# `am instrument` ends a passing run with "OK (<n> test...)".
+# `am instrument` ends a passing run with "OK (<n> test...)". The annotation selects PerfMeasurementTest
+# alone, so the summary must report exactly one test: "OK (0 tests)" is a filter that matched nothing, and
+# a larger count a filter that ran more than the measurement.
 function Test-InstrumentPassed {
     param([string[]]$Lines)
     $text = $Lines -join "`n"
-    return ($text -match '(?m)^OK \(\d+ tests?\)') -and ($text -notmatch 'FAILURES!!!') -and ($text -notmatch 'INSTRUMENTATION_FAILED')
+    return ($text -match '(?m)^OK \(1 test\)\s*$') -and ($text -notmatch 'FAILURES!!!') -and ($text -notmatch 'INSTRUMENTATION_FAILED')
 }
 
 # ── Device functions ────────────────────────────────────────────────────────
 
-# Runs adb with a deadline. On timeout the process is killed and this throws. Returns stdout lines;
-# a non-zero exit throws with stderr.
+# Runs adb with one deadline for its exit and its output, through perf-common.ps1's Invoke-BoundedProcess.
+# On timeout this throws. Returns stdout lines; a non-zero exit throws with stderr.
 function Invoke-Adb {
     param([int]$TimeoutSeconds = 30, [Parameter(ValueFromRemainingArguments = $true)][string[]]$AdbArgs)
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'adb'
-    foreach ($a in (@('-s', $script:Serial) + $AdbArgs)) { [void]$psi.ArgumentList.Add($a) }
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-        try { $proc.Kill($true) } catch { }
-        throw "adb $($AdbArgs -join ' ') timed out after ${TimeoutSeconds}s"
-    }
-    $proc.WaitForExit()
-    $stdout = $outTask.Result
-    if ($proc.ExitCode -ne 0) { throw "adb $($AdbArgs -join ' ') failed with exit $($proc.ExitCode)`n$stdout`n$($errTask.Result)" }
-    return , @($stdout -split "\r?\n" | Where-Object { $_ -ne '' })
+    $r = Invoke-BoundedProcess 'adb' (@('-s', $script:Serial) + $AdbArgs) $TimeoutSeconds
+    if ($r.ExitCode -ne 0) { throw "adb $($AdbArgs -join ' ') failed with exit $($r.ExitCode)`n$($r.Stdout)`n$($r.Stderr)" }
+    return , @($r.Stdout -split "\r?\n" | Where-Object { $_ -ne '' })
 }
 
 # Invoke-Adb already returns the lines as one array. Wrapping its call in @() again would nest that array in a
@@ -219,7 +223,7 @@ function Invoke-BootRun {
     $path = Get-RunLogPath $SideDir 'boot' $Run
     $start = Start-Cold $true
     $lines = Wait-ForLog { param($l) Test-LogHasMark $l 'boot.content' } 'the boot.content mark'
-    $lines = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l } 'the Fully drawn line'
+    $lines = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l $script:Package $script:Activity } 'the Fully drawn line'
     if ($null -eq (Get-TotalTime $start)) { throw "am start -W printed no TotalTime:`n$($start -join "`n")" }
     Set-Content -LiteralPath $path -Value (@($lines) + @($start)) -Encoding UTF8
     Write-Host "boot run $Run -> $path"
@@ -253,7 +257,7 @@ function Invoke-ClickRun {
     Invoke-Measurement $script:Clicks 'Verbose'
     # The .NET marks reach the log late through the writer thread and the stderr pump, so wait for the tail.
     $clicks = $script:Clicks
-    $lines = Wait-ForLog { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 15
+    $lines = Wait-ForLog { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post, dispatch.enter and dispatch.handler mark, $clicks of each" -Seconds 15
     Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
     Write-Host "click run $Run -> $path"
 }
@@ -263,12 +267,12 @@ function Invoke-Q1 {
     $failures = New-Object System.Collections.Generic.List[string]
     try {
         Start-Cold $false | Out-Null
-        $default = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l } 'the Fully drawn line at the default level'
+        $default = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l $script:Package $script:Activity } 'the Fully drawn line at the default level'
         # Let late marks and shell logs reach the log before it is read.
         Start-Sleep -Seconds 3
         $default = Get-Logcat
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
-        foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
+        foreach ($f in (Test-Q1Default $default $script:Package $script:Activity)) { $failures.Add($f) }
 
         Invoke-Measurement $script:Q1Clicks 'default'
         # The window the click kind waits for its tail marks in, so a late .NET mark would be seen.
@@ -313,6 +317,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                 $err = Test-MetaValue $pair[0] $pair[1]
                 if ($err) { throw $err }
             }
+            # Refuse before anything is written: an existing run log without -Force, or logs that would
+            # remain under another build's meta.json.
+            $writeErr = Get-SideWriteError $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
+            if ($writeErr) { throw $writeErr }
             New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
             # Under -Run only that run's file is replaced, by Get-RunLogPath; the other runs are kept.
             if ($Force -and $Run -lt 0) { Remove-KindLogs $sideDir $Kind }

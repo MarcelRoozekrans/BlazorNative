@@ -123,8 +123,10 @@ function Test-Q1Default {
 }
 
 # Q1 default-level click: zero BNPERF lines in the click predicate's window, and in the test host's whole
-# window (ndjson) no gated .NET line, with the control that the host window holds a record of the process,
-# so an empty click log is quiet, not unread.
+# window (ndjson) no BNPERF line and no gated .NET line, with the control that the host window holds a
+# record of the process, so an empty click log is quiet, not unread. The host window is read here for
+# BNPERF too because the click predicate takes the subsystem's marks from category Perf only, and a mark
+# the shell logged in another category would be outside it.
 function Test-Q1DefaultClick {
     param([string[]]$ClickLines, [string[]]$HostLines)
     $failures = New-Object System.Collections.Generic.List[string]
@@ -133,6 +135,7 @@ function Test-Q1DefaultClick {
     foreach ($l in $HostLines) {
         $r = ConvertFrom-OsLogLine $l
         if ($null -ne $r -and $r.Pid -ge 0) { $control = $true }
+        if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in the test host's window of a default-level click run: $l"); continue }
         if (Test-GatedDotNetLine $l) { $failures.Add(".NET line below Warn in a default-level click run: $l") }
     }
     if (-not $control) { $failures.Add("control failed: the default-level click window holds no record of the $($script:Process) process") }
@@ -189,6 +192,24 @@ function Get-LaunchEnv {
     return $envVars
 }
 
+# The simctl arguments of a `log show` read from $Start. --debug always, because the marks are debug
+# records. With $Info also --info, which q1's default-level reads need: Test-Q1Default flags the
+# subsystem's Info records, so a read without them would pass that check unread. The parsed boot and
+# click reads keep their arguments, so the parser's input does not change.
+function Get-OsLogArgs {
+    param([string]$Udid, [string]$Start, [string]$Style, [string]$Predicate, [bool]$Info = $false)
+    $a = @('spawn', $Udid, 'log', 'show', '--debug')
+    if ($Info) { $a += '--info' }
+    return , @($a + @('--style', $Style, '--start', $Start, '--predicate', $Predicate))
+}
+
+# The simctl arguments of a launch. --terminate-running-process has simctl end a running instance first,
+# so a launch starts a new process even when Stop-App, which is best effort, left the previous one running.
+function Get-LaunchArgs {
+    param([string]$Udid, [string]$Bundle)
+    return , @('launch', '--terminate-running-process', $Udid, $Bundle)
+}
+
 # ── Process functions ───────────────────────────────────────────────────────
 
 # Runs a tool with a deadline. On timeout the process tree is killed and this throws. Returns an object with
@@ -201,26 +222,13 @@ function Invoke-Tool {
         [hashtable]$EnvVars = @{},
         [switch]$AllowFail
     )
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $File
-    foreach ($a in $ToolArgs) { [void]$psi.ArgumentList.Add($a) }
-    foreach ($k in $EnvVars.Keys) { $psi.Environment[$k] = [string]$EnvVars[$k] }
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-        try { $proc.Kill($true) } catch { }
-        throw "$File $($ToolArgs -join ' ') timed out after ${TimeoutSeconds}s"
+    # perf-common.ps1's Invoke-BoundedProcess: one deadline for the exit and for draining both pipes.
+    $r = Invoke-BoundedProcess $File $ToolArgs $TimeoutSeconds $EnvVars
+    $lines = @(($r.Stdout + "`n" + $r.Stderr) -split "\r?\n" | Where-Object { $_ -ne '' })
+    if ($r.ExitCode -ne 0 -and -not $AllowFail) {
+        throw "$File $($ToolArgs -join ' ') failed with exit $($r.ExitCode)`n$($lines -join "`n")"
     }
-    $proc.WaitForExit()
-    $lines = @(($outTask.Result + "`n" + $errTask.Result) -split "\r?\n" | Where-Object { $_ -ne '' })
-    if ($proc.ExitCode -ne 0 -and -not $AllowFail) {
-        throw "$File $($ToolArgs -join ' ') failed with exit $($proc.ExitCode)`n$($lines -join "`n")"
-    }
-    return [pscustomobject]@{ ExitCode = $proc.ExitCode; Lines = $lines }
+    return [pscustomobject]@{ ExitCode = $r.ExitCode; Lines = $lines }
 }
 
 # ── Simulator functions ─────────────────────────────────────────────────────
@@ -271,10 +279,11 @@ function Get-ClickPredicate {
 }
 
 # Reads the log from -Start on, the subsystem by default. Style compact for the parser, ndjson for the q1 checks.
+# -Info is for q1's default-level reads; see Get-OsLogArgs.
 function Get-OsLog {
-    param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '')
+    param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '', [switch]$Info)
     if (-not $Predicate) { $Predicate = Get-SubsystemPredicate }
-    $r = Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--debug' '--style' $Style '--start' $Start '--predicate' $Predicate
+    $r = Invoke-Simctl 90 -SimArgs (Get-OsLogArgs $script:Udid $Start $Style $Predicate $Info.IsPresent)
     return , @($r.Lines)
 }
 
@@ -344,7 +353,7 @@ function Invoke-ClickRun {
     # The .NET marks reach the log late through the writer thread, so wait for the tail.
     $clicks = $script:Clicks
     try {
-        $lines = Wait-ForLog $start { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 30 -Predicate (Get-ClickPredicate)
+        $lines = Wait-ForLog $start { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post, dispatch.enter and dispatch.handler mark, $clicks of each" -Seconds 30 -Predicate (Get-ClickPredicate)
     }
     catch {
         # Evidence for the failure: every BNPERF record of the window, from any source, with its subsystem and category.
@@ -366,7 +375,7 @@ function Start-Launch {
     Stop-App
     $envVars = Get-LaunchEnv $VerboseLevel $script:PerfComponent
     $start = Get-WindowStart
-    $r = Invoke-Simctl 60 -EnvVars $envVars 'launch' $script:Udid $script:Bundle
+    $r = Invoke-Simctl 60 -EnvVars $envVars -SimArgs (Get-LaunchArgs $script:Udid $script:Bundle)
     $procId = Get-LaunchPid $r.Lines
     if ($null -eq $procId) { throw "simctl launch printed no pid:`n$($r.Lines -join "`n")" }
     return [pscustomobject]@{ Start = $start; Pid = $procId }
@@ -381,7 +390,7 @@ function Invoke-Q1 {
         Start-Sleep -Seconds $script:SettleSeconds
         # The whole launched process, not only the subsystem: the .NET lines NSLog records are the app's own
         # records outside the subsystem, and a gated one must be seen wherever it landed.
-        $default = Get-OsLog $launch.Start 'ndjson' "processID == $($launch.Pid)"
+        $default = Get-OsLog $launch.Start 'ndjson' "processID == $($launch.Pid)" -Info
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
         # This control proves only that the launched process ran and logged. That debug capture works
         # is proved by the Verbose phase below: its marks are debug records read through the same persistence.
@@ -395,7 +404,7 @@ function Invoke-Q1 {
         $clickLog = Get-OsLog $clickStart 'compact' (Get-ClickPredicate)
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
         # The test host's whole window: the gated .NET line check and the control that the window is readable.
-        $hostLog = Get-OsLog $clickStart 'ndjson' ('process == "' + $script:Process + '"')
+        $hostLog = Get-OsLog $clickStart 'ndjson' ('process == "' + $script:Process + '"') -Info
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click-host.txt") -Value $hostLog -Encoding UTF8
         foreach ($f in (Test-Q1DefaultClick $clickLog $hostLog)) { $failures.Add($f) }
         Stop-App
@@ -438,12 +447,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                 $err = Test-MetaValue $pair[0] $pair[1]
                 if ($err) { throw $err }
             }
-            # Refuse before anything is written: a second run into an existing side directory would
-            # otherwise rewrite meta.json and fail at run 0 only after that.
-            $firstRun = (Get-RunList $Runs $Run)[0]
-            if ((Test-Path -LiteralPath (Join-Path $sideDir "$Kind-$firstRun.log")) -and -not $Force) {
-                [void](Get-RunLogPath $sideDir $Kind $firstRun)
-            }
+            # Refuse before anything is written: an existing run log without -Force, or logs that would
+            # remain under another build's meta.json.
+            $writeErr = Get-SideWriteError $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
+            if ($writeErr) { throw $writeErr }
             New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
             # Under -Run only that run's file is replaced, by Get-RunLogPath; the other runs are kept.
             if ($Force -and $Run -lt 0) { Remove-KindLogs $sideDir $Kind }

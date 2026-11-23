@@ -25,8 +25,17 @@ public sealed class PerfCollectorTests
 
     private sealed record Call(string Function, params object[] Args);
 
-    /// <summary>Runs <paramref name="calls"/> in one probe and returns each call's value.</summary>
+    /// <summary>Runs <paramref name="calls"/> in one probe and returns each call's value; a call that threw fails the fact.</summary>
     private static async Task<JsonElement[]> RunAsync(string script, params Call[] calls)
+    {
+        (JsonElement Value, string? Error)[] results = await RunCatchingAsync(script, calls);
+        for (int i = 0; i < results.Length; i++)
+            Assert.True(results[i].Error is null, $"call {i}, {calls[i].Function}, threw: {results[i].Error}");
+        return [.. results.Select(r => r.Value)];
+    }
+
+    /// <summary>Runs <paramref name="calls"/> in one probe and returns each call's value, or the message it threw.</summary>
+    private static async Task<(JsonElement Value, string? Error)[]> RunCatchingAsync(string script, params Call[] calls)
     {
         string file = Path.Combine(Path.GetTempPath(), "bn-perf-probe-" + Guid.NewGuid().ToString("N") + ".json");
         try
@@ -38,15 +47,19 @@ public sealed class PerfCollectorTests
             string? line = run.Log.Split('\n').LastOrDefault(l => l.StartsWith("PROBE-RESULT: ", StringComparison.Ordinal));
             Assert.True(line is not null, $"the probe printed no PROBE-RESULT line:\n{run.Log}");
             using JsonDocument doc = JsonDocument.Parse(line!["PROBE-RESULT: ".Length..]);
-            JsonElement[] values = [.. doc.RootElement.EnumerateArray().Select(e => e.GetProperty("value").Clone())];
-            Assert.Equal(calls.Length, values.Length);
-            return values;
+            (JsonElement, string?)[] results = [.. doc.RootElement.EnumerateArray().Select(e =>
+                (e.GetProperty("value").Clone(), e.GetProperty("error").ValueKind == JsonValueKind.Null ? null : e.GetProperty("error").GetString()))];
+            Assert.Equal(calls.Length, results.Length);
+            return results;
         }
         finally
         {
             File.Delete(file);
         }
     }
+
+    /// <summary>A probe arg the probe turns into a scriptblock.</summary>
+    private static object Block(string text) => new { scriptblock = text };
 
     /// <summary>A failure list, or any value PowerShell may unroll: null is empty, a string is one.</summary>
     private static string[] Strings(JsonElement e) => e.ValueKind switch
@@ -61,7 +74,11 @@ public sealed class PerfCollectorTests
         $"11-23 10:00:00.123  4321  4350 {priority} {tag}: {message}";
 
     private const string FullyDrawn = "11-23 10:00:01.000   600   650 I ActivityTaskManager: Fully drawn io.blazornative.shell/.MainActivity: +812ms";
-    private const string Displayed = "11-23 10:00:01.000   600   650 I ActivityTaskManager: Displayed io.blazornative.shell/.MainActivity for user 0: +640ms";
+    private const string FullyDrawnV015 = "11-23 10:00:01.000   600   650 I ActivityTaskManager: Fully drawn io.blazornative.shell.v015/io.blazornative.shell.MainActivity: +1s282ms";
+    private const string Shell = "io.blazornative.shell";
+    private const string ShellV015 = "io.blazornative.shell.v015";
+    private const string ShellActivity = "io.blazornative.shell.MainActivity";
+    private const string Displayed ="11-23 10:00:01.000   600   650 I ActivityTaskManager: Displayed io.blazornative.shell/.MainActivity for user 0: +640ms";
 
     private static string OsLog(string type, string subsystem, int pid, string message) =>
         JsonSerializer.Serialize(new { messageType = type, subsystem, processID = pid, eventMessage = message });
@@ -74,14 +91,70 @@ public sealed class PerfCollectorTests
         string[] gated = [.. quiet, Logcat("I", "BlazorNative", "[BN|I|BnRuntime] mounted")];
         string[] joined = [string.Join(" ", quiet)];
 
+        // The control must be the selected app's own record: the backport's, when head was launched, is not.
+        string[] otherApp = [.. quiet.Where(l => l != FullyDrawn), FullyDrawnV015];
+
         JsonElement[] r = await RunAsync("android",
-            new Call("Test-Q1Default", [quiet]), new Call("Test-Q1Default", [mark]),
-            new Call("Test-Q1Default", [gated]), new Call("Test-Q1Default", [joined]));
+            new Call("Test-Q1Default", quiet, Shell, ShellActivity), new Call("Test-Q1Default", mark, Shell, ShellActivity),
+            new Call("Test-Q1Default", gated, Shell, ShellActivity), new Call("Test-Q1Default", joined, Shell, ShellActivity),
+            new Call("Test-Q1Default", otherApp, Shell, ShellActivity));
 
         Assert.Empty(Strings(r[0]));
         Assert.Contains("BNPERF line at the default level", Assert.Single(Strings(r[1])));
         Assert.Contains("I line from tag BlazorNative at the default level", Assert.Single(Strings(r[2])));
         Assert.Contains("control failed: no Fully drawn line", Assert.Single(Strings(r[3])));
+        Assert.Contains("control failed: no Fully drawn line for io.blazornative.shell", Assert.Single(Strings(r[4])));
+    }
+
+    // ActivityTaskManager prints head's component short, because its class starts with its package, and
+    // the backport's in full, because its package carries the .v015 suffix and its class does not.
+    [Fact]
+    public async Task AndroidFullyDrawn_AcceptsTheSelectedAppInEitherForm_AndRedsAnotherAppOrABadTiming()
+    {
+        string Drawn(string component, string time) => $"11-23 10:00:01.000   600   650 I ActivityTaskManager: Fully drawn {component}: {time}";
+        string headShort = Drawn("io.blazornative.shell/.MainActivity", "+1s180ms");
+        string headFull = Drawn("io.blazornative.shell/io.blazornative.shell.MainActivity", "+812ms");
+        string launcher = Drawn("com.google.android.apps.nexuslauncher/.NexusLauncherActivity", "+640ms");
+        string badTime = Drawn("io.blazornative.shell/.MainActivity", "+?");
+
+        JsonElement[] r = await RunAsync("android",
+            new Call("Test-LogHasFullyDrawn", new[] { headShort }, Shell, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { headFull }, Shell, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { FullyDrawnV015 }, ShellV015, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { FullyDrawnV015, launcher }, Shell, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { headShort, launcher }, ShellV015, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { badTime }, Shell, ShellActivity),
+            new Call("Test-LogHasFullyDrawn", new[] { headShort.Replace(".MainActivity", ".OtherActivity") }, Shell, ShellActivity));
+
+        Assert.True(r[0].GetBoolean());
+        Assert.True(r[1].GetBoolean());
+        Assert.True(r[2].GetBoolean());
+        Assert.False(r[3].GetBoolean());
+        Assert.False(r[4].GetBoolean());
+        Assert.False(r[5].GetBoolean());
+        Assert.False(r[6].GetBoolean());
+    }
+
+    // PerfMeasurementTest is the one test its annotation selects, so only "OK (1 test)" is a pass.
+    [Fact]
+    public async Task AndroidInstrumentPassed_NeedsExactlyOneTest_AndRedsZeroManyOrAFailure()
+    {
+        string[] one = ["INSTRUMENTATION_STATUS_CODE: 0", "OK (1 test)"];
+        string[] none = ["OK (0 tests)"];
+        string[] two = ["OK (2 tests)"];
+        string[] failures = ["FAILURES!!!", "OK (1 test)"];
+        string[] crashed = ["OK (1 test)", "INSTRUMENTATION_FAILED: io.blazornative.shell.test/io.blazornative.shell.BlazorNativeTestRunner"];
+
+        JsonElement[] r = await RunAsync("android",
+            new Call("Test-InstrumentPassed", [one]), new Call("Test-InstrumentPassed", [none]),
+            new Call("Test-InstrumentPassed", [two]), new Call("Test-InstrumentPassed", [failures]),
+            new Call("Test-InstrumentPassed", [crashed]));
+
+        Assert.True(r[0].GetBoolean());
+        Assert.False(r[1].GetBoolean());
+        Assert.False(r[2].GetBoolean());
+        Assert.False(r[3].GetBoolean());
+        Assert.False(r[4].GetBoolean());
     }
 
     [Fact]
@@ -144,17 +217,36 @@ public sealed class PerfCollectorTests
         string[] noMarks = ["Timestamp               Ty Process[PID:TID]"];
         string[] withMark = [.. noMarks, "2026-11-23 10:00:00.1 Df BnHost[900:1] BNPERF dispatch.post seq=1 t=5 id=3"];
         string[] gatedHost = [.. host, OsLog("Default", "", 900, "[BN|D|dispatch] lane idle")];
+        // A subsystem mark outside category Perf, which the click predicate does not read: only the host window holds it.
+        string[] markedHost = [.. host, OsLog("Debug", "io.blazornative", 900, "BNPERF dispatch.post seq=1 t=5 id=3")];
 
         JsonElement[] r = await RunAsync("ios",
             new Call("Test-Q1DefaultClick", [noMarks, host]),
             new Call("Test-Q1DefaultClick", [withMark, host]),
             new Call("Test-Q1DefaultClick", [noMarks, gatedHost]),
-            new Call("Test-Q1DefaultClick", [noMarks, Array.Empty<string>()]));
+            new Call("Test-Q1DefaultClick", [noMarks, Array.Empty<string>()]),
+            new Call("Test-Q1DefaultClick", [noMarks, markedHost]));
 
         Assert.Empty(Strings(r[0]));
         Assert.Contains("BNPERF line in a default-level click run", Assert.Single(Strings(r[1])));
         Assert.Contains(".NET line below Warn in a default-level click run", Assert.Single(Strings(r[2])));
         Assert.Contains("control failed: the default-level click window holds no record", Assert.Single(Strings(r[3])));
+        Assert.Contains("BNPERF line in the test host's window of a default-level click run", Assert.Single(Strings(r[4])));
+    }
+
+    // q1's default-level reads must include Info records, which Test-Q1Default flags; the parsed boot and
+    // click reads keep their arguments. A launch must replace a process Stop-App failed to end.
+    [Fact]
+    public async Task IosSimctlArgs_DefaultLevelReadsTakeInfo_AndALaunchTerminatesARunningProcess()
+    {
+        JsonElement[] r = await RunAsync("ios",
+            new Call("Get-OsLogArgs", "UDID", "2026-11-23 10:00:00", "ndjson", "processID == 812", true),
+            new Call("Get-OsLogArgs", "UDID", "2026-11-23 10:00:00", "compact", "subsystem == \"io.blazornative\"", false),
+            new Call("Get-LaunchArgs", "UDID", "io.blazornative.bnhost"));
+
+        Assert.Equal(["spawn", "UDID", "log", "show", "--debug", "--info", "--style", "ndjson", "--start", "2026-11-23 10:00:00", "--predicate", "processID == 812"], Strings(r[0]));
+        Assert.Equal(["spawn", "UDID", "log", "show", "--debug", "--style", "compact", "--start", "2026-11-23 10:00:00", "--predicate", "subsystem == \"io.blazornative\""], Strings(r[1]));
+        Assert.Equal(["launch", "--terminate-running-process", "UDID", "io.blazornative.bnhost"], Strings(r[2]));
     }
 
     [Fact]
@@ -244,20 +336,179 @@ public sealed class PerfCollectorTests
     }
 
     [Fact]
-    public async Task ClickLogComplete_NeedsEveryPostAndHandler_AndRedsAShortOrEmptyLog()
+    public async Task ClickLogComplete_NeedsEachMarkOncePerClick_AndRedsAShortLongOrEmptyLog()
     {
         string Line(string point, int seq) => $"BNPERF {point} seq={seq} t={seq} id=3";
-        string[] three = [.. Enumerable.Range(1, 3).SelectMany(n => new[] { Line("dispatch.post", n), Line("dispatch.handler", n) })];
-        string[] shortPost = [.. three.Where(l => l != Line("dispatch.post", 3))];
-        string[] shortHandler = [.. three.Where(l => l != Line("dispatch.handler", 3))];
+        string[] points = ["dispatch.post", "dispatch.enter", "dispatch.handler"];
+        string[] three = [.. Enumerable.Range(1, 3).SelectMany(n => points.Select(p => Line(p, n)))];
 
-        JsonElement[] r = await RunAsync("common",
-            new Call("Test-ClickLogComplete", three, 3), new Call("Test-ClickLogComplete", shortPost, 3),
-            new Call("Test-ClickLogComplete", shortHandler, 3), new Call("Test-ClickLogComplete", three, 0));
+        var calls = new List<Call> { new("Test-ClickLogComplete", three, 3), new("Test-ClickLogComplete", three, 0) };
+        foreach (string p in points)
+        {
+            calls.Add(new("Test-ClickLogComplete", three.Where(l => l != Line(p, 3)).ToArray(), 3));
+            calls.Add(new("Test-ClickLogComplete", three.Append(Line(p, 4)).ToArray(), 3));
+        }
+
+        JsonElement[] r = await RunAsync("common", [.. calls]);
 
         Assert.True(r[0].GetBoolean());
         Assert.False(r[1].GetBoolean());
-        Assert.False(r[2].GetBoolean());
-        Assert.False(r[3].GetBoolean());
+        for (int i = 2; i < r.Length; i++)
+            Assert.False(r[i].GetBoolean(), $"case {i}: a short or long {points[(i - 2) / 2]} count passed");
+    }
+
+    // ── Get-SideWriteError: meta.json may not relabel logs it does not describe ──
+
+    [Fact]
+    public async Task SideWriteError_RefusesAnExistingRunOrARelabel_AndAllowsInterleavedRunsAndAFullReplace()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "bn-perf-side-" + Guid.NewGuid().ToString("N"));
+        string Dir(string name, string? meta, params string[] logs)
+        {
+            string d = Path.Combine(root, name);
+            Directory.CreateDirectory(d);
+            if (meta is not null) File.WriteAllText(Path.Combine(d, "meta.json"), meta);
+            foreach (string l in logs) File.WriteAllText(Path.Combine(d, l), "BNPERF boot.start seq=1 t=1");
+            return d;
+        }
+        const string Meta = """{ "sdk": "10.0.100", "commit": "aaaa" }""";
+        try
+        {
+            string missing = Path.Combine(root, "missing");
+            string interleaved = Dir("interleaved", Meta, "boot-0.log", "click-0.log");
+            string third = Dir("third", Meta, "boot-2.log");
+            string onlyRun = Dir("onlyRun", Meta, "boot-0.log");
+            string bootAndClick = Dir("bootAndClick", Meta, "boot-0.log", "click-0.log");
+            string noMeta = Dir("noMeta", null, "boot-0.log");
+
+            (JsonElement Value, string? Error)[] r = await RunCatchingAsync("common",
+                // A fresh side directory.
+                new Call("Get-SideWriteError", missing, "boot", new[] { 0, 1 }, false, true, "10.0.100", "aaaa"),
+                // Interleaved: the next run of either kind under the same build.
+                new Call("Get-SideWriteError", interleaved, "boot", new[] { 1 }, false, false, "10.0.100", "aaaa"),
+                // Every requested run is checked, not only the first.
+                new Call("Get-SideWriteError", third, "boot", new[] { 0, 1, 2 }, false, true, "10.0.100", "aaaa"),
+                // The next run under another build would relabel the runs already there.
+                new Call("Get-SideWriteError", interleaved, "boot", new[] { 1 }, false, false, "10.0.101", "aaaa"),
+                new Call("Get-SideWriteError", interleaved, "boot", new[] { 1 }, false, false, "10.0.100", "bbbb"),
+                // -Force -Run 0 replaces boot-0 and nothing else: the only log, so a new label is safe...
+                new Call("Get-SideWriteError", onlyRun, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"),
+                // ...but click-0 would keep the new label.
+                new Call("Get-SideWriteError", bootAndClick, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"),
+                // -Force without -Run removes the kind's logs, but not the other kind's.
+                new Call("Get-SideWriteError", onlyRun, "boot", new[] { 0, 1 }, true, true, "10.0.101", "bbbb"),
+                new Call("Get-SideWriteError", bootAndClick, "boot", new[] { 0, 1 }, true, true, "10.0.101", "bbbb"),
+                // Logs with no meta.json cannot be shown to match.
+                new Call("Get-SideWriteError", noMeta, "boot", new[] { 1 }, false, false, "10.0.100", "aaaa"));
+
+            Assert.All(r, x => Assert.Null(x.Error));
+            Assert.Equal(JsonValueKind.Null, r[0].Value.ValueKind);
+            Assert.Equal(JsonValueKind.Null, r[1].Value.ValueKind);
+            Assert.StartsWith($"refusing to overwrite {Path.Combine(third, "boot-2.log")}", r[2].Value.GetString());
+            Assert.Contains("records sdk '10.0.100' and commit 'aaaa'", r[3].Value.GetString());
+            Assert.Contains("records sdk '10.0.100' and commit 'aaaa'", r[4].Value.GetString());
+            Assert.Equal(JsonValueKind.Null, r[5].Value.ValueKind);
+            Assert.Contains("such as click-0.log would keep that label", r[6].Value.GetString());
+            Assert.Equal(JsonValueKind.Null, r[7].Value.ValueKind);
+            Assert.Contains("such as click-0.log would keep that label", r[8].Value.GetString());
+            Assert.Contains("but no meta.json", r[9].Value.GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ── Invoke-BoundedProcess: one deadline for the exit and both pipes ─────────
+
+    private static string HoldStdout => Path.Combine(
+        BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "TestData", "hold-stdout.ps1");
+
+    [Fact]
+    public async Task BoundedProcess_KeepsBothStreamsOfANormalExit()
+    {
+        (JsonElement Value, string? Error)[] r = await RunCatchingAsync("common",
+            new Call("Invoke-BoundedProcess", "pwsh",
+                new[] { "-NoProfile", "-Command", "[Console]::Out.Write('out'); [Console]::Error.Write('err'); exit 3" }, 30));
+
+        Assert.Null(r[0].Error);
+        Assert.Equal(3, r[0].Value.GetProperty("ExitCode").GetInt32());
+        Assert.Equal("out", r[0].Value.GetProperty("Stdout").GetString());
+        Assert.Equal("err", r[0].Value.GetProperty("Stderr").GetString());
+    }
+
+    // hold-stdout.ps1's launcher role starts a sleeper that inherits its stdout, and exits at once: the
+    // process is gone, its pipe is not. Without the shared deadline the read waits for the sleeper's 600 s,
+    // and the probe outlives its bound.
+    [Fact]
+    public async Task BoundedProcess_ThrowsAtTheDeadline_WhenAProcessItLeftHoldsThePipe()
+    {
+        string pidFile = Path.Combine(Path.GetTempPath(), "bn-perf-hold-" + Guid.NewGuid().ToString("N") + ".pids");
+        DateTime factStart = DateTime.Now;
+        try
+        {
+            // The probe kills the sleeper itself before it exits: on Windows the sleeper also inherits the
+            // probe's own stdout, and the probe's run would not end while it lives.
+            string killSleeper = "foreach ($l in @(Get-Content -LiteralPath '" + pidFile.Replace("'", "''") + "')) "
+                + "{ $p = $l.Trim() -split ' '; if ($p[0] -eq 'sleeper') { Stop-Process -Id ([int]$p[1]) -Force -ErrorAction SilentlyContinue } }";
+            (JsonElement Value, string? Error)[] r = await RunCatchingAsync("common",
+                new Call("Invoke-BoundedProcess", "pwsh",
+                    new[] { "-NoProfile", "-File", HoldStdout, "-PidFile", pidFile, "-Role", "launcher" }, 15),
+                new Call("Invoke-Command", Block(killSleeper)));
+
+            Assert.Null(r[1].Error);
+            Assert.NotNull(r[0].Error);
+            Assert.Contains("timed out after 15s: it exited with 0, but a process it left running held its output open", r[0].Error);
+        }
+        finally
+        {
+            foreach (string line in File.Exists(pidFile) ? File.ReadAllLines(pidFile) : [])
+            {
+                string[] parts = line.Trim().Split(' ');
+                if (parts.Length != 2 || parts[0] != "sleeper" || !int.TryParse(parts[1], out int pid)) continue;
+                try
+                {
+                    using var p = System.Diagnostics.Process.GetProcessById(pid);
+                    if (!p.HasExited && p.StartTime >= factStart) p.Kill();
+                }
+                catch (ArgumentException) { /* already gone */ }
+                catch (InvalidOperationException) { /* exited meanwhile */ }
+                catch (System.ComponentModel.Win32Exception) { /* not ours to read, so not ours to kill */ }
+            }
+            try { File.Delete(pidFile); } catch (IOException) { /* temp file */ }
+        }
+    }
+
+    // ── interleave.ps1's Invoke-WithSideCleanup ──────────────────────────────────
+
+    [Fact]
+    public async Task SideCleanup_StopsBothSidesAfterAFailure_AndKeepsTheCollectionError()
+    {
+        const string Reset = "$global:PerfStops = New-Object System.Collections.Generic.List[string]";
+        const string Read = "$global:PerfStops.ToArray()";
+        object stopFailingHead = Block("param($s) $global:PerfStops.Add($s); if ($s -eq 'head') { throw 'stopping head failed' }");
+        object stop = Block("param($s) $global:PerfStops.Add($s)");
+        string[] sides = ["head", "v015"];
+
+        (JsonElement Value, string? Error)[] r = await RunCatchingAsync("interleave",
+            new Call("Invoke-Command", Block(Reset)),
+            new Call("Invoke-WithSideCleanup", sides, Block("throw 'click run 3 failed'"), stopFailingHead),
+            new Call("Invoke-Command", Block(Read)),
+            new Call("Invoke-Command", Block(Reset)),
+            new Call("Invoke-WithSideCleanup", sides, Block("$null"), stopFailingHead),
+            new Call("Invoke-Command", Block(Read)),
+            new Call("Invoke-Command", Block(Reset)),
+            new Call("Invoke-WithSideCleanup", sides, Block("$null"), stop),
+            new Call("Invoke-Command", Block(Read)));
+
+        // The collection failed and stopping head failed: v015 is still stopped, and the collection's error survives.
+        Assert.Equal("click run 3 failed", r[1].Error);
+        Assert.Equal(["head", "v015"], Strings(r[2].Value));
+        // The collection passed and stopping head failed: v015 is still stopped, and the stop error is thrown.
+        Assert.Equal("stopping head failed", r[4].Error);
+        Assert.Equal(["head", "v015"], Strings(r[5].Value));
+        // Both pass.
+        Assert.Null(r[7].Error);
+        Assert.Equal(["head", "v015"], Strings(r[8].Value));
     }
 }

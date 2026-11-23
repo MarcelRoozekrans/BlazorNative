@@ -118,7 +118,9 @@ processes is visible instead of averaged away. A last section lists the dropped 
 
 Both collectors dot-source `scripts/perf/perf-common.ps1` from their own directory. It holds the pure
 functions they share: the mark counts, `Test-Q1Verbose`, `Test-ClickLogComplete`, `Test-SideId`,
-`Test-MetaValue`, the run list and path rules, and `Select-RunningAppJobs`, which `interleave.ps1` uses.
+`Test-MetaValue`, the run list and path rules, `Get-SideWriteError`, `Invoke-BoundedProcess`, through which
+every adb, xcrun and xcodebuild call runs with one deadline for its exit and both output pipes, and
+`Select-RunningAppJobs`, which `interleave.ps1` uses.
 `tests/BlazorNative.Runtime.Tests/PerfCollectorTests.cs` feeds each detector a passing input and planted
 violations, through `BoundedScript`, in the required .NET lane.
 
@@ -126,11 +128,11 @@ violations, through `BoundedScript`, in the required .NET lane.
 call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
 accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them,
 under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
-being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Failures go to stderr with exit 1. Every
+being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Before anything is written, every requested run's log must be absent unless `-Force` is passed, and when any `<kind>-<n>.log` of either kind will remain in the side directory, its `meta.json` must already name the same `-Sdk` and `-Commit`, so a call cannot relabel samples it did not collect. Failures go to stderr with exit 1. Every
 adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
 `<Out>/q1-<side>-default.txt`, `-default-click.txt` and `-verbose.txt`, outside the side directory. Android's
 `q1` is: a default launch, asserting no `BNPERF` line and no V, D or I line from a `BlazorNative*` tag, with
-a control that the launch's `Fully drawn` line parsed as a logcat line of its own; then `PerfMeasurementTest`
+a control that the launch's `Fully drawn` line, for the selected package and activity, parsed as a logcat line of its own; then `PerfMeasurementTest`
 for `-Q1Clicks` clicks (default 3) with `perfLevel=default`, through the click kind's `am instrument` and
 logcat, asserting no `BNPERF` line and the same tag check, with the androidTest sources' own tags
 (`BlazorNative.Test`, `BlazorNativeTest`) excluded and a control that the test's `Displayed` line parsed;
@@ -141,7 +143,8 @@ afterwards, also when a step failed.
 `-Commit` rules, run numbering, refusal to overwrite (delete `<Out>/<Side>` or pass `-Force`), and
 exit 1 on every failure. It needs pwsh 7, macOS with Xcode, and a booted simulator, and every `xcrun`
 and `xcodebuild` call has a deadline. It enables debug persistence for the `io.blazornative` subsystem
-and reads `log show --debug` over a window that starts before each run's launch.
+and reads `log show --debug` over a window that starts before each run's launch; q1's default-level reads
+add `--info`. Every launch passes `--terminate-running-process`.
 
 - `boot` terminates the app and cold-launches it with `simctl launch`, passing
   `SIMCTL_CHILD_BN_LAUNCH_COMPONENT=PerfProbe` and `SIMCTL_CHILD_BN_LOG_LEVEL=Verbose`. The shell reads
@@ -149,7 +152,7 @@ and reads `log show --debug` over a window that starts before each run's launch.
   `Open in` sheet is involved. `blazornative://perf` still opens PerfProbe for manual runs.
 - `click` runs `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` with
   `TEST_RUNNER_PERF_CLICKS` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
-  build-for-testing, and waits for every click's `dispatch.post` and `dispatch.handler` before dumping.
+  build-for-testing, and waits for every click's `dispatch.post`, `dispatch.enter` and `dispatch.handler` before dumping.
   The PR lane skips that class. Its log is not the subsystem alone. .NET's Console is NSLog on iOS, and
   under XCTest no stderr pump runs on either side: both shells install it in
   `HostViewController.viewDidLoad` after the XCTest guard. So the .NET marks reach the unified log only as
@@ -166,7 +169,7 @@ and reads `log show --debug` over a window that starts before each run's launch.
   records of category `native`, so a record whose text holds `[BN|I|`, `[BN|D|` or `[BN|V|` is the
   violation. It then runs the measurement class for `-Q1Clicks` clicks (default 3) at the default level,
   reads the window with the click kind's predicate and asserts no `BNPERF` line, and reads the test host's
-  whole window, `<Out>/q1-<side>-default-click-host.txt`, and asserts no .NET line below Warn there, with a
+  whole window, `<Out>/q1-<side>-default-click-host.txt`, and asserts no `BNPERF` line and no .NET line below Warn there, with a
   control that it holds the host's records. Last, it asserts all four boot marks at Verbose. That the
   dispatch marks are present at Verbose is the click kind's exactly-once check. The q1 kind needs
   `-DerivedData` too.
@@ -190,7 +193,9 @@ ids, so a `v015` run must pass its id explicitly; without the check it would sil
 ### Interleaving and load
 
 `scripts/perf/interleave.ps1` drives one collector for both sides, alternating which side goes first per
-run or block, and stops the other side's app before every call. Click blocks are 5 clicks by default
+run or block, and stops the other side's app before every call. Once both sides are read, it stops both
+apps at the end, also when a collection failed; a failure stopping one does not skip the other, and the
+collection's error is the one reported. Click blocks are 5 clicks by default
 (`-Clicks`), and there are `ceil(Runs / Clicks) + 1` blocks after the warm-up block 0, so `runs=20` gives
 25 samples per side from 5 measured processes. Before every collector call it appends one line to
 `<Out>/load.txt`: the UTC time, side, kind, run, and the host's load average, `/proc/loadavg` on Linux and
