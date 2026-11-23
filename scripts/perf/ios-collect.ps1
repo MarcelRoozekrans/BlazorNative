@@ -286,8 +286,22 @@ function Invoke-Simctl {
     return Invoke-Tool 'xcrun' (@('simctl') + $SimArgs) $TimeoutSeconds $EnvVars -AllowFail:$AllowFail
 }
 
+# `simctl spawn ... log config` hung past its 30 s deadline once on CI (perf.yml run 45153274952), with the
+# simulator working in the calls just before it. perf.yml calls the collector once per run, so a one-off hang would fail a whole job; each
+# attempt keeps its deadline and is killed on timeout, and a third failure still fails the run.
 function Enable-DebugPersistence {
-    Invoke-Simctl 30 'spawn' $script:Udid 'log' 'config' '--subsystem' $script:Subsystem '--mode' 'level:debug,persist:debug' | Out-Null
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Invoke-Simctl 30 'spawn' $script:Udid 'log' 'config' '--subsystem' $script:Subsystem '--mode' 'level:debug,persist:debug' | Out-Null
+            return
+        }
+        catch {
+            $lastError = $_
+            [Console]::Error.WriteLine("ios-collect: log config attempt $attempt of 3 failed: $($_.Exception.Message)")
+        }
+    }
+    throw $lastError
 }
 
 # Best-effort stop of the app, for the start of a run and for the cleanup after a timeout.
