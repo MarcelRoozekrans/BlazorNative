@@ -88,11 +88,10 @@ internal static class MarkLine
         if (!m.Success) return null;
         if (!(m.Groups["h"].Success || m.Groups["m"].Success || m.Groups["s"].Success || m.Groups["ms"].Success))
             return null;
-        long Part(string g) => !m.Groups[g].Success ? 0
-            : long.TryParse(m.Groups[g].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v
-            : throw OutOfRange(line, lineNumber, where, "Fully drawn");
+        long Part(string g) => m.Groups[g].Success ? long.Parse(m.Groups[g].Value, CultureInfo.InvariantCulture) : 0;
         try
         {
+            // A part too long for a long and a sum that overflows both raise OverflowException.
             return checked(((Part("h") * 60 + Part("m")) * 60 + Part("s")) * 1000 + Part("ms"));
         }
         catch (OverflowException)
