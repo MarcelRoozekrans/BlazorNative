@@ -51,14 +51,16 @@ internal static class Pairing
         else r.Samples.Add(new Sample(Metrics.Boot, Metrics.Total, run, Metrics.NsToMs(content.T - start.T)));
 
         long? fullyDrawn = null, totalTime = null;
+        var n = 0;
         foreach (var line in lines)
         {
-            if (MarkLine.TryParseFullyDrawnMs(line) is { } fd)
+            n++;
+            if (MarkLine.TryParseFullyDrawnMs(line, n, where) is { } fd)
             {
                 if (fullyDrawn is not null) throw new PerfFormatException($"{where}: more than one Fully drawn line");
                 fullyDrawn = fd;
             }
-            if (MarkLine.TryParseTotalTimeMs(line) is { } tt)
+            if (MarkLine.TryParseTotalTimeMs(line, n, where) is { } tt)
             {
                 if (totalTime is not null) throw new PerfFormatException($"{where}: more than one TotalTime line");
                 totalTime = tt;

@@ -359,7 +359,7 @@ public sealed class PerfReportTests : IDisposable
     [InlineData("I ActivityTaskManager: Fully drawn a.b/.Main: +2s0ms", 2000)]
     [InlineData("I ActivityTaskManager: Fully drawn a.b/.Main: +1m2s3ms", 62003)]
     public void FullyDrawn_ParsesBothLogcatFormats(string line, long ms) =>
-        Assert.Equal(ms, MarkLine.TryParseFullyDrawnMs(line));
+        Assert.Equal(ms, MarkLine.TryParseFullyDrawnMs(line, 1, "boot-1.log"));
 
     [Fact]
     public void MalformedMark_FailsNamingTheLine()
@@ -769,6 +769,27 @@ public sealed class PerfReportTests : IDisposable
 
         Assert.Equal(2, code);
         Assert.Contains("side directory name", err);
+    }
+
+    // ---- CodeRabbit on #740, second review: an out-of-range ruler is a malformed line of its own
+    // file, so the other files' samples are kept and the run exits 1, naming the file and line.
+    [Theory]
+    [InlineData("I ActivityManager: TotalTime: 99999999999999999999")]
+    [InlineData("I ActivityTaskManager: Fully drawn a.b/.Main: +99999999999999999999ms")]
+    // Each part parses; the sum in ms does not fit a long.
+    [InlineData("I ActivityTaskManager: Fully drawn a.b/.Main: +999999999999999999h")]
+    public void RulerOutOfRange_ExitOne_NamingTheLine_KeepsOtherFiles(string ruler)
+    {
+        var input = WriteSide("head",
+            ("boot-1.log", BootLog(false, false)),
+            ("boot-2.log", BootLog(false, false) + ruler + "\n"));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("head/boot-2.log:3", err);
+        Assert.Contains("out of range", err);
+        Assert.Contains("head,10.0.100,abc1234,boot,total,1,250", Csv());
     }
 
     private static void CopyDirectory(string from, string to)

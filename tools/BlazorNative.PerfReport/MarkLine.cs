@@ -78,19 +78,38 @@ internal static class MarkLine
     private static readonly Regex TotalTime = new(
         @"\bTotalTime:\s*(?<n>\d+)\b", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    public static long? TryParseFullyDrawnMs(string line)
+    /// <summary>
+    /// The Fully drawn time in ms, or null for a line without one. A value that overflows a long
+    /// is a malformed ruler: <see cref="PerfFormatException"/> naming the file and line.
+    /// </summary>
+    public static long? TryParseFullyDrawnMs(string line, int lineNumber, string where)
     {
         var m = FullyDrawn.Match(line);
         if (!m.Success) return null;
-        long Part(string g) => m.Groups[g].Success ? long.Parse(m.Groups[g].Value, CultureInfo.InvariantCulture) : 0;
         if (!(m.Groups["h"].Success || m.Groups["m"].Success || m.Groups["s"].Success || m.Groups["ms"].Success))
             return null;
-        return ((Part("h") * 60 + Part("m")) * 60 + Part("s")) * 1000 + Part("ms");
+        long Part(string g) => !m.Groups[g].Success ? 0
+            : long.TryParse(m.Groups[g].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v
+            : throw OutOfRange(line, lineNumber, where, "Fully drawn");
+        try
+        {
+            return checked(((Part("h") * 60 + Part("m")) * 60 + Part("s")) * 1000 + Part("ms"));
+        }
+        catch (OverflowException)
+        {
+            throw OutOfRange(line, lineNumber, where, "Fully drawn");
+        }
     }
 
-    public static long? TryParseTotalTimeMs(string line)
+    /// <summary>The TotalTime in ms, or null for a line without one; out of range throws like <see cref="TryParseFullyDrawnMs"/>.</summary>
+    public static long? TryParseTotalTimeMs(string line, int lineNumber, string where)
     {
         var m = TotalTime.Match(line);
-        return m.Success ? long.Parse(m.Groups["n"].Value, CultureInfo.InvariantCulture) : null;
+        if (!m.Success) return null;
+        return long.TryParse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v
+            : throw OutOfRange(line, lineNumber, where, "TotalTime");
     }
+
+    private static PerfFormatException OutOfRange(string line, int lineNumber, string where, string ruler) =>
+        new($"{where}:{lineNumber}: {ruler} value out of range: {line.Trim()}");
 }
