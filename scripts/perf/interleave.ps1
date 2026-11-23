@@ -78,9 +78,37 @@ function Stop-Side {
         }
     }
     else {
-        # terminate fails when the app is not running, which is the state wanted.
-        & xcrun simctl terminate $Udid $Side.Id 2>$null
+        # terminate exits non-zero when the app is not running, which is the state wanted, so its exit code
+        # says nothing. What is checked is the state: no running launchd job for the app afterwards.
+        $out = & xcrun simctl terminate $Udid $Side.Id 2>&1
+        # A short grace for launchd to reap the job.
+        $deadline = (Get-Date).AddSeconds(10)
+        do {
+            $running = Get-RunningAppJobs $Side.Id
+            if ($running.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 250
+        } while ((Get-Date) -lt $deadline)
+        if ($running.Count -gt 0) {
+            throw "$($Side.Id) is still running after simctl terminate ($($out -join ' ')): $($running -join ' | ')"
+        }
     }
+}
+
+# The simulator's launchd jobs for the app that have a pid. A UIKit app's label is
+# UIKitApplication:<bundle id>[<hex>][...], so the bracket after the id keeps io.blazornative.bnhost from
+# matching io.blazornative.bnhost.v015.
+function Get-RunningAppJobs {
+    param([string]$BundleId)
+    $list = & xcrun simctl spawn $Udid launchctl list
+    if ($LASTEXITCODE -ne 0) { throw "simctl spawn launchctl list failed with exit $LASTEXITCODE" }
+    return , @(Select-RunningAppJobs @($list) $BundleId)
+}
+
+# Pure: the `launchctl list` lines (PID, status, label) of the app's jobs whose PID column is a number.
+function Select-RunningAppJobs {
+    param([string[]]$Lines, [string]$BundleId)
+    $label = 'UIKitApplication:' + [regex]::Escape($BundleId) + '\['
+    return @($Lines | Where-Object { $_ -match ('^\s*\d+\s+\S+\s+' + $label) })
 }
 
 function Invoke-Collector {

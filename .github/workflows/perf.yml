@@ -75,6 +75,7 @@ jobs:
       runs: ${{ steps.v.outputs.runs }}
       phases: ${{ steps.v.outputs.phases }}
       baseline_ref: ${{ steps.v.outputs.baseline_ref }}
+      baseline_sha: ${{ steps.v.outputs.baseline_sha }}
     steps:
       - name: Validate the inputs
         id: v
@@ -83,6 +84,8 @@ jobs:
           RUNS: ${{ inputs.runs || '20' }}
           METRICS: ${{ inputs.metrics || 'all' }}
           BASELINE_REF: ${{ inputs.baseline_ref || 'perf/v0.15.0-marks' }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 20 ]; then
@@ -96,12 +99,20 @@ jobs:
             *) echo "::error::metrics must be all, boot or click, got '$METRICS'" >&2; exit 1 ;;
           esac
           if [ -z "$BASELINE_REF" ]; then echo "::error::baseline_ref is empty" >&2; exit 1; fi
+          # Resolved once, so every job builds and checks out the same baseline commit even if the
+          # branch moves during the run.
+          baseline_sha=$(gh api "repos/$REPO/commits/$BASELINE_REF" --jq .sha)
+          if ! [[ "$baseline_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::baseline_ref '$BASELINE_REF' did not resolve to a commit, got '$baseline_sha'" >&2
+            exit 1
+          fi
           {
             echo "runs=$RUNS"
             echo "phases=$phases"
             echo "baseline_ref=$BASELINE_REF"
+            echo "baseline_sha=$baseline_sha"
           } >> "$GITHUB_OUTPUT"
-          echo "runs=$RUNS phases=$phases baseline_ref=$BASELINE_REF"
+          echo "runs=$RUNS phases=$phases baseline_ref=$BASELINE_REF baseline_sha=$baseline_sha"
 
   # ── Android: the bionic .so per side (android-instrumented.yml's publish-so) ─
   publish-so:
@@ -119,7 +130,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_sha }}
 
       - name: Pin HEAD's SDK (head_sdk input)
         if: ${{ matrix.side == 'head' && inputs.head_sdk != '' }}
@@ -215,13 +226,13 @@ jobs:
             jdk: '25'
             app_id: io.blazornative.shell
           - side: v015
-            # The v0.15.0 tag's lanes ran Gradle on JDK 21.
-            jdk: '21'
+            # The v0.15.0 tag's android-instrumented.yml sets up JDK 25 for sdkmanager and Gradle, as main's does.
+            jdk: '25'
             app_id: io.blazornative.shell.v015
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_sha }}
 
       - name: Setup JDK ${{ matrix.jdk }} (Temurin — Gradle daemon)
         uses: actions/setup-java@v6
@@ -319,7 +330,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_ref }}
+          ref: ${{ matrix.side == 'head' && github.sha || needs.validate.outputs.baseline_sha }}
           path: ${{ matrix.dir }}
 
       - name: Pin HEAD's SDK (head_sdk input)
@@ -596,7 +607,7 @@ jobs:
       # At the same path as in build-ios, so the derived data's project path holds.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.validate.outputs.baseline_ref }}
+          ref: ${{ needs.validate.outputs.baseline_sha }}
           path: baseline
 
       - name: Setup .NET SDK (global.json, for the parser)
@@ -626,6 +637,12 @@ jobs:
             ls "$RUNNER_TEMP/dd-$side/Build/Products"
           done
           ls -d src/BlazorNative.Apple/BnHost.xcodeproj baseline/src/BlazorNative.Apple/BnHost.xcodeproj
+          built=$(jq -r .commit "$RUNNER_TEMP/ios-build/v015/meta.json")
+          checked_out=$(git -C baseline rev-parse HEAD)
+          if [ "$built" != "$checked_out" ]; then
+            echo "::error::the v015 build is $built but the baseline checkout is $checked_out" >&2
+            exit 1
+          fi
 
       - name: Build the parser
         run: dotnet build tools/BlazorNative.PerfReport -c Release -nologo
@@ -716,6 +733,10 @@ jobs:
           xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 3h --debug --info --style ndjson \
             --predicate 'process == "BnHost" AND eventMessage CONTAINS "BNPERF dispatch."' > perf-out/dispatch-sources.ndjson 2>&1 || true
           echo "dispatch-sources.ndjson: $(wc -l < perf-out/dispatch-sources.ndjson) lines"
+          # Every .NET framework line as NSLog recorded it, with its thread: where the queued sinks write from.
+          xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 3h --debug --info --style ndjson \
+            --predicate 'process == "BnHost" AND subsystem != "io.blazornative" AND eventMessage CONTAINS "[BN|"' > perf-out/dotnet-lines.ndjson 2>&1 || true
+          echo "dotnet-lines.ndjson: $(wc -l < perf-out/dotnet-lines.ndjson) lines"
 
       - name: Upload perf-ios
         if: always()
