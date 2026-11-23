@@ -32,6 +32,12 @@ public sealed class ConsoleErrorDriftTests
     /// default sink. Every other write goes through it.</summary>
     private const string TheSeam = "BnLog.cs";
 
+    /// <summary>Phase 19.2, perf/v0.15.0-marks only: the second file allowed to name
+    /// `Console.Error`. It is the seam's replacement default sink, main's BnLogQueue
+    /// installed through BnLog.Sink, so it reads Console.Error where BnLog.cs's own
+    /// default sink did; every framework line still goes through BnLog.</summary>
+    private const string TheBackportQueuedSink = "BnLogQueuedSink.cs";
+
     /// <summary>THE SCOPED-OUT FILE, NAMED EXPLICITLY SO THE EXEMPTION IS VISIBLE
     /// RATHER THAN IMPLIED (design §9 / §12).
     ///
@@ -72,6 +78,7 @@ public sealed class ConsoleErrorDriftTests
         {
             string name = Path.GetFileName(file);
             if (string.Equals(name, TheSeam, StringComparison.Ordinal)) continue;
+            if (string.Equals(name, TheBackportQueuedSink, StringComparison.Ordinal)) continue;
 
             var hits = CodeLines(file)
                 .Where(l => Regex.IsMatch(l.Text, ConsoleErrorReference))

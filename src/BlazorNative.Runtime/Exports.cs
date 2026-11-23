@@ -169,6 +169,11 @@ public static class Exports
             // NegotiateInitOptions (internal, so the too-short/oversize/null cases are unit-
             // tested the way NativeShellBridge.Register's are) — a field the shell did not
             // supply reads as zero: DevHost for Kind, Unset→Warn for LogLevel.
+            // Phase 19.2, perf/v0.15.0-marks only: main's BnLogQueue, before any line can be
+            // written, so no framework line is a synchronous stderr write on its caller's
+            // thread. See BnLogQueuedSink.
+            bool queued = BnLogQueuedSink.Install();
+
             BlazorNativeInitOptions o = NegotiateInitOptions(structSize, opts);
 
             // Phase 11.4 (#155): the log threshold FIRST — before anything else in
@@ -179,6 +184,7 @@ public static class Exports
             // OR one whose buffer was too short to carry it) resolves to the quiet
             // Warn default.
             BnLog.SetLevelFromOrdinal(o.LogLevel);
+            if (queued) BnLog.Info(BnLogQueuedSink.MarkerCategory, BnLogQueuedSink.MarkerMessage);
 
             // Touch the BlazorInterop static ctor explicitly so VerifyAccessors
             // runs at init time (not lazily at first event dispatch).
@@ -312,6 +318,12 @@ public static class Exports
             // void export — no rc channel; detail on stderr. The wrap exists for
             // the BN0020 boundary shape: nothing may throw across the C-ABI.
             BnLog.Error("Exports", "shutdown failed", ex);
+        }
+        finally
+        {
+            // Phase 19.2, as main's 18.1 (#564): the lines are queued, and a NativeAOT library
+            // may never see ProcessExit, so the exit the framework controls drains them, bounded.
+            BnLogQueuedSink.Flush(BnLogQueue.ExitDrainBudget);
         }
     }
 
