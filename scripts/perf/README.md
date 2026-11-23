@@ -66,9 +66,12 @@ by point, keeps each point's log order, and pairs by order and id:
   With equal counts nothing is skipped.
 - The click's frame is the one `frame.recv` with `handler.t <= recv.t < next post's t`. The last click
   has no upper bound. Zero or several such marks drop the sample. Its `frame.applied` is the first applied
-  mark with `recv.t <= applied.t < next recv's t` (the last recv has no upper bound). A frame with no
-  such mark, as when its batch threw, drops that one sample; an applied mark is never taken from
-  another frame, and unequal numbers of `frame.recv` and `frame.applied` marks are not an error.
+  mark with `recv.t <= applied.t`, below both the next recv's t and the next post's t (the last click
+  has neither bound). The next post is a bound because the clicks are serial: both measurement tests
+  wait until the click's frame shows the new counter before the next click, so its `frame.applied` is
+  stamped before the next `dispatch.post`. A frame with no such mark, as when its batch threw, drops
+  that one sample. An applied mark is never taken from another recv's frame, nor from the next click's frame when its recv line
+  was lost, and unequal numbers of `frame.recv` and `frame.applied` marks are not an error.
 - In a boot log the first `boot.start` and the first `boot.content` are paired.
 
 The triple is chosen by order and id, not by timestamp, so the clock check below still tests the

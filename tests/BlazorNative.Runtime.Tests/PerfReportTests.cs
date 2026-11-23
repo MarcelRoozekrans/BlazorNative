@@ -532,6 +532,27 @@ public sealed class PerfReportTests : IDisposable
         Assert.Contains("head,10.0.100,abc1234,frame_apply,total,1,4", csv);
     }
 
+    // ---- CodeRabbit on #740, second review: the next click's applied mark is never borrowed.
+    [Fact]
+    public void LostNextRecv_DoesNotLendItsAppliedToTheEarlierClick()
+    {
+        // Click A's batch threw: a recv, no applied. Click B's recv line was lost, its applied was
+        // not. Without the next post as a bound, A's applied window runs to the next recv and takes
+        // B's applied mark: click_to_content 104, frame_apply 101.
+        var a = Click(9_000_000_000, 9_001_000_000, 9_002_000_000, 9_003_000_000, null);
+        var b = Click(9_100_000_000, 9_101_000_000, 9_102_000_000, null, 9_104_000_000, seq: 2);
+        var input = WriteSide("head", ("click-1.log", GoodClicks(40) + a + b));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var csv = Csv();
+        Assert.Equal(40, csv.Count(l => l.Contains(",click_to_content,")));
+        Assert.DoesNotContain("head,10.0.100,abc1234,click_to_content,total,1,104", csv);
+        Assert.DoesNotContain("head,10.0.100,abc1234,frame_apply,total,1,101", csv);
+        Assert.Contains("| head | 2 of 42 |", File.ReadAllText(Path.Combine(_root, "out", "summary.md")));
+    }
+
     [Fact]
     public void BootContentBeforeStart_FailsTheRun()
     {

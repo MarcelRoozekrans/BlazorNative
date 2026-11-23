@@ -80,7 +80,7 @@ internal static class Pairing
     /// takes the k-th dispatch.handler with id X. When the counts differ, a mark is missing and
     /// order alone would shift every later occurrence onto the wrong partner; see <see cref="Align"/>
     /// for how the pairing resynchronizes without hiding a clock violation. The click's frame is the one frame.recv with handler.t le recv.t lt the next post's t;
-    /// its frame.applied is the first applied mark with recv.t le applied.t lt the next recv's t. A click
+    /// its frame.applied is the first applied mark with recv.t le applied.t lt both the next recv's t and the next post's t. A click
     /// with a missing point, no frame, more than one frame, or a frame with no applied mark is a
     /// dropped sample.
     /// </summary>
@@ -123,11 +123,15 @@ internal static class Pairing
             if (inWindow.Count > 1) { r.Drops.Add($"{tag}: more than one frame ({inWindow.Count} recv)"); continue; }
             var recvIndex = inWindow[0];
             var recv = recvs[recvIndex];
-            // The frame's applied mark is the first one in [recv.t, next recv.t). Both are shell
-            // marks on the same clock. A dropped frame or a throwing batch has no applied mark,
-            // and that costs this one sample; an applied mark is never taken from another frame.
+            // The frame's applied mark is the first one in [recv.t, min(next recv.t, next post.t)).
+            // All three are shell marks on one clock. A dropped frame or a throwing batch has no
+            // applied mark, and that costs this one sample. The next post bounds the window too:
+            // both measurement tests wait for the counter this click's frame shows before the next
+            // click, and frame.applied is stamped in the same main-thread runnable that shows it.
+            // So when the next click's recv line is lost, its frame's applied mark is still not taken.
             var nextRecv = recvIndex + 1 < recvs.Count ? recvs[recvIndex + 1].T : long.MaxValue;
-            var appliedIndex = applieds.FindIndex(a => a.T >= recv.T && a.T < nextRecv);
+            var appliedEnd = Math.Min(nextRecv, upper);
+            var appliedIndex = applieds.FindIndex(a => a.T >= recv.T && a.T < appliedEnd);
             if (appliedIndex < 0) { r.Drops.Add($"{tag}: no frame.applied for the frame"); continue; }
             var applied = applieds[appliedIndex];
 
