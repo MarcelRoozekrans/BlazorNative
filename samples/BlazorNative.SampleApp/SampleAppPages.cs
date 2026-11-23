@@ -168,6 +168,9 @@ public static class SampleAppPages
         // Phase 4.2: the focus/blur proof app (BnInput OnFocus/OnBlur →
         // echo BnText — M4 DoD #4). Scaffolding, like CompositionProbe.
         BlazorNativePage.Named<FocusProbe>("FocusProbe"),
+        // Phase 19.2 backport: the click-to-frame measurement page, mounted by name on both
+        // shells. Unrouted here on purpose, so no route table or menu changes on this branch.
+        BlazorNativePage.Named<PerfProbe>("PerfProbe"),
         // Phase 5.1: the host-event proof app (IMobileBridge.NativeEvents →
         // echo BnText — M5 DoD #5). Scaffolding, like FocusProbe.
         BlazorNativePage.Named<HostEventProbe>("HostEventProbe"),

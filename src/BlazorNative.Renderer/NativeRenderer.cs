@@ -1485,6 +1485,7 @@ public sealed class NativeRenderer : BlazorRenderer
             try
             {
                 var args = BuildEventArgs(e);
+                BnPerfMarks.Mark("dispatch.handler", (ulong)e.HandlerId);
                 await BlazorInterop.DispatchEventViaAccessor(this, (ulong)e.HandlerId, args);
             }
             catch (ArgumentException ex)

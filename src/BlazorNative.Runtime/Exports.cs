@@ -413,6 +413,7 @@ public static class Exports
     {
         try
         {
+            BnPerfMarks.Mark("dispatch.enter", handlerId);
             string? argsJson = argsJsonUtf8 == IntPtr.Zero
                 ? null
                 : Marshal.PtrToStringUTF8(argsJsonUtf8);
