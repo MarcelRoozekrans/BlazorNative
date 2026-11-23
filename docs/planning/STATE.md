@@ -1,63 +1,74 @@
 # Session State
 
-**Last session:** 2026-11-22
+**Last session:** 2026-11-23
 **Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17.
-**Phase:** 19.2, Measurement harness, `[status: active]`. The design and the plan are approved
-(owner, 2026-11-22). No plan task has started.
-**Branch:** `docs/19.2-measurement-harness`. It holds the design, the plan and the start-phase
-commit. Another worktree holds that branch name, so a worktree may need to check it out under a local
-alias and push with `git push origin HEAD:docs/19.2-measurement-harness`.
-**Next step:** execute the plan subagent-driven, starting at Task 1, the build-only check of the
-`v0.15.0` backport branch.
+**Phase:** 19.2, Measurement harness, `[status: complete]` on this branch, 2026-11-23. All 11 plan
+tasks are done and reviewed. The final whole-branch review's fix wave and its residuals are fixed.
+**Branch:** `docs/19.2-measurement-harness`, PR #740, head at the commit that adds this file. Another
+worktree holds that branch name, so check it out under a local alias and push with
+`git push origin HEAD:docs/19.2-measurement-harness`.
+**Backport branch:** `perf/v0.15.0-marks` at fe4a8bf3. It is never merged and has no PR.
+**Next step:** get PR #740 through CodeRabbit and merged, then start 19.3.
 
 ## Current Position
 
-- **Design:** `docs/superpowers/specs/2026-11-22-phase-19.2-design.md`, approved 2026-11-22.
-- **Plan:** `docs/superpowers/plans/2026-11-22-phase-19.2-measurement-harness.md`, with 11 tasks,
-  `## Checks`, and Tasks 9 and 10 marked `**Model:** opus`.
-- **Owner rulings, 2026-11-22, in the 19.2 brainstorm:**
-  1. Cold boot runs from the kernel's process start to the first applied batch with a `CommitFrame`,
-     not to the OS first frame. Both shells boot .NET off the main thread, so `am start -W` and
-     `XCTApplicationLaunchMetric` would only see an empty layout. Android also calls
-     `reportFullyDrawn()` at that point.
-  2. The clicks come from measurement test classes (androidTest and BnHostTests) that the PR lanes
-     exclude. No test hook goes into the shipped shell.
-  3. HEAD and `v0.15.0` are interleaved in one emulator job and one simulator job, from one dispatch.
-     This resolves the M19 design's contradiction between "dispatch per ref" and "interleave".
-- **Calls made in the design and plan.** Each is listed in the design's "Calls made" section; the
-  owner approved both documents with them:
-  - pairing by order in a serial test, because the ABI is frozen;
-  - `PerfProbe` boots in every run;
-  - a temporary branch-limited `push` trigger on `perf.yml`, removed in Task 11;
-  - a `.v015` app-id suffix on the backport branch;
-  - the parser is a C# tool, `tools/BlazorNative.PerfReport`, tested in
-    `BlazorNative.Runtime.Tests` rather than written in `pwsh`;
-  - the marks and `reportFullyDrawn` stay in the product.
+- **PR #740:** marked ready on 2026-11-23, after the final fix wave. It was `BEHIND` main then.
+  CodeRabbit had not reviewed it yet, because it skips drafts.
+- **Lanes at 43a3442c:** ci green with .NET 2966, android-instrumented green with 273, and ios green
+  with 315. The JVM count is 216.
+- **Backport lanes at fe4a8bf3:** android-instrumented green with 226, and ios green with 270. The
+  .NET count is 1115, run locally only, because ci.yml at the tag has no `workflow_dispatch`.
+- **perf.yml:**
+  - It runs on `workflow_dispatch` only; the temporary push trigger is removed.
+  - Last full run: 45211320588 at 03379cff, green on all 9 jobs, with 25 click samples per side from
+    5 processes and none dropped.
+  - Earlier full runs, now void because the workload changed: 45155603687, 45171629275, 45181266672
+    and 45190626287.
+- **Record:** `docs/plans/2026-11-22-phase-19.2-record.md`. Its "For 19.3" section holds the facts
+  19.3 must explain.
+
+## Owner decisions in 19.2, all 2026-11-23
+
+1. iOS cold boot launches PerfProbe through a new shipped env seam, `BN_LAUNCH_COMPONENT`, because
+   `simctl openurl` raises the "Open in" sheet on iOS 26. The seam is ported to the backport.
+2. The backport installs a background-queued `BnLog.Sink` shaped like HEAD's `BnLogQueue`. Without it,
+   v0.15.0 writes its Verbose lines synchronously on the measured thread.
+3. Every PerfProbe row tracks the counter, so one click is 51 ReplaceText patches.
+4. `BnPerfMarks` is `internal` on HEAD, so it adds nothing to the 1.0 API. The backport copy differs
+   only by its access lines.
+
+## Facts for 19.3, from the record
+
+- iOS HEAD dispatch was slow in all 5 click processes in run 45211320588, and v015 was slow in none.
+  The macOS runner's load average was 45-318 during that run.
+- Android shows no such split.
+- Both shells are Debug builds, and .NET is Release NativeAOT.
+- The first click of every process is a cold outlier, and it is included in the samples.
 
 ## Open Decisions
 
-- None. Task 1 stops and asks the owner only if `v0.15.0` will not build, even with toolchain pins.
+- None.
 
 ## Blockers
 
 - None.
 
+## Filed during 19.2
+
+- #743: iOS `BnImageDemoTests.testCleartextLoopbackIsPermittedByATS` failed once with errno 32 from the
+  fixture server. It is unrelated to 19.2.
+
 ## Recommended Next Step
 
-1. Run `resume-work`, then `start-next-phase`. 19.2 is `active` with a plan, so it routes to
-   `list-phase-assumptions` and then `subagent-driven-development`. The owner already approved the
-   plan, so the assumptions gate is a confirmation.
-2. **Task 1:**
-   - cut `perf/v0.15.0-marks` from `v0.15.0`;
-   - dispatch its own `android-instrumented.yml` and `ios.yml`;
-   - record the run ids in `docs/plans/2026-11-22-phase-19.2-record.md`;
-   - confirm the launch paths at the tag: Android `EXTRA_COMPONENT`, and the iOS deep-link map.
-3. Open the draft PR at Task 5, the first shell marks. Swift and JVM cannot compile on Linux.
-4. Pinned counts at the start of 19.2: .NET 2828, JVM 210, instrumented 273, XCTest 307.
+1. Wait for CodeRabbit on PR #740. Read `reviewDecision`, the unresolved threads and its review body.
+   Fix genuine findings on the branch.
+2. Update the branch if it is still behind main, and keep every lane green. Device lanes must pass at
+   attempt 1 on the final head.
+3. The owner merges, or says "Merged ?", which is a standing approval. After the merge, read the
+   milestone state from `origin/main`.
+4. Start 19.3, the baseline run and report: run `resume-work`, then `start-next-phase`.
 5. Standing rules:
    - no Claude signature or `Co-Authored-By` trailer, and no closing keywords;
    - ask with AskUserQuestion;
    - execution is subagent-driven;
-   - never `pkill -f`, and never `&`;
-   - CodeRabbit re-reviews every push, so check `reviewDecision`, unresolved threads and its review
-     body before calling the PR ready.
+   - never `pkill -f`, and never `&`.
