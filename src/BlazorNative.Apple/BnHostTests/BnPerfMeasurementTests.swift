@@ -17,7 +17,9 @@
 // string "Count: n". Row 0 reads "Row 0 count n" and cannot match.
 //
 // The click count comes from env PERF_CLICKS (TEST_RUNNER_PERF_CLICKS on the xcodebuild
-// command line), default 25.
+// command line), default 25. Env PERF_LEVEL (TEST_RUNNER_PERF_LEVEL) is Verbose by default;
+// `default` expects the default level instead, which is how the collector's q1 shows that a
+// click at the default level writes no BNPERF line, and skips the drain, which waits for marks.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import XCTest
@@ -40,10 +42,20 @@ final class BnPerfMeasurementTests: BnHostTestCase {
         runtime.onError = { msg, err in NSLog("[BnPerfMeasurementTests] \(msg): \(err)") }
         try runtime.start(component: "PerfProbe", os: "ios")
 
+        let level = ProcessInfo.processInfo.environment["PERF_LEVEL"] ?? "Verbose"
+        XCTAssertTrue(level == "Verbose" || level == "default", "PERF_LEVEL must be Verbose or default, got \(level)")
+        let verbose = level == "Verbose"
+
         // start() has resolved the level from BN_LOG_LEVEL. Below Verbose no mark is written,
         // and the run would produce an empty log, so say why instead of timing out later.
-        XCTAssertTrue(BnLog.isEnabled(BnLogLevel.verbose),
-                      "BN_LOG_LEVEL must be Verbose, pass TEST_RUNNER_BN_LOG_LEVEL=Verbose to xcodebuild")
+        // At PERF_LEVEL=default the opposite must hold, or the quiet check would prove nothing.
+        if verbose {
+            XCTAssertTrue(BnLog.isEnabled(BnLogLevel.verbose),
+                          "BN_LOG_LEVEL must be Verbose, pass TEST_RUNNER_BN_LOG_LEVEL=Verbose to xcodebuild")
+        } else {
+            XCTAssertFalse(BnLog.isEnabled(BnLogLevel.verbose),
+                           "PERF_LEVEL=default, but Verbose is enabled: do not pass TEST_RUNNER_BN_LOG_LEVEL")
+        }
 
         XCTAssertTrue(pollUntil(deadline: 60) { self.findLabel(in: root, exact: "Count: 0") != nil },
                       "the PerfProbe counter 'Count: 0' never appeared within 60s")
@@ -66,7 +78,7 @@ final class BnPerfMeasurementTests: BnHostTestCase {
         // dispatch.handler. The writer is one FIFO queue, so the last handler means every enter
         // before it is out too. A drain that runs out does not fail here: the collector requires
         // each dispatch point exactly once per click and fails the run by name.
-        waitForDispatchMarks(clicks, since: clicksStarted)
+        if verbose { waitForDispatchMarks(clicks, since: clicksStarted) }
     }
 
     private func waitForDispatchMarks(_ clicks: Int, since: Date) {

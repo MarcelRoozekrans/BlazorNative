@@ -18,8 +18,8 @@
   `simctl spawn <udid> log config --subsystem io.blazornative --mode "level:debug,persist:debug"`, and
   every run reads `log show --debug --predicate 'subsystem == "io.blazornative"'` over a window that
   starts just before that run's launch, so runs do not bleed into each other. The click kind widens the
-  predicate to the app's NSLog records that carry BNPERF, because that is where the .NET marks are under
-  `xcodebuild test`; see Get-ClickPredicate.
+  predicate to the app's NSLog records that carry BNPERF, because under XCTest no stderr pump runs and
+  that is the only place the .NET marks are; see Get-ClickPredicate.
 
   Kinds:
     boot   terminate, then `simctl launch` with BN_LAUNCH_COMPONENT=PerfProbe and BN_LOG_LEVEL=Verbose, passed
@@ -27,7 +27,9 @@
     click  `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` for -Clicks
            serial clicks, then waits for every dispatch.post and dispatch.handler mark and dumps the window.
     q1     one default launch of PerfProbe asserting zero BNPERF lines and zero debug or info lines from the subsystem,
-           with a positive control that the process ran, then one Verbose launch asserting boot.start,
+           with a positive control that the process ran; then one default-level run of BnPerfMeasurementTests for
+           -Q1Clicks clicks, read with the click kind's predicate, asserting zero BNPERF lines, with a control that
+           the window holds the host's records; then one Verbose launch asserting boot.start,
            boot.content, frame.recv and frame.applied.
 
   Environment passed to the app: BN_LOG_LEVEL must be the NAME Verbose. BnLogLevel.fromName does not read
@@ -52,6 +54,7 @@ param(
     [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
     [ValidateRange(-1, [int]::MaxValue)][int]$Run = -1,
     [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
+    [ValidateRange(1, [int]::MaxValue)][int]$Q1Clicks = 3,
     [string]$Out,
     [string]$Sdk,
     [string]$Commit,
@@ -312,13 +315,15 @@ function Stop-App {
 # The subsystem's records: the shell's lines and, when the stderr pump runs, the .NET lines it relays.
 function Get-SubsystemPredicate { return 'subsystem == "' + $script:Subsystem + '"' }
 
-# The click log's records: each mark exactly once, whichever way it travelled.
+# The click log's records: each mark exactly once.
 #  - Shell marks are os_log records of the subsystem, category Perf, on both sides.
-#  - .NET marks are written to stderr by .NET's Console, which on iOS is NSLog. NSLog makes an os_log record
-#    of its own, outside the subsystem, in every case. Under `xcodebuild test` Xcode sets OS_ACTIVITY_DT_MODE:
-#    HEAD's pump then stands aside, so the subsystem holds no .NET line at all, while the v0.15.0 pump has no
-#    such check and still relays NSLog's stderr copy as category native. Taking the NSLog record and never the
-#    native relay gives one copy on both sides.
+#  - .NET marks are written by .NET's Console, which on iOS is NSLog, so each becomes an os_log record of the
+#    app outside the subsystem. Under XCTest no stderr pump runs on either side: both shells install it in
+#    HostViewController.viewDidLoad after the `NSClassFromString("XCTestCase") == nil` guard, so nothing
+#    relays the line into the subsystem. The app's NSLog record is the only copy, on both sides.
+#  - Outside XCTest, as in the boot and q1 launches, the pump does run and relays NSLog's stderr copy as
+#    subsystem records of category native. The predicate excludes that category, so a click log could not
+#    take a second copy even if a pump ran.
 function Get-ClickPredicate {
     return '(subsystem == "' + $script:Subsystem + '" AND category == "Perf") OR (process == "' + $script:Process + '" AND subsystem != "' + $script:Subsystem + '" AND eventMessage CONTAINS "BNPERF ")'
 }
@@ -363,17 +368,20 @@ function Invoke-BootRun {
     finally { Stop-App }
 }
 
-function Invoke-ClickRun {
-    param([string]$SideDir, [int]$Run)
-    $path = Get-RunLogPath $SideDir 'click' $Run
+# Runs BnPerfMeasurementTests for $Clicks clicks, at Verbose or, with -DefaultLevel, at the default level
+# (no BN_LOG_LEVEL, and PERF_LEVEL=default so the test checks that Verbose is off). Throws unless it passed.
+# Returns the log window's start.
+function Invoke-Measurement {
+    param([int]$Clicks, [switch]$DefaultLevel)
     Stop-App
     $start = Get-WindowStart
     $xcArgs = @('test-without-building', '-project', $script:Project, '-scheme', $script:Scheme,
         '-destination', "platform=iOS Simulator,id=$($script:Udid)", '-derivedDataPath', $script:DerivedData,
         "-only-testing:$($script:PerfClass)")
-    $envVars = @{ TEST_RUNNER_BN_LOG_LEVEL = 'Verbose'; TEST_RUNNER_PERF_CLICKS = "$($script:Clicks)" }
+    $envVars = @{ TEST_RUNNER_PERF_CLICKS = "$Clicks" }
+    if ($DefaultLevel) { $envVars['TEST_RUNNER_PERF_LEVEL'] = 'default' } else { $envVars['TEST_RUNNER_BN_LOG_LEVEL'] = 'Verbose' }
     try {
-        $result = Invoke-Tool 'xcodebuild' $xcArgs (Get-XcodebuildTimeout $script:Clicks) $envVars -AllowFail
+        $result = Invoke-Tool 'xcodebuild' $xcArgs (Get-XcodebuildTimeout $Clicks) $envVars -AllowFail
     }
     catch {
         # Killing the host xcodebuild tree does not stop the app on the simulator. Best effort; the original error stays.
@@ -384,6 +392,13 @@ function Invoke-ClickRun {
         Stop-App
         throw "BnPerfMeasurementTests did not pass (exit $($result.ExitCode)):`n$((@($result.Lines) | Select-Object -Last 40) -join "`n")"
     }
+    return $start
+}
+
+function Invoke-ClickRun {
+    param([string]$SideDir, [int]$Run)
+    $path = Get-RunLogPath $SideDir 'click' $Run
+    $start = Invoke-Measurement $script:Clicks
     # The .NET marks reach the log late through the writer thread, so wait for the tail.
     $clicks = $script:Clicks
     try {
@@ -433,6 +448,20 @@ function Invoke-Q1 {
         }
         foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
+        # The default-level click: the .NET dispatch marks, read from the click kind's predicate and log.
+        $clickStart = Invoke-Measurement $script:Q1Clicks -DefaultLevel
+        # The click kind's own tail wait, so a late .NET mark would be seen.
+        Start-Sleep -Seconds 5
+        $clickLog = Get-OsLog $clickStart 'compact' (Get-ClickPredicate)
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
+        foreach ($l in $clickLog) { if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l") } }
+        # Control: the window is readable and holds the test host's records, so an empty click log is quiet, not unread.
+        $hostLog = Get-OsLog $clickStart 'ndjson' ('process == "' + $script:Process + '"')
+        if (@($hostLog | Where-Object { $_ -match '"processID"' }).Count -eq 0) {
+            $failures.Add('control failed: the default-level click window holds no record of the BnHost process')
+        }
+        Stop-App
+
         $launch = Start-Launch $true
         $verbose = Wait-ForLog $launch.Start { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose' -Style 'ndjson'
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
@@ -443,7 +472,7 @@ function Invoke-Q1 {
             $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
             throw "q1 failed with $($failures.Count) violation(s)"
         }
-        Write-Host 'q1 passed: quiet at the default level, all marks at Verbose'
+        Write-Host 'q1 passed: quiet at the default level for a launch and a click, all boot marks at Verbose'
     }
     finally {
         # A timeout or failed assertion must not leave the app running.
@@ -461,8 +490,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         $idErr = Test-SideId $Side $Bundle
         if ($idErr) { throw $idErr }
-        if ($Kind -eq 'click' -and -not $DerivedData) { throw '-DerivedData is required for the click kind: the directory of a build-for-testing result' }
-        $script:Udid = $Udid; $script:Bundle = $Bundle; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds
+        if ('click', 'q1' -contains $Kind -and -not $DerivedData) { throw '-DerivedData is required for the click and q1 kinds: the directory of a build-for-testing result' }
+        $script:Udid = $Udid; $script:Bundle = $Bundle; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds
         $script:SettleSeconds = $SettleSeconds; $script:Force = [bool]$Force
         $script:Project = $Project; $script:Scheme = $Scheme; $script:DerivedData = $DerivedData
         $sideDir = Join-Path $Out $Side
