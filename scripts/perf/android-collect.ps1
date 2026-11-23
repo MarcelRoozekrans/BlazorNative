@@ -134,6 +134,17 @@ function Test-MetaValue {
     return $null
 }
 
+# The side and the app id must agree, so a baseline run can never measure HEAD's app: v015 needs an id
+# ending in .v015 (the backport's suffix), head one that does not. Returns the error, or null.
+function Test-SideId {
+    param([string]$Side, [string]$Id)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return "-Package must not be empty" }
+    $suffixed = $Id.EndsWith('.v015', [System.StringComparison]::Ordinal)
+    if ($Side -eq 'v015' -and -not $suffixed) { return "-Side v015 needs the backport's package id ending in .v015, got '$Id'" }
+    if ($Side -eq 'head' -and $suffixed) { return "-Side head needs HEAD's package id, not the backport's '$Id'" }
+    return $null
+}
+
 function Get-MarkCount {
     param([string[]]$Lines, [string]$Point)
     $n = 0
@@ -295,6 +306,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Serial', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
+        $idErr = Test-SideId $Side $Package
+        if ($idErr) { throw $idErr }
         $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
         $sideDir = Join-Path $Out $Side
         if ($Kind -ne 'q1') {

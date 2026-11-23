@@ -162,6 +162,17 @@ function Test-MetaValue {
     return $null
 }
 
+# The side and the app id must agree, so a baseline run can never measure HEAD's app: v015 needs an id
+# ending in .v015 (the backport's suffix), head one that does not. Returns the error, or null.
+function Test-SideId {
+    param([string]$Side, [string]$Id)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return "-Bundle must not be empty" }
+    $suffixed = $Id.EndsWith('.v015', [System.StringComparison]::Ordinal)
+    if ($Side -eq 'v015' -and -not $suffixed) { return "-Side v015 needs the backport's bundle id ending in .v015, got '$Id'" }
+    if ($Side -eq 'head' -and $suffixed) { return "-Side head needs HEAD's bundle id, not the backport's '$Id'" }
+    return $null
+}
+
 function Get-MarkCount {
     param([string[]]$Lines, [string]$Point)
     $n = 0
@@ -392,6 +403,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Udid', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
+        $idErr = Test-SideId $Side $Bundle
+        if ($idErr) { throw $idErr }
         if ($Kind -eq 'click' -and -not $DerivedData) { throw '-DerivedData is required for the click kind: the directory of a build-for-testing result' }
         $script:Udid = $Udid; $script:Bundle = $Bundle; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds
         $script:SettleSeconds = $SettleSeconds; $script:Force = [bool]$Force
