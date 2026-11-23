@@ -100,11 +100,21 @@ function Test-Q1Default {
 }
 
 # Q1 default-level click: only the BNPERF half applies. The instrumentation itself logs at I from tags
-# that are not the framework's, and the click kind's log source is the whole logcat.
+# that are not the framework's, and the click kind's log source is the whole logcat. The control, as on
+# iOS, is that the window holds the app's own records: the test's launch of $Package must appear as a
+# `Displayed <package>/<activity>` line that parses as a logcat line of its own, so an unread or joined
+# log cannot pass as a quiet one.
 function Test-Q1DefaultClick {
-    param([string[]]$Lines)
+    param([string[]]$Lines, [string]$Package)
     $failures = New-Object System.Collections.Generic.List[string]
-    foreach ($l in $Lines) { if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l") } }
+    $displayed = '^Displayed ' + [regex]::Escape($Package) + '/\S+ for user \d+: \+[0-9ms]+$'
+    $control = $false
+    foreach ($l in $Lines) {
+        if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l"); continue }
+        $p = ConvertFrom-LogcatLine $l
+        if ($null -ne $p -and $p.Message -match $displayed) { $control = $true }
+    }
+    if (-not $control) { $failures.Add("control failed: no 'Displayed $Package/...' line parsed as a logcat line of its own among $(@($Lines).Count) lines, so the default-level click window is not shown to hold the app's launch") }
     return , $failures
 }
 
@@ -335,7 +345,7 @@ function Invoke-Q1 {
     Start-Sleep -Seconds 5
     $clickLog = Get-Logcat
     Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
-    foreach ($f in (Test-Q1DefaultClick $clickLog)) { $failures.Add($f) }
+    foreach ($f in (Test-Q1DefaultClick $clickLog $script:Package)) { $failures.Add($f) }
     Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
 
     Start-Cold $true | Out-Null

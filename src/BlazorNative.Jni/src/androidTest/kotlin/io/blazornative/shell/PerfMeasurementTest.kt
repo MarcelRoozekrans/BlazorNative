@@ -9,7 +9,9 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.blazornative.jni.BnLogLevel
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +60,14 @@ class PerfMeasurementTest {
                 "the PerfProbe counter 'Count: 0' never appeared within 60s",
                 pollUntil(scenario, 60_000, sleepMs = 50) { findText(it, "Count: 0") != null },
             )
+            // The page is up, so MainActivity has installed the level from the extra. Below Verbose no
+            // mark is written, and at perfLevel=default the opposite must hold, or the collector's quiet
+            // check would prove nothing. The same check as BnPerfMeasurementTests on iOS.
+            if (level == "Verbose") {
+                assertTrue("perfLevel=Verbose, but Verbose is off", BnShellLog.isEnabled(BnLogLevel.VERBOSE))
+            } else {
+                assertFalse("perfLevel=default, but Verbose is enabled", BnShellLog.isEnabled(BnLogLevel.VERBOSE))
+            }
             for (n in 1..clicks) {
                 val button = AtomicReference<View?>(null)
                 scenario.onActivity { act ->
