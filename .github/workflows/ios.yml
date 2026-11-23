@@ -318,7 +318,10 @@ jobs:
         working-directory: src/BlazorNative.Apple
         run: |
           set -o pipefail
+          # 19.2: BnPerfMeasurementTests is a measurement, not a correctness test. The lane
+          # skips it, so the baseline below is unchanged; scripts/perf/ios-collect.ps1 runs it.
           xcodebuild test \
+            -skip-testing:BnHostTests/BnPerfMeasurementTests \
             -project BnHost.xcodeproj \
             -scheme BnHost \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \

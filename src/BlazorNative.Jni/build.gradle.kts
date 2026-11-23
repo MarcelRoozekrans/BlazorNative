@@ -131,6 +131,13 @@ android {
 
     defaultConfig {
         applicationId = "io.blazornative.shell"
+        // Phase 19.2 measurement backport: the suffix makes this build
+        // io.blazornative.shell.v015, so it installs next to main's
+        // io.blazornative.shell on one emulator and the perf workflow can alternate
+        // the two without a reinstall. The test APK follows, as
+        // io.blazornative.shell.v015.test. `namespace` is unchanged, so R and every
+        // class name are too.
+        applicationIdSuffix = ".v015"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -146,6 +153,15 @@ android {
         // any test class loads — every instrumented process runs strict
         // (BlazorNativeTestRunner.kt has the full contract).
         testInstrumentationRunner = "io.blazornative.shell.BlazorNativeTestRunner"
+
+        // Phase 19.2: PerfMeasurementTest is a measurement, not a correctness test. The default
+        // run excludes every @PerfMeasurement class, so the instrumented baseline is unchanged;
+        // -PperfOnly runs only those classes. The collector uses `am instrument` directly.
+        if (findProperty("perfOnly") != null) {
+            testInstrumentationRunnerArguments["annotation"] = "io.blazornative.shell.PerfMeasurement"
+        } else {
+            testInstrumentationRunnerArguments["notAnnotation"] = "io.blazornative.shell.PerfMeasurement"
+        }
     }
 
     sourceSets {

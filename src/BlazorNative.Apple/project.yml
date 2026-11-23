@@ -89,7 +89,12 @@ targets:
       - package: Kingfisher
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost
+        # Phase 19.2 measurement backport: the `.v015` suffix lets this build install
+        # next to main's io.blazornative.bnhost on one simulator, so the perf workflow
+        # alternates the two without a reinstall. The test bundle below follows.
+        # TEST_HOST is a path built from the product name BnHost, not the bundle id,
+        # so it needs no change.
+        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost.v015
         INFOPLIST_FILE: BnHost/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_TESTABILITY: YES
@@ -172,7 +177,7 @@ targets:
       - target: BnHost
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost.tests
+        PRODUCT_BUNDLE_IDENTIFIER: io.blazornative.bnhost.v015.tests
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/BnHost.app/BnHost
         BUNDLE_LOADER: $(TEST_HOST)
