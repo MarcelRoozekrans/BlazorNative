@@ -12,7 +12,7 @@
 # always run from HEAD's checkout.
 #
 # Jobs:
-#   validate       checks the inputs (runs >= 20) and turns metrics into phases.
+#   validate       checks the inputs (runs 20 to 50) and turns metrics into phases.
 #   publish-so     [head, v015] windows: the linux-bionic-x64 .so, as android-instrumented.yml.
 #   build-android  [head, v015] ubuntu: Gradle assembles the app and test APKs with the .so.
 #   build-ios      [head, v015] macos: publish, Yoga, XcodeGen and build-for-testing, as ios.yml.
@@ -38,7 +38,7 @@ on:
         default: perf/v0.15.0-marks
         type: string
       runs:
-        description: Samples per side per metric, at least 20
+        description: Samples per side per metric, 20 to 50
         default: '20'
         type: string
       metrics:
@@ -85,8 +85,12 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 20 ]; then
-            echo "::error::runs must be a whole number of at least 20, got '$RUNS'" >&2
+          # At most 50, so the collection fits its step timeouts. At runs=20 the simulator's boot step,
+          # the tightest, took about 10.5 min of its 50 (run 45181266672): 21 runs per side, about 30 s
+          # per pair of runs. 50 runs is about 26 min, half its timeout. The digit bound keeps a huge
+          # value from the integer comparison, which would otherwise error rather than reject it.
+          if ! [[ "$RUNS" =~ ^[0-9]{1,3}$ ]] || [ "$RUNS" -lt 20 ] || [ "$RUNS" -gt 50 ]; then
+            echo "::error::runs must be a whole number from 20 to 50, got '$RUNS'" >&2
             exit 1
           fi
           case "$METRICS" in
@@ -103,6 +107,8 @@ jobs:
             echo "::error::baseline_ref '$BASELINE_REF' did not resolve to a commit, got '$baseline_sha'" >&2
             exit 1
           fi
+          # Base 10, so a leading zero reaches the collectors and the parser as the plain number.
+          RUNS=$((10#$RUNS))
           {
             echo "runs=$RUNS"
             echo "phases=$phases"
@@ -175,12 +181,29 @@ jobs:
       - name: Install NDK ${{ env.NDK_PIN }} (sdkmanager, on cache miss)
         if: steps.check-ndk.outputs.present != 'True'
         run: |
+          # A restore is reused only when it is the pinned revision, the check-ndk test; anything else
+          # at the path is removed and the pin installed.
           $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
-          if (Test-Path $props) { Write-Host "NDK restored from cache — skipping sdkmanager"; exit 0 }
+          $pattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'
+          if ((Test-Path $props) -and ((Get-Content $props -Raw) -match $pattern)) { Write-Host "NDK $env:NDK_PIN restored from cache — skipping sdkmanager"; exit 0 }
+          if (Test-Path $env:ANDROID_NDK_ROOT) {
+            Write-Host "NDK at $env:ANDROID_NDK_ROOT is not revision $env:NDK_PIN — removing it before sdkmanager"
+            Remove-Item -LiteralPath $env:ANDROID_NDK_ROOT -Recurse -Force
+          }
           $sdkmanager = Join-Path $env:ANDROID_HOME "cmdline-tools\latest\bin\sdkmanager.bat"
           if (-not (Test-Path $sdkmanager)) { throw "sdkmanager not found at $sdkmanager" }
           "y" | & $sdkmanager --install "ndk;$env:NDK_PIN"
           if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed to install ndk;$env:NDK_PIN (exit $LASTEXITCODE)" }
+
+      - name: Verify NDK revision pin
+        run: |
+          $props = Join-Path $env:ANDROID_NDK_ROOT "source.properties"
+          if (-not (Test-Path $props)) { throw "NDK $env:NDK_PIN missing at $env:ANDROID_NDK_ROOT" }
+          $pattern = '(?m)^\s*Pkg\.Revision\s*=\s*' + [regex]::Escape($env:NDK_PIN) + '\s*$'
+          if ((Get-Content $props -Raw) -notmatch $pattern) {
+            throw "NDK at $env:ANDROID_NDK_ROOT is not revision $env:NDK_PIN (source.properties mismatch)"
+          }
+          Write-Host "NDK revision $env:NDK_PIN verified at $env:ANDROID_NDK_ROOT"
 
       - name: Publish linux-bionic-x64
         run: |
