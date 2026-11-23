@@ -13,9 +13,10 @@ worktree holds that branch name, so check it out under a local alias and push wi
 ## Current Position
 
 - **PR #740:** CodeRabbit's first review gave 16 findings. All 16 are fixed, and the threads are answered
-  and resolved; see the record's "CodeRabbit fix wave". main is merged in. .NET baseline is now 3000.
-- **Backport:** `perf/v0.15.0-marks` is at 4532a353, which ports the `BnPerfMarks` monotonic-clock fix. Lanes were
-  dispatched: android-instrumented 45239122674 and ios 45239128173.
+  and resolved; see the record's "CodeRabbit fix wave". main is merged in. A second review gave 19 more; 16 are fixed and 3 rejected, one of them filed as #744.
+  .NET baseline is now 3038.
+- **Backport:** `perf/v0.15.0-marks` is at 4532a353, which ports the `BnPerfMarks` monotonic-clock fix. Its lanes,
+  android-instrumented 45239122674 and ios 45239128173, are green.
 - **Lanes at 43a3442c:** ci green with .NET 2966, android-instrumented green with 273, and ios green
   with 315. The JVM count is 216.
 - **Backport lanes at fe4a8bf3:** android-instrumented green with 226, and ios green with 270. The
