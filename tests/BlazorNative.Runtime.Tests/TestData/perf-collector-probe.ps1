@@ -5,8 +5,10 @@
 # and an arg that is an object { "scriptblock": <text> } is passed as that scriptblock.
 # It prints one line, PROBE-RESULT: followed by a JSON array of { "value": <return value>, "error":
 # <message or null> }, one per call, in order; a call that throws has a null value and its message.
-# No device, no simulator: the functions it calls read only their input, except Invoke-BoundedProcess
-# and Get-SideWriteError, which a fact points at a command or a directory of its own.
+# No device, no simulator: the functions it calls read only their input, except Invoke-BoundedProcess,
+# Get-SideWriteError and Initialize-SideDir, which a fact points at a command or a directory of its own.
+# A fact that drives a device function first replaces the tool call under it with a stub, through an
+# Invoke-Command scriptblock that defines a script: function.
 param(
     [Parameter(Mandatory)][ValidateSet('android', 'ios', 'common', 'interleave')][string]$Script,
     [Parameter(Mandatory)][string]$CallsFile

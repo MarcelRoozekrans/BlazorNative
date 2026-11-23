@@ -96,27 +96,34 @@ function Write-LoadSample {
     Add-Content -LiteralPath (Join-Path $Out 'load.txt') -Value $line -Encoding UTF8
 }
 
+# Every tool call goes through perf-common.ps1's Invoke-BoundedProcess, so a hung adb or simctl cannot
+# hang the cleanup.
 function Stop-Side {
-    param([object]$Side)
+    param([object]$Side, [int]$GraceSeconds = 10)
     if ($Platform -eq 'android') {
         foreach ($pkg in $Side.Id, "$($Side.Id).test") {
-            & adb -s $Serial shell am force-stop $pkg
-            if ($LASTEXITCODE -ne 0) { throw "adb am force-stop $pkg failed with exit $LASTEXITCODE" }
+            $r = Invoke-BoundedProcess 'adb' @('-s', $Serial, 'shell', 'am', 'force-stop', $pkg) 30
+            if ($r.ExitCode -ne 0) { throw "adb am force-stop $pkg failed with exit $($r.ExitCode): $($r.Stderr.Trim())" }
         }
     }
     else {
-        # terminate exits non-zero when the app is not running, which is the state wanted, so its exit code
-        # says nothing. What is checked is the state: no running launchd job for the app afterwards.
-        $out = & xcrun simctl terminate $Udid $Side.Id 2>&1
+        # terminate exits non-zero when the app is not running, which is the state wanted, and a terminate
+        # that timed out may still have ended it, so neither outcome decides. What is checked is the state:
+        # no running launchd job for the app afterwards.
+        try {
+            $t = Invoke-BoundedProcess 'xcrun' @('simctl', 'terminate', $Udid, $Side.Id) 15
+            $said = "exit $($t.ExitCode) $($t.Stderr.Trim())"
+        }
+        catch { $said = $_.Exception.Message }
         # A short grace for launchd to reap the job.
-        $deadline = (Get-Date).AddSeconds(10)
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
         do {
             $running = Get-RunningAppJobs $Side.Id
             if ($running.Count -eq 0) { break }
             Start-Sleep -Milliseconds 250
-        } while ((Get-Date) -lt $deadline)
+        } while ($clock.Elapsed.TotalSeconds -lt $GraceSeconds)
         if ($running.Count -gt 0) {
-            throw "$($Side.Id) is still running after simctl terminate ($($out -join ' ')): $($running -join ' | ')"
+            throw "$($Side.Id) is still running after simctl terminate ($said): $($running -join ' | ')"
         }
     }
 }
@@ -124,9 +131,9 @@ function Stop-Side {
 # The simulator's launchd jobs for the app that have a pid; perf-common.ps1's Select-RunningAppJobs picks them.
 function Get-RunningAppJobs {
     param([string]$BundleId)
-    $list = & xcrun simctl spawn $Udid launchctl list
-    if ($LASTEXITCODE -ne 0) { throw "simctl spawn launchctl list failed with exit $LASTEXITCODE" }
-    return , @(Select-RunningAppJobs @($list) $BundleId)
+    $r = Invoke-BoundedProcess 'xcrun' @('simctl', 'spawn', $Udid, 'launchctl', 'list') 30
+    if ($r.ExitCode -ne 0) { throw "simctl spawn launchctl list failed with exit $($r.ExitCode): $($r.Stderr.Trim())" }
+    return , @(Select-RunningAppJobs @($r.Stdout -split "\r?\n") $BundleId)
 }
 
 # Runs $Body, then $Stop for every side, also when $Body failed, so a failed collection does not leave

@@ -2,8 +2,8 @@
 .SYNOPSIS
   Phase 19.2: the pure functions both collectors share, dot-sourced by android-collect.ps1, ios-collect.ps1
   and interleave.ps1 from their own directory. No device and no simulator. The side effects are the file
-  system calls Get-RunLogPath, Get-SideWriteError and Remove-KindLogs make, and the process
-  Invoke-BoundedProcess starts for the collectors' tool calls.
+  system calls Get-RunLogPath, Get-SideWriteError, Remove-KindLogs and Initialize-SideDir make, the process
+  Invoke-BoundedProcess starts for the collectors' tool calls, and the reads Wait-ForLines is handed.
 
 .DESCRIPTION
   One copy, so the two collectors cannot drift. tests/BlazorNative.Runtime.Tests/PerfCollectorTests.cs feeds
@@ -62,11 +62,12 @@ function Test-ClickLogComplete {
     return $true
 }
 
-# The parser's meta.json rule: a non-empty string without commas, pipes or newlines. Returns an error or $null.
+# The parser's meta.json rule: a non-empty string without commas, pipes, double quotes or newlines. Returns
+# an error or $null.
 function Test-MetaValue {
     param([string]$Name, [string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return "-$Name is required for the boot and click kinds" }
-    if ($Value.IndexOfAny([char[]]@(',', '|', "`n", "`r")) -ge 0) { return "-$Name must not contain commas, pipes or newlines" }
+    if ($Value.IndexOfAny([char[]]@(',', '|', '"', "`n", "`r")) -ge 0) { return "-$Name must not contain commas, pipes, double quotes or newlines" }
     return $null
 }
 
@@ -144,30 +145,54 @@ function Get-SideWriteError {
 # outlives the process can hold a redirected pipe open after the exit, and an unbounded wait on that pipe
 # would hang the collector before its device cleanup. At the deadline the process tree is killed, best
 # effort, and this throws. Returns ExitCode, Stdout and Stderr; judging the exit code is the caller's job.
+# The deadline is one Stopwatch, started before the launch, for both waits. An -EnvVars entry whose value
+# is $null removes that variable from the child's environment, so a value set in the collector's own
+# environment cannot reach the child.
 function Invoke-BoundedProcess {
     param([string]$File, [string[]]$ArgumentList, [int]$TimeoutSeconds = 30, [hashtable]$EnvVars = @{})
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $File
     foreach ($a in $ArgumentList) { [void]$psi.ArgumentList.Add($a) }
-    foreach ($k in $EnvVars.Keys) { $psi.Environment[$k] = [string]$EnvVars[$k] }
+    foreach ($k in $EnvVars.Keys) {
+        if ($null -eq $EnvVars[$k]) { [void]$psi.Environment.Remove($k) }
+        else { $psi.Environment[$k] = [string]$EnvVars[$k] }
+    }
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $budgetMs = [long]$TimeoutSeconds * 1000
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
     $what = "$File $($ArgumentList -join ' ')"
-    if (-not $proc.WaitForExit([int][math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds))) {
+    if (-not $proc.WaitForExit([int][math]::Max(0, $budgetMs - $clock.ElapsedMilliseconds))) {
         try { $proc.Kill($true) } catch { }
         throw "$what timed out after ${TimeoutSeconds}s"
     }
-    $left = [int][math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+    $left = [int][math]::Max(0, $budgetMs - $clock.ElapsedMilliseconds)
     if (-not [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]@($outTask, $errTask), $left)) {
         try { $proc.Kill($true) } catch { }
         throw "$what timed out after ${TimeoutSeconds}s: it exited with $($proc.ExitCode), but a process it left running held its output open"
     }
     return [pscustomobject]@{ ExitCode = $proc.ExitCode; Stdout = $outTask.Result; Stderr = $errTask.Result }
+}
+
+# Polls until $Test accepts what $Read returns, under one Stopwatch deadline of $Seconds; throws naming
+# $What at the deadline. $Read gets the budget left, in whole seconds rounded up, as its own timeout, and a
+# pause between reads is capped at what is left, so a slow read cannot carry the wait far past $Seconds.
+function Wait-ForLines {
+    param([scriptblock]$Read, [scriptblock]$Test, [string]$What, [int]$Seconds)
+    $waitBudgetMs = [long]$Seconds * 1000
+    $waitClock = [System.Diagnostics.Stopwatch]::StartNew()
+    while (($waitLeft = $waitBudgetMs - $waitClock.ElapsedMilliseconds) -gt 0) {
+        $readLines = & $Read ([int][math]::Ceiling($waitLeft / 1000.0))
+        if (& $Test $readLines) { return , $readLines }
+        $waitLeft = $waitBudgetMs - $waitClock.ElapsedMilliseconds
+        if ($waitLeft -le 0) { break }
+        Start-Sleep -Milliseconds ([int][math]::Min(500, $waitLeft))
+    }
+    throw "timed out after ${Seconds}s waiting for $What"
 }
 
 # Under -Force: removes the side directory's <kind>-<n>.log files for the kind being collected, and nothing
@@ -178,6 +203,30 @@ function Remove-KindLogs {
     foreach ($f in Get-ChildItem -LiteralPath $SideDir -File) {
         if ($f.Name -match ('^' + [regex]::Escape($Kind) + '-\d+\.log$')) { Remove-Item -LiteralPath $f.FullName }
     }
+}
+
+# Prepares the side directory for a boot or click collection and returns its absolute path, resolved from
+# PowerShell's location, which a .NET file call does not follow. It refuses through Get-SideWriteError
+# before anything is written. Under -Force it removes the logs this call replaces before meta.json takes
+# the new -Sdk and -Commit: the kind's logs with -ReplaceKind, and the requested runs' logs always, so a
+# collection that fails cannot leave a log of another build under the new label. Get-SideWriteError has
+# already shown that every log that remains matches that label. meta.json is UTF-8 without a BOM.
+function Initialize-SideDir {
+    param([string]$SideDir, [string]$Kind, [int[]]$RunList, [bool]$Force, [bool]$ReplaceKind, [string]$Sdk, [string]$Commit)
+    $SideDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SideDir)
+    $err = Get-SideWriteError $SideDir $Kind $RunList $Force $ReplaceKind $Sdk $Commit
+    if ($err) { throw $err }
+    New-Item -ItemType Directory -Force -Path $SideDir | Out-Null
+    if ($Force) {
+        if ($ReplaceKind) { Remove-KindLogs $SideDir $Kind }
+        foreach ($r in $RunList) {
+            $old = Join-Path $SideDir ('{0}-{1}.log' -f $Kind, $r)
+            if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old }
+        }
+    }
+    $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
+    [System.IO.File]::WriteAllText((Join-Path $SideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
+    return $SideDir
 }
 
 # Pure: the simulator's `launchctl list` lines (PID, status, label) of the app's jobs whose PID column is a

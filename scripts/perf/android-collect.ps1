@@ -142,6 +142,15 @@ function Get-FullyDrawnPattern {
     return 'Fully drawn (?:' + ($forms -join '|') + '): \+[0-9ms]+$'
 }
 
+# The boot log's records: every line except a `Fully drawn` record of another component, a launcher's or
+# the other side's, which the parser would read as this launch's. Every record of the selected activity
+# stays, so a second one still reaches the parser's more-than-one check.
+function Select-BootRecords {
+    param([string[]]$Lines, [string]$Package, [string]$Activity)
+    $ours = Get-FullyDrawnPattern $Package $Activity
+    return , @($Lines | Where-Object { $_ -notmatch 'Fully drawn\s+\S+:' -or $_ -match $ours })
+}
+
 function Test-LogHasFullyDrawn {
     param([string[]]$Lines, [string]$Package, [string]$Activity)
     $pattern = Get-FullyDrawnPattern $Package $Activity
@@ -183,7 +192,8 @@ function Invoke-Adb {
 # one-element array, which a [string[]] parameter then joins into a single string, so every per-line check
 # would see one line.
 function Get-Logcat {
-    $lines = Invoke-Adb 60 'logcat' '-d' '-v' 'threadtime'
+    param([int]$TimeoutSeconds = 60)
+    $lines = Invoke-Adb $TimeoutSeconds 'logcat' '-d' '-v' 'threadtime'
     return , $lines
 }
 
@@ -193,17 +203,12 @@ function Reset-Logcat {
     Invoke-Adb 30 'logcat' '-c' | Out-Null
 }
 
-# Polls the log until $Test returns true; throws naming $What after $WaitSeconds.
+# Polls the log until $Test returns true; throws naming $What after $WaitSeconds. perf-common.ps1's
+# Wait-ForLines hands each logcat read the budget left as its timeout.
 function Wait-ForLog {
     param([scriptblock]$Test, [string]$What, [int]$Seconds = 0)
     if ($Seconds -le 0) { $Seconds = $script:WaitSeconds }
-    $deadline = (Get-Date).AddSeconds($Seconds)
-    while ((Get-Date) -lt $deadline) {
-        $lines = Get-Logcat
-        if (& $Test $lines) { return , $lines }
-        Start-Sleep -Milliseconds 500
-    }
-    throw "timed out after ${Seconds}s waiting for $What"
+    return , (Wait-ForLines { param($budget) Get-Logcat $budget } $Test $What $Seconds)
 }
 
 # Cold-starts the activity. Returns the `am start -W` output.
@@ -225,7 +230,7 @@ function Invoke-BootRun {
     $lines = Wait-ForLog { param($l) Test-LogHasMark $l 'boot.content' } 'the boot.content mark'
     $lines = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l $script:Package $script:Activity } 'the Fully drawn line'
     if ($null -eq (Get-TotalTime $start)) { throw "am start -W printed no TotalTime:`n$($start -join "`n")" }
-    Set-Content -LiteralPath $path -Value (@($lines) + @($start)) -Encoding UTF8
+    Set-Content -LiteralPath $path -Value (@(Select-BootRecords $lines $script:Package $script:Activity) + @($start)) -Encoding UTF8
     Write-Host "boot run $Run -> $path"
 }
 
@@ -311,21 +316,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         $idErr = Test-SideId $Side $Package 'Package'
         if ($idErr) { throw $idErr }
         $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
+        # Absolute once, from PowerShell's location, so every later path names the same directory.
+        $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
         $sideDir = Join-Path $Out $Side
         if ($Kind -ne 'q1') {
             foreach ($pair in @(@('Sdk', $Sdk), @('Commit', $Commit))) {
                 $err = Test-MetaValue $pair[0] $pair[1]
                 if ($err) { throw $err }
             }
-            # Refuse before anything is written: an existing run log without -Force, or logs that would
-            # remain under another build's meta.json.
-            $writeErr = Get-SideWriteError $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
-            if ($writeErr) { throw $writeErr }
-            New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
-            # Under -Run only that run's file is replaced, by Get-RunLogPath; the other runs are kept.
-            if ($Force -and $Run -lt 0) { Remove-KindLogs $sideDir $Kind }
-            $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
-            [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
+            # Refuses before anything is written, removes the logs it replaces under -Force, then writes meta.json.
+            # Under -Run only that run's log is replaced; the other runs are kept.
+            $sideDir = Initialize-SideDir $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
         }
         else { New-Item -ItemType Directory -Force -Path $Out | Out-Null }
 

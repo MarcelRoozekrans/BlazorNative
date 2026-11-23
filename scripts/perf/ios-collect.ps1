@@ -36,7 +36,8 @@
   Environment passed to the app: BN_LOG_LEVEL must be the NAME Verbose. BnLogLevel.fromName does not read
   digits, so 5 would resolve to the default and the run would hold no marks. `simctl launch` has no
   per-launch flag for it on every Xcode version, so q1 passes it as SIMCTL_CHILD_BN_LOG_LEVEL, and xcodebuild
-  gets TEST_RUNNER_BN_LOG_LEVEL and TEST_RUNNER_PERF_CLICKS.
+  gets TEST_RUNNER_BN_LOG_LEVEL, TEST_RUNNER_PERF_LEVEL and TEST_RUNNER_PERF_CLICKS. At the default level
+  the BN_LOG_LEVEL variable is removed from the child's environment; see Get-LaunchEnv and Get-MeasurementEnv.
 
   The parsing and assertion logic is in functions, so the file can be dot-sourced without running. The
   functions both collectors share are in perf-common.ps1, which this file dot-sources from its own directory.
@@ -184,12 +185,32 @@ function Format-LogStart {
 }
 
 # The environment simctl launch hands the app: SIMCTL_CHILD_ variables, PerfProbe always, Verbose on request.
-# BN_LOG_LEVEL takes a name, because BnLogLevel.fromName does not read digits.
+# BN_LOG_LEVEL takes a name, because BnLogLevel.fromName does not read digits. At the default level the
+# entry is $null, which Invoke-BoundedProcess removes, so a level set in the collector's environment
+# cannot reach the default launch.
 function Get-LaunchEnv {
     param([bool]$VerboseLevel, [string]$Component = 'PerfProbe')
-    $envVars = @{ SIMCTL_CHILD_BN_LAUNCH_COMPONENT = $Component }
+    $envVars = @{ SIMCTL_CHILD_BN_LAUNCH_COMPONENT = $Component; SIMCTL_CHILD_BN_LOG_LEVEL = $null }
     if ($VerboseLevel) { $envVars['SIMCTL_CHILD_BN_LOG_LEVEL'] = 'Verbose' }
     return $envVars
+}
+
+# The environment xcodebuild hands BnPerfMeasurementTests, as TEST_RUNNER_ variables. Both levels set
+# PERF_LEVEL, the level the test asserts. At the default level BN_LOG_LEVEL is $null, which
+# Invoke-BoundedProcess removes, so a level set in the collector's environment cannot reach the run.
+function Get-MeasurementEnv {
+    param([int]$Clicks, [bool]$DefaultLevel)
+    $envVars = @{ TEST_RUNNER_PERF_CLICKS = "$Clicks"; TEST_RUNNER_PERF_LEVEL = 'Verbose'; TEST_RUNNER_BN_LOG_LEVEL = 'Verbose' }
+    if ($DefaultLevel) { $envVars['TEST_RUNNER_PERF_LEVEL'] = 'default'; $envVars['TEST_RUNNER_BN_LOG_LEVEL'] = $null }
+    return $envVars
+}
+
+# The boot wait's test: boot.start and boot.content, both logged by process $ProcessId. The lines are
+# `log show --style compact`, which names the process as <name>[<pid>:<tid>].
+function Test-BootMarksOfPid {
+    param([string[]]$Lines, [int]$ProcessId)
+    $mine = @($Lines | Where-Object { $_ -match ('\s\S+\[' + $ProcessId + ':[0-9A-Fa-fx]+\]\s') })
+    return (Test-LogHasMark $mine 'boot.start') -and (Test-LogHasMark $mine 'boot.content')
 }
 
 # The simctl arguments of a `log show` read from $Start. --debug always, because the marks are debug
@@ -281,9 +302,9 @@ function Get-ClickPredicate {
 # Reads the log from -Start on, the subsystem by default. Style compact for the parser, ndjson for the q1 checks.
 # -Info is for q1's default-level reads; see Get-OsLogArgs.
 function Get-OsLog {
-    param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '', [switch]$Info)
+    param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '', [switch]$Info, [int]$TimeoutSeconds = 90)
     if (-not $Predicate) { $Predicate = Get-SubsystemPredicate }
-    $r = Invoke-Simctl 90 -SimArgs (Get-OsLogArgs $script:Udid $Start $Style $Predicate $Info.IsPresent)
+    $r = Invoke-Simctl $TimeoutSeconds -SimArgs (Get-OsLogArgs $script:Udid $Start $Style $Predicate $Info.IsPresent)
     return , @($r.Lines)
 }
 
@@ -293,17 +314,12 @@ function Get-WindowStart {
     return Format-LogStart (Get-Date)
 }
 
-# Polls the log until $Test returns true; throws naming $What after $WaitSeconds.
+# Polls the log until $Test returns true; throws naming $What after $WaitSeconds. perf-common.ps1's
+# Wait-ForLines hands each log show read the budget left as its timeout.
 function Wait-ForLog {
     param([string]$Start, [scriptblock]$Test, [string]$What, [int]$Seconds = 0, [string]$Style = 'compact', [string]$Predicate = '')
     if ($Seconds -le 0) { $Seconds = $script:WaitSeconds }
-    $deadline = (Get-Date).AddSeconds($Seconds)
-    while ((Get-Date) -lt $deadline) {
-        $lines = Get-OsLog $Start $Style $Predicate
-        if (& $Test $lines) { return , $lines }
-        Start-Sleep -Milliseconds 500
-    }
-    throw "timed out after ${Seconds}s waiting for $What"
+    return , (Wait-ForLines { param($budget) Get-OsLog $Start $Style $Predicate -TimeoutSeconds $budget } $Test $What $Seconds)
 }
 
 function Invoke-BootRun {
@@ -311,8 +327,9 @@ function Invoke-BootRun {
     $path = Get-RunLogPath $SideDir 'boot' $Run
     try {
         $launch = Start-Launch $true
-        $lines = Wait-ForLog $launch.Start { param($l) (Test-LogHasMark $l 'boot.start') -and (Test-LogHasMark $l 'boot.content') } `
-            'the boot.start and boot.content marks'
+        $bootPid = $launch.Pid
+        $lines = Wait-ForLog $launch.Start { param($l) Test-BootMarksOfPid $l $bootPid } `
+            "the boot.start and boot.content marks of process $bootPid"
         Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
         Write-Host "boot run $Run -> $path"
     }
@@ -329,8 +346,7 @@ function Invoke-Measurement {
     $xcArgs = @('test-without-building', '-project', $script:Project, '-scheme', $script:Scheme,
         '-destination', "platform=iOS Simulator,id=$($script:Udid)", '-derivedDataPath', $script:DerivedData,
         "-only-testing:$($script:PerfClass)")
-    $envVars = @{ TEST_RUNNER_PERF_CLICKS = "$Clicks" }
-    if ($DefaultLevel) { $envVars['TEST_RUNNER_PERF_LEVEL'] = 'default' } else { $envVars['TEST_RUNNER_BN_LOG_LEVEL'] = 'Verbose' }
+    $envVars = Get-MeasurementEnv $Clicks $DefaultLevel.IsPresent
     try {
         $result = Invoke-Tool 'xcodebuild' $xcArgs (Get-XcodebuildTimeout $Clicks) $envVars -AllowFail
     }
@@ -441,21 +457,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         $script:Udid = $Udid; $script:Bundle = $Bundle; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds
         $script:SettleSeconds = $SettleSeconds; $script:Force = [bool]$Force
         $script:Project = $Project; $script:Scheme = $Scheme; $script:DerivedData = $DerivedData
+        # Absolute once, from PowerShell's location, so every later path names the same directory.
+        $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
         $sideDir = Join-Path $Out $Side
         if ($Kind -ne 'q1') {
             foreach ($pair in @(@('Sdk', $Sdk), @('Commit', $Commit))) {
                 $err = Test-MetaValue $pair[0] $pair[1]
                 if ($err) { throw $err }
             }
-            # Refuse before anything is written: an existing run log without -Force, or logs that would
-            # remain under another build's meta.json.
-            $writeErr = Get-SideWriteError $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
-            if ($writeErr) { throw $writeErr }
-            New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
-            # Under -Run only that run's file is replaced, by Get-RunLogPath; the other runs are kept.
-            if ($Force -and $Run -lt 0) { Remove-KindLogs $sideDir $Kind }
-            $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
-            [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
+            # Refuses before anything is written, removes the logs it replaces under -Force, then writes meta.json.
+            # Under -Run only that run's log is replaced; the other runs are kept.
+            $sideDir = Initialize-SideDir $sideDir $Kind (Get-RunList $Runs $Run) ([bool]$Force) ($Run -lt 0) $Sdk $Commit
         }
         else { New-Item -ItemType Directory -Force -Path $Out | Out-Null }
 

@@ -279,21 +279,68 @@ public sealed class PerfCollectorTests
     }
 
     // Not a detector but the env a launch carries: BN_LOG_LEVEL must be the NAME Verbose, because
-    // BnLogLevel.fromName does not read digits, and must be absent at the default level.
+    // BnLogLevel.fromName does not read digits. At the default level it is null, which
+    // Invoke-BoundedProcess removes, so the collector's own environment cannot set the level.
     [Fact]
     public async Task LaunchEnv_CarriesTheComponent_AndTheVerboseNameOnlyAtVerbose()
     {
         JsonElement[] r = await RunAsync("ios",
             new Call("Get-LaunchEnv", true, "PerfProbe"), new Call("Get-LaunchEnv", false, "PerfProbe"));
 
-        Dictionary<string, string> verbose = r[0].Deserialize<Dictionary<string, string>>()!;
-        Dictionary<string, string> quiet = r[1].Deserialize<Dictionary<string, string>>()!;
-        Assert.Equal(new Dictionary<string, string>
+        Dictionary<string, string?> verbose = r[0].Deserialize<Dictionary<string, string?>>()!;
+        Dictionary<string, string?> quiet = r[1].Deserialize<Dictionary<string, string?>>()!;
+        Assert.Equal(new Dictionary<string, string?>
         {
             ["SIMCTL_CHILD_BN_LAUNCH_COMPONENT"] = "PerfProbe",
             ["SIMCTL_CHILD_BN_LOG_LEVEL"] = "Verbose",
         }, verbose);
-        Assert.Equal(new Dictionary<string, string> { ["SIMCTL_CHILD_BN_LAUNCH_COMPONENT"] = "PerfProbe" }, quiet);
+        Assert.Equal(new Dictionary<string, string?>
+        {
+            ["SIMCTL_CHILD_BN_LAUNCH_COMPONENT"] = "PerfProbe",
+            ["SIMCTL_CHILD_BN_LOG_LEVEL"] = null,
+        }, quiet);
+    }
+
+    // The xcodebuild env: both levels name the level the test asserts, and the default level removes
+    // BN_LOG_LEVEL rather than leave it to the collector's environment.
+    [Fact]
+    public async Task MeasurementEnv_SetsThePerfLevelAtBothLevels_AndRemovesTheLogLevelAtTheDefault()
+    {
+        JsonElement[] r = await RunAsync("ios",
+            new Call("Get-MeasurementEnv", 25, false), new Call("Get-MeasurementEnv", 3, true));
+
+        Assert.Equal(new Dictionary<string, string?>
+        {
+            ["TEST_RUNNER_PERF_CLICKS"] = "25",
+            ["TEST_RUNNER_PERF_LEVEL"] = "Verbose",
+            ["TEST_RUNNER_BN_LOG_LEVEL"] = "Verbose",
+        }, r[0].Deserialize<Dictionary<string, string?>>()!);
+        Assert.Equal(new Dictionary<string, string?>
+        {
+            ["TEST_RUNNER_PERF_CLICKS"] = "3",
+            ["TEST_RUNNER_PERF_LEVEL"] = "default",
+            ["TEST_RUNNER_BN_LOG_LEVEL"] = null,
+        }, r[1].Deserialize<Dictionary<string, string?>>()!);
+    }
+
+    // The launch reports a pid, and the boot wait accepts only that process's marks: a mark of another
+    // BnHost process in the window, or of a pid that merely starts with the same digits, does not count.
+    [Fact]
+    public async Task BootMarksOfPid_NeedsBothMarksFromTheLaunchedProcess()
+    {
+        string Mark(int pid, string point) => $"2026-11-23 10:00:00.123 Db BnHost[{pid}:1a2b] [io.blazornative:Perf] BNPERF {point} seq=1 t=5";
+        string[] both = ["Timestamp               Ty Process[PID:TID]", Mark(900, "boot.start"), Mark(900, "boot.content")];
+        string[] split = [Mark(900, "boot.start"), Mark(901, "boot.content")];
+        string[] longer = [Mark(9001, "boot.start"), Mark(9001, "boot.content")];
+
+        JsonElement[] r = await RunAsync("ios",
+            new Call("Test-BootMarksOfPid", both, 900), new Call("Test-BootMarksOfPid", split, 900),
+            new Call("Test-BootMarksOfPid", split, 901), new Call("Test-BootMarksOfPid", longer, 900));
+
+        Assert.True(r[0].GetBoolean());
+        Assert.False(r[1].GetBoolean());
+        Assert.False(r[2].GetBoolean());
+        Assert.False(r[3].GetBoolean());
     }
 
     [Fact]
@@ -419,7 +466,227 @@ public sealed class PerfCollectorTests
         }
     }
 
+    // ── Initialize-SideDir: a relabel never outlives the log it replaces ─────────
+
+    [Fact]
+    public async Task InitializeSideDir_RemovesTheReplacedRunBeforeTheRelabel_AndKeepsInterleavedRuns()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "bn-perf-init-" + Guid.NewGuid().ToString("N"));
+        const string Meta = """{ "sdk": "10.0.100", "commit": "aaaa" }""";
+        string Dir(string name, params string[] logs)
+        {
+            string d = Path.Combine(root, name);
+            Directory.CreateDirectory(d);
+            File.WriteAllText(Path.Combine(d, "meta.json"), Meta);
+            foreach (string l in logs) File.WriteAllText(Path.Combine(d, l), "BNPERF boot.start seq=1 t=1");
+            return d;
+        }
+        try
+        {
+            string relabel = Dir("relabel", "boot-0.log");
+            string interleaved = Dir("interleaved", "boot-0.log", "click-0.log");
+            string refused = Dir("refused", "boot-0.log", "click-0.log");
+
+            (JsonElement Value, string? Error)[] r = await RunCatchingAsync("common",
+                // -Force -Run 0 under another build: boot-0 is the only log, so the relabel is allowed, and
+                // the old build's boot-0 must be gone before meta.json names the new one.
+                new Call("Initialize-SideDir", relabel, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"),
+                // The next interleaved run under the same build touches no log.
+                new Call("Initialize-SideDir", interleaved, "boot", new[] { 1 }, false, false, "10.0.100", "aaaa"),
+                // A relabel click-0 would keep is refused before anything is written.
+                new Call("Initialize-SideDir", refused, "boot", new[] { 0 }, true, false, "10.0.101", "bbbb"));
+
+            Assert.Null(r[0].Error);
+            Assert.Equal(relabel, r[0].Value.GetString());
+            Assert.False(File.Exists(Path.Combine(relabel, "boot-0.log")), "the old build's boot-0.log survived the relabel");
+            Assert.Contains("\"bbbb\"", File.ReadAllText(Path.Combine(relabel, "meta.json")));
+
+            Assert.Null(r[1].Error);
+            Assert.True(File.Exists(Path.Combine(interleaved, "boot-0.log")));
+            Assert.True(File.Exists(Path.Combine(interleaved, "click-0.log")));
+            Assert.Contains("\"aaaa\"", File.ReadAllText(Path.Combine(interleaved, "meta.json")));
+
+            Assert.Contains("such as click-0.log would keep that label", r[2].Error);
+            Assert.True(File.Exists(Path.Combine(refused, "boot-0.log")));
+            Assert.Equal(Meta, File.ReadAllText(Path.Combine(refused, "meta.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // A relative -Out names a directory under PowerShell's location, which Set-Location moves and .NET's
+    // current directory does not follow: meta.json must land beside the logs, without a BOM.
+    [Fact]
+    public async Task InitializeSideDir_ResolvesARelativePathFromThePowerShellLocation()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "bn-perf-loc-" + Guid.NewGuid().ToString("N"));
+        string rel = "rel-" + Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(root);
+        try
+        {
+            JsonElement[] r = await RunAsync("common",
+                new Call("Invoke-Command", Block("Set-Location -LiteralPath '" + root.Replace("'", "''") + "'")),
+                new Call("Initialize-SideDir", rel + "/head", "boot", new[] { 0 }, false, true, "10.0.100", "aaaa"));
+
+            string side = Path.Combine(root, rel, "head");
+            Assert.Equal(Path.GetFullPath(side), Path.GetFullPath(r[1].GetString()!));
+            byte[] bytes = File.ReadAllBytes(Path.Combine(side, "meta.json"));
+            Assert.False(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF, "meta.json has a BOM");
+            Assert.Contains("\"aaaa\"", System.Text.Encoding.UTF8.GetString(bytes));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MetaValue_RefusesEmptyCommaPipeQuoteAndNewline()
+    {
+        JsonElement[] r = await RunAsync("common",
+            new Call("Test-MetaValue", "Sdk", "10.0.100"), new Call("Test-MetaValue", "Sdk", " "),
+            new Call("Test-MetaValue", "Sdk", "10,0"), new Call("Test-MetaValue", "Commit", "a|b"),
+            new Call("Test-MetaValue", "Commit", "a\"b"), new Call("Test-MetaValue", "Commit", "a\nb"));
+
+        Assert.Equal(JsonValueKind.Null, r[0].ValueKind);
+        Assert.Equal("-Sdk is required for the boot and click kinds", r[1].GetString());
+        for (int i = 2; i < r.Length; i++)
+            Assert.True(r[i].ValueKind == JsonValueKind.String && r[i].GetString()!.Contains("must not contain commas, pipes, double quotes or newlines"),
+                $"case {i} passed: {r[i]}");
+    }
+
+    // ── The boot log's records ──────────────────────────────────────────────────
+
+    // The parser takes any `Fully drawn` line, and refuses a second: another component's record must not
+    // reach it, and every record of the selected activity must.
+    [Fact]
+    public async Task SelectBootRecords_DropsAnotherComponentsFullyDrawn_AndKeepsEveryOneOfTheSelected()
+    {
+        string launcher = "11-23 10:00:01.000   600   650 I ActivityTaskManager: Fully drawn com.google.android.apps.nexuslauncher/.NexusLauncherActivity: +640ms";
+        string mark = Logcat("V", "BlazorNative/Perf", "BNPERF boot.start seq=1 t=5");
+        string[] lines = [mark, launcher, FullyDrawn, FullyDrawnV015, FullyDrawn];
+
+        JsonElement[] r = await RunAsync("android",
+            new Call("Select-BootRecords", lines, Shell, ShellActivity),
+            new Call("Select-BootRecords", lines, ShellV015, ShellActivity));
+
+        Assert.Equal([mark, FullyDrawn, FullyDrawn], Strings(r[0]));
+        Assert.Equal([mark, FullyDrawnV015], Strings(r[1]));
+    }
+
+    // ── Wait-ForLog: each read gets only the budget left ────────────────────────
+
+    // The read is stubbed to take 1.2 s and record the timeout it was handed. A 3 s wait must hand the first
+    // read 3 s and each later one less, and give up near 3 s; a fixed per-read timeout would let one read
+    // carry the wait far past it.
+    [Theory]
+    [InlineData("android", "function script:Get-Logcat { param([int]$TimeoutSeconds = 60) $global:Budgets.Add($TimeoutSeconds); Start-Sleep -Milliseconds 1200; return , @('no mark') }", new object[0])]
+    [InlineData("ios", "function script:Get-OsLog { param([string]$Start, [string]$Style = 'compact', [string]$Predicate = '', [switch]$Info, [int]$TimeoutSeconds = 90) $global:Budgets.Add($TimeoutSeconds); Start-Sleep -Milliseconds 1200; return , @('no mark') }", new object[] { "2026-11-23 10:00:00" })]
+    public async Task WaitForLog_HandsEachReadTheBudgetLeft(string script, string stub, object[] leading)
+    {
+        const string Reset = "$global:Budgets = New-Object System.Collections.Generic.List[int]";
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        (JsonElement Value, string? Error)[] r = await RunCatchingAsync(script,
+            new Call("Invoke-Command", Block(Reset + "; " + stub)),
+            new Call("Wait-ForLog", [.. leading, Block("param($l) $false"), "the mark", 3]),
+            new Call("Invoke-Command", Block("$global:Budgets.ToArray()")),
+            new Call("Invoke-Command", Block(Reset)),
+            new Call("Wait-ForLog", [.. leading, Block("param($l) $global:Budgets.Count -ge 2"), "the mark", 30]));
+
+        Assert.Equal("timed out after 3s waiting for the mark", r[1].Error);
+        int[] budgets = [.. r[2].Value.EnumerateArray().Select(e => e.GetInt32())];
+        Assert.True(budgets.Length >= 2, $"only {budgets.Length} read(s) in 3 s");
+        Assert.Equal(3, budgets[0]);
+        for (int i = 1; i < budgets.Length; i++)
+            Assert.True(budgets[i] < budgets[i - 1] && budgets[i] >= 1, $"budgets {string.Join(",", budgets)}");
+        // A match is returned as the read's lines.
+        Assert.Null(r[4].Error);
+        Assert.Equal(["no mark"], Strings(r[4].Value));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(45), $"the probe took {clock.Elapsed}");
+    }
+
+    // ── interleave.ps1's Stop-Side: bounded calls, and the state decides ────────
+
+    private const string StopSideStub = """
+        $global:Calls = New-Object System.Collections.Generic.List[string]
+        function script:Invoke-BoundedProcess {
+            param([string]$File, [string[]]$ArgumentList, [int]$TimeoutSeconds = 30, [hashtable]$EnvVars = @{})
+            $global:Calls.Add("$File $($ArgumentList -join ' ') @$TimeoutSeconds")
+            if ($ArgumentList -contains 'terminate') {
+                if ($global:TerminateThrows) { throw 'xcrun simctl terminate timed out after 15s' }
+                return [pscustomobject]@{ ExitCode = 1; Stdout = ''; Stderr = 'found nothing to terminate' }
+            }
+            if ($ArgumentList -contains 'launchctl') {
+                $global:Lists++
+                $col = if ($global:Lists -le $global:RunningFor) { '812' } else { '-' }
+                return [pscustomobject]@{ ExitCode = 0; Stdout = "PID`tStatus`tLabel`n$col`t0`tUIKitApplication:io.x[1a2b][rb-legacy]"; Stderr = '' }
+            }
+            return [pscustomobject]@{ ExitCode = $global:AdbExit; Stdout = ''; Stderr = 'adb said no' }
+        }
+        """;
+
+    private static object StopSideCase(string platform, int adbExit = 0, int runningFor = 0, bool terminateThrows = false) => Block(
+        $"$global:Calls.Clear(); $global:Lists = 0; $global:AdbExit = {adbExit}; $global:RunningFor = {runningFor}; "
+        + $"$global:TerminateThrows = ${terminateThrows.ToString().ToLowerInvariant()}; "
+        + $"$script:Platform = '{platform}'; $script:Serial = 'SERIAL'; $script:Udid = 'UDID'");
+
+    [Fact]
+    public async Task StopSide_BoundsEveryToolCall_AndJudgesTheSimulatorByItsState()
+    {
+        object side = new { Id = "io.x" };
+        const string Calls = "$global:Calls.ToArray()";
+        (JsonElement Value, string? Error)[] r = await RunCatchingAsync("interleave",
+            new Call("Invoke-Command", Block(StopSideStub)),
+            // 1-2: Android stops the app and its test package; a failed force-stop throws.
+            new Call("Invoke-Command", StopSideCase("android")),
+            new Call("Stop-Side", side),
+            new Call("Invoke-Command", Block(Calls)),
+            new Call("Invoke-Command", StopSideCase("android", adbExit: 1)),
+            new Call("Stop-Side", side),
+            // 6-7: terminate exits 1, the app is reaped two polls later: stopped.
+            new Call("Invoke-Command", StopSideCase("ios", runningFor: 2)),
+            new Call("Stop-Side", side),
+            new Call("Invoke-Command", Block(Calls)),
+            // 9-10: terminate timed out, but the app is not running: stopped.
+            new Call("Invoke-Command", StopSideCase("ios", terminateThrows: true)),
+            new Call("Stop-Side", side),
+            new Call("Invoke-Command", Block(Calls)),
+            // 12-13: still running past the grace: throws.
+            new Call("Invoke-Command", StopSideCase("ios", runningFor: 1000)),
+            new Call("Stop-Side", side, 1));
+
+        Assert.All(r[..5], x => Assert.Null(x.Error));
+        Assert.Equal(["adb -s SERIAL shell am force-stop io.x @30", "adb -s SERIAL shell am force-stop io.x.test @30"], Strings(r[3].Value));
+        Assert.StartsWith("adb am force-stop io.x failed with exit 1", r[5].Error);
+
+        Assert.Null(r[7].Error);
+        Assert.Equal(
+            ["xcrun simctl terminate UDID io.x @15", .. Enumerable.Repeat("xcrun simctl spawn UDID launchctl list @30", 3)],
+            Strings(r[8].Value));
+
+        Assert.Null(r[10].Error);
+        Assert.Equal(["xcrun simctl terminate UDID io.x @15", "xcrun simctl spawn UDID launchctl list @30"], Strings(r[11].Value));
+
+        Assert.StartsWith("io.x is still running after simctl terminate (exit 1 found nothing to terminate)", r[13].Error);
+    }
+
     // ── Invoke-BoundedProcess: one deadline for the exit and both pipes ─────────
+
+    // A null -EnvVars entry removes the variable from the child, so the collector's own environment cannot
+    // set a level the default runs must not have.
+    [Fact]
+    public async Task BoundedProcess_RemovesANullEnvVar_FromTheChild()
+    {
+        const string Child = "'-NoProfile', '-Command', '[Console]::Out.Write([Environment]::GetEnvironmentVariables().Contains(''BN_PROBE_LEAK''))'";
+        JsonElement[] r = await RunAsync("common",
+            new Call("Invoke-Command", Block("$env:BN_PROBE_LEAK = 'Verbose'; (Invoke-BoundedProcess 'pwsh' @(" + Child + ") 30 @{ BN_PROBE_LEAK = $null }).Stdout")),
+            new Call("Invoke-Command", Block("(Invoke-BoundedProcess 'pwsh' @(" + Child + ") 30 @{}).Stdout")));
+
+        Assert.Equal("False", r[0].GetString());
+        Assert.Equal("True", r[1].GetString());
+    }
 
     private static string HoldStdout => Path.Combine(
         BnRepo.Root(), "tests", "BlazorNative.Runtime.Tests", "TestData", "hold-stdout.ps1");
