@@ -14,14 +14,15 @@
       [1]    BnText    "Count: <n>" the settle signal
       [2..51] BnText   50 rows
 
-    Row 0 contains the count, so a click changes a FIXED set of nodes: the
-    count label and row 0, two ReplaceText patches. Rows 1..49 are constant
-    text; they exist so the frame has a realistic node count to lay out.
+    Every row tracks the count (owner decision D1, 2026-11-23), so a click
+    changes a FIXED set of nodes: the count label and all 50 rows, 51
+    ReplaceText patches. The frame then carries a realistic amount of text to
+    relayout, not two labels.
 
     The wire has no id or test-tag prop, so none is emitted. Device tests
     locate the button by its label text "Click" and the label by its text
-    "Count: <n>". That text must stay UNIQUE on the page: row 0 reads
-    "Row 0 count <n>", which differs on purpose, and no other node may carry
+    "Count: <n>". That text must stay UNIQUE on the page: row i reads
+    "Row <i> count <n>", which differs on purpose, and no other node may carry
     "Click" or "Count: ".
     ─────────────────────────────────────────────────────────────────────────
 *@
@@ -41,7 +42,7 @@
 
     private string CountText => $"Count: {_count}";
 
-    private string RowText(int i) => i == 0 ? $"Row 0 count {_count}" : $"Row {i}";
+    private string RowText(int i) => $"Row {i} count {_count}";
 
     private void Increment() => _count++;
 }

@@ -47,17 +47,25 @@ public sealed class PerfProbeTests
                 Assert.Equal(before + 1, frames.Count);
                 perClick.Add(frames[^1].Patches.Count());
 
-                // The page's contract: a click is exactly two ReplaceText patches (the
-                // count label and row 0) plus the frame's commit marker, nothing else.
+                // The page's contract (owner decision D1): a click is exactly 51 ReplaceText
+                // patches, the count label and every one of the 50 rows, plus the frame's
+                // commit marker, nothing else.
                 RenderPatch[] changes = [.. frames[^1].Patches.Where(p => p is not CommitFramePatch)];
-                Assert.Equal(2, changes.Length);
+                Assert.Equal(PerfProbe.RowCount + 1, changes.Length);
+                Assert.Equal(51, changes.Length);
                 Assert.All(changes, p => Assert.IsType<ReplaceTextPatch>(p));
                 texts.Add([.. changes.Cast<ReplaceTextPatch>().Select(p => p.Text)]);
             }
 
-            // The settle signal the device tests wait for.
-            Assert.Contains("Count: 1", texts[0]);
-            Assert.Contains("Count: 2", texts[1]);
+            // The settle signal the device tests wait for, unchanged and unique: exactly one
+            // node reads "Count: <n>", and every row carries the new count too.
+            for (int i = 1; i <= 5; i++)
+            {
+                Assert.Single(texts[i - 1], t => t == $"Count: {i}");
+                Assert.Single(texts[i - 1], t => t.StartsWith("Count: ", StringComparison.Ordinal));
+                for (int row = 0; row < PerfProbe.RowCount; row++)
+                    Assert.Contains($"Row {row} count {i}", texts[i - 1]);
+            }
 
             Assert.True(perClick[0] > 0, "a click must change something");
             Assert.All(perClick, n => Assert.Equal(perClick[1], n));
