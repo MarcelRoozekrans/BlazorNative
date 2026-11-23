@@ -215,7 +215,13 @@ function Invoke-Adb {
     return , @($stdout -split "\r?\n" | Where-Object { $_ -ne '' })
 }
 
-function Get-Logcat { return , @(Invoke-Adb 60 'logcat' '-d' '-v' 'threadtime') }
+# Invoke-Adb already returns the lines as one array. Wrapping its call in @() again would nest that array in a
+# one-element array, which a [string[]] parameter then joins into a single string, so every per-line check
+# would see one line.
+function Get-Logcat {
+    $lines = Invoke-Adb 60 'logcat' '-d' '-v' 'threadtime'
+    return , $lines
+}
 
 function Reset-Logcat {
     # A 16M buffer keeps the whole run: the default one can wrap and lose the first marks.
@@ -244,7 +250,8 @@ function Start-Cold {
     $cmd = @('shell', 'am', 'start', '-W', '-n', "$($script:Package)/$($script:Activity)",
         '-e', $script:ExtraComponent, 'PerfProbe')
     if ($VerboseLevel) { $cmd += @('-e', $script:ExtraLogLevel, 'Verbose') }
-    return , @(Invoke-Adb 90 @cmd)
+    $out = Invoke-Adb 90 @cmd
+    return , $out
 }
 
 function Invoke-BootRun {
