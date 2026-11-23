@@ -74,8 +74,10 @@ internal static class Pairing
     /// log late, through a writer thread, the log queue and the stderr pump, while the shell
     /// marks are logged directly. Within ONE point, log order is emit order. So marks are split
     /// by point and paired by per-point order and id:
-    /// the k-th dispatch.post with id X takes the k-th dispatch.enter and dispatch.handler with
-    /// id X. The click's frame is the one frame.recv with handler.t le recv.t lt the next post's t;
+    /// the k-th dispatch.post with id X takes the k-th dispatch.enter with id X, and that enter
+    /// takes the k-th dispatch.handler with id X. When the counts differ, a mark is missing and
+    /// order alone would shift every later occurrence onto the wrong partner; see <see cref="Align"/>
+    /// for how the pairing resynchronizes without hiding a clock violation. The click's frame is the one frame.recv with handler.t le recv.t lt the next post's t;
     /// its frame.applied is the first applied mark with recv.t le applied.t lt the next recv's t. A click
     /// with a missing point, no frame, more than one frame, or a frame with no applied mark is a
     /// dropped sample.
@@ -86,23 +88,22 @@ internal static class Pairing
         var posts = marks.Where(m => m.Point == MarkLine.PostPoint).ToList();
         var recvs = marks.Where(m => m.Point == MarkLine.RecvPoint).ToList();
         var applieds = marks.Where(m => m.Point == MarkLine.AppliedPoint).ToList();
-        var enters = ById(marks, MarkLine.EnterPoint);
-        var handlers = ById(marks, MarkLine.HandlerPoint);
-        var seen = new Dictionary<long, int>();
+        var enters = marks.Where(m => m.Point == MarkLine.EnterPoint).ToList();
+        var handlers = marks.Where(m => m.Point == MarkLine.HandlerPoint).ToList();
+        var enterOf = AlignById(posts, enters);
+        var handlerOf = AlignById(enters, handlers);
 
         for (var k = 0; k < posts.Count; k++)
         {
             r.Attempted++;
             var post = posts[k];
             var id = post.Id!.Value;
-            var j = seen.GetValueOrDefault(id);
-            seen[id] = j + 1;
             var tag = $"{where}:{post.Line} (click {k + 1}, id={id})";
 
-            if (!enters.TryGetValue(id, out var e) || j >= e.Count) { r.Drops.Add($"{tag}: no dispatch.enter with this id"); continue; }
-            if (!handlers.TryGetValue(id, out var h) || j >= h.Count) { r.Drops.Add($"{tag}: no dispatch.handler with this id"); continue; }
-            var enter = e[j];
-            var handler = h[j];
+            if (enterOf[k] < 0) { r.Drops.Add($"{tag}: no dispatch.enter with this id"); continue; }
+            if (handlerOf[enterOf[k]] < 0) { r.Drops.Add($"{tag}: no dispatch.handler with this id"); continue; }
+            var enter = enters[enterOf[k]];
+            var handler = handlers[handlerOf[enterOf[k]]];
 
             // The clock proof. The triple was chosen by order and id, not by t, so a violation
             // means the two sides really do not share a clock.
@@ -137,6 +138,50 @@ internal static class Pairing
         return r;
     }
 
-    private static Dictionary<long, List<Mark>> ById(IReadOnlyList<Mark> marks, string point) =>
-        marks.Where(m => m.Point == point).GroupBy(m => m.Id!.Value).ToDictionary(g => g.Key, g => g.ToList());
+    /// <summary>
+    /// For each mark of <paramref name="from"/>, the index in <paramref name="to"/> of its partner
+    /// with the same id, or -1. Both lists are one point each, in log order.
+    /// </summary>
+    private static int[] AlignById(List<Mark> from, List<Mark> to)
+    {
+        var result = new int[from.Count];
+        foreach (var id in from.Select(m => m.Id!.Value).Distinct())
+        {
+            var a = Enumerable.Range(0, from.Count).Where(i => from[i].Id == id).ToList();
+            var b = Enumerable.Range(0, to.Count).Where(i => to[i].Id == id).ToList();
+            // A from-mark's partner is stamped before the next from-mark of any id: the clicks are
+            // serial, and the dispatch lane runs one event at a time.
+            var aligned = Align(a.Select(i => from[i].T).ToList(),
+                a.Select(i => i + 1 < from.Count ? from[i + 1].T : long.MaxValue).ToList(),
+                b.Select(i => to[i].T).ToList());
+            for (var x = 0; x < a.Count; x++) result[a[x]] = aligned[x] < 0 ? -1 : b[aligned[x]];
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Pairs two same-id sequences. With equal counts it pairs by order alone and never looks at
+    /// t, so a partner stamped out of order is reported as a clock violation by the caller. With
+    /// unequal counts, |a - b| marks are missing on one side, and order alone would misalign every
+    /// later occurrence: a lost middle enter would hand click j the enter of click j+1, and its
+    /// handler would then precede that enter, a false violation. So it skips at most that many:
+    /// an a whose next b is stamped at or after the a's upper bound has lost its partner, and a b
+    /// stamped before the current a belongs to an a that was lost. Once the budget is spent it
+    /// pairs by order again, so a real clock offset still shows on every other occurrence.
+    /// </summary>
+    internal static int[] Align(IReadOnlyList<long> aT, IReadOnlyList<long> aUpper, IReadOnlyList<long> bT)
+    {
+        var result = new int[aT.Count];
+        var lostA = Math.Max(0, aT.Count - bT.Count);
+        var lostB = Math.Max(0, bT.Count - aT.Count);
+        int i = 0, j = 0;
+        while (i < aT.Count)
+        {
+            if (j >= bT.Count) { result[i++] = -1; continue; }
+            if (lostB > 0 && bT[j] < aT[i]) { j++; lostB--; continue; }
+            if (lostA > 0 && bT[j] >= aUpper[i]) { result[i++] = -1; lostA--; continue; }
+            result[i++] = j++;
+        }
+        return result;
+    }
 }

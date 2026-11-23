@@ -12,6 +12,7 @@ namespace BlazorNative.PerfReport;
 internal static class Program
 {
     private const double MaxDropRate = 0.05;
+    private static readonly char[] Forbidden = [',', '|', '\n', '\r'];
     private static readonly Regex LogName = new(@"^(?<kind>boot|click)-(?<run>\d+)\.log$", RegexOptions.CultureInvariant);
 
     public static int Main(string[] args) => Run(args, Console.Error, Console.Out);
@@ -37,6 +38,11 @@ internal static class Program
                 }
             }
             if (input is null || output is null) throw new UsageException("--input and --out are required");
+            // An earlier invocation's artifacts must never be read as this one's: they go now, so an
+            // exit 2 below leaves none, and exit 0 or 1 writes fresh ones.
+            if (Directory.Exists(output))
+                foreach (var artifact in new[] { "samples.csv", "summary.md" })
+                    File.Delete(Path.Combine(output, artifact));
             if (!Directory.Exists(input)) throw new UsageException($"--input directory not found: {input}");
 
             var sideDirs = Directory.GetDirectories(input).OrderBy(d => Path.GetFileName(d), StringComparer.Ordinal).ToList();
@@ -75,11 +81,6 @@ internal static class Program
             info?.WriteLine($"perf-report: wrote samples.csv and summary.md to {output}");
             return 0;
         }
-        catch (PerfFormatException e)
-        {
-            err.WriteLine("perf-report: FAIL: " + e.Message);
-            return 1;
-        }
         catch (UsageException e)
         {
             err.WriteLine("perf-report: " + e.Message);
@@ -93,6 +94,10 @@ internal static class Program
     private static SideReport ReadSide(string dir, int minRuns, List<string> failures)
     {
         var name = Path.GetFileName(dir);
+        // The side name is a CSV field and a Markdown cell, both written without quoting: the same
+        // rule as meta.json's values.
+        if (name.IndexOfAny(Forbidden) >= 0)
+            throw new UsageException($"{dir}: a side directory name must not contain commas, pipes or newlines");
         var (sdk, commit) = ReadMeta(dir);
         var side = new SideReport(name, sdk, commit);
 
@@ -110,16 +115,27 @@ internal static class Program
         }
         foreach (var (kind, run, path) in files.OrderBy(f => f.Kind == "boot" ? 0 : 1).ThenBy(f => f.Run))
         {
+            if (kind == "boot") side.BootFiles++; else side.ClickFiles++;
+            if (run > 0) { if (kind == "boot") side.BootProcesses++; else side.ClickProcesses++; }
             var lines = File.ReadAllLines(path);
             var where = $"{name}/{Path.GetFileName(path)}";
-            var marks = new List<Mark>();
-            for (var n = 0; n < lines.Length; n++)
-                if (MarkLine.TryParse(lines[n], n + 1, where, out var mark)) marks.Add(mark);
-
-            var r = kind == "boot" ? Pairing.PairBoot(marks, lines, run, where) : Pairing.PairClicks(marks, run, where);
+            PairingResult r;
+            try
+            {
+                var marks = new List<Mark>();
+                for (var n = 0; n < lines.Length; n++)
+                    if (MarkLine.TryParse(lines[n], n + 1, where, out var mark)) marks.Add(mark);
+                r = kind == "boot" ? Pairing.PairBoot(marks, lines, run, where) : Pairing.PairClicks(marks, run, where);
+            }
+            catch (PerfFormatException e)
+            {
+                // A malformed file fails the run and contributes nothing; the other files are still
+                // read, so the partial artifacts hold everything that did parse.
+                failures.Add(e.Message);
+                continue;
+            }
             failures.AddRange(r.Violations);
             side.Samples.AddRange(r.Samples);
-            if (kind == "boot") side.BootFiles++; else side.ClickFiles++;
             if (run == 0) continue; // warm-up: its samples are kept in the CSV, its drops are not counted
             if (kind == "boot") { side.BootsAttempted += r.Attempted; side.BootsDropped += r.Dropped; }
             else { side.ClicksAttempted += r.Attempted; side.ClicksDropped += r.Dropped; }
@@ -167,7 +183,7 @@ internal static class Program
             string Get(string key)
             {
                 if (!doc.RootElement.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String
-                    || string.IsNullOrWhiteSpace(v.GetString()) || v.GetString()!.IndexOfAny([',', '\n', '\r', '|']) >= 0)
+                    || string.IsNullOrWhiteSpace(v.GetString()) || v.GetString()!.IndexOfAny(Forbidden) >= 0)
                     throw new UsageException($"{path}: \"{key}\" must be a non-empty string without commas, pipes or newlines");
                 return v.GetString()!;
             }

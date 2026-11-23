@@ -10,25 +10,27 @@ built on its output.
 dotnet run --project tools/BlazorNative.PerfReport -- --input <dir> --out <dir> --min-runs 20
 ```
 
-`--min-runs` defaults to 20. Exit codes:
+`--min-runs` defaults to 20. Every invocation first deletes `samples.csv` and `summary.md` from `--out`,
+so an earlier invocation's files never survive it. Exit codes:
 
 | Code | Meaning |
 |---|---|
 | 0 | Success. |
-| 1 | The data fails the run: a clock order violation, more than 5% of samples dropped, fewer samples than `--min-runs`, a malformed `BNPERF` line, or a side with no logs. The files are still written, for debugging. |
-| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log`. |
+| 1 | The data fails the run: a clock order violation, more than 5% of samples dropped, fewer samples than `--min-runs`, a malformed `BNPERF` line or a duplicate ruler, or a side with no logs. The files are still written, for debugging: a malformed file adds no samples, and every other file is still read. |
+| 2 | Wrong invocation or input layout: a missing argument, a missing `meta.json`, a `.log` file not named `<kind>-<run>.log`, a side directory name with a comma, pipe or newline. No files are written. |
 
 ## Input layout
 
 ```
 <input>/
-  <side>/               one directory per side, any name; it becomes the `side` column
+  <side>/               one directory per side; its name becomes the `side` column
     meta.json           { "sdk": "10.0.100", "commit": "abc1234" }
     boot-<run>.log      one cold boot per file
     click-<run>.log     many serial clicks per file
 ```
 
-`sdk` and `commit` are non-empty strings without commas, pipes or newlines. `<run>` is a number;
+The side directory's name, `sdk` and `commit` are non-empty strings without commas, pipes or newlines:
+both outputs write them unquoted. `<run>` is a number;
 run 0 is warm-up. Two files with the same kind and run number (`boot-1.log` and `boot-01.log`) are an error, exit 2. A kind (`boot` or `click`) present for one side must be present for every side.
 
 ## Mark lines
@@ -52,9 +54,14 @@ can land after the frame lines of its own click, or after the next click's post.
 order is emit order, because each point has one writer. The parser therefore splits a click log's marks
 by point, keeps each point's log order, and pairs by order and id:
 
-- The k-th `dispatch.post` has an id X. It takes the next unused `dispatch.enter` with id X and the next
-  unused `dispatch.handler` with id X, in per-point order filtered by X. If either is missing, the
-  sample is dropped.
+- The k-th `dispatch.post` has an id X. It takes the next unused `dispatch.enter` with id X, and that
+  enter takes the next unused `dispatch.handler` with id X, in per-point order filtered by X. If either
+  is missing, the sample is dropped.
+- When two of those points have unequal counts for an id, a mark is missing, and order alone would hand
+  every later click its neighbour's marks. Then at most the difference in counts is skipped: a post or
+  enter whose next partner is stamped at or after the next mark of its own point (of any id) has lost
+  its partner, and a partner stamped before the current post or enter belongs to one that was lost.
+  With equal counts nothing is skipped.
 - The click's frame is the one `frame.recv` with `handler.t <= recv.t < next post's t`. The last click
   has no upper bound. Zero or several such marks drop the sample. Its `frame.applied` is the first applied
   mark with `recv.t <= applied.t < next recv's t` (the last recv has no upper bound). A frame with no
@@ -63,7 +70,8 @@ by point, keeps each point's log order, and pairs by order and id:
 - In a boot log the first `boot.start` and the first `boot.content` are paired.
 
 The triple is chosen by order and id, not by timestamp, so the clock check below still tests the
-shared clock.
+shared clock. The resync looks at timestamps only for as many occurrences as marks are missing, so a
+real clock offset still fails every other click.
 
 ## Checks
 
@@ -103,7 +111,7 @@ Lists each side's `sdk` and `commit`, then n, median, Q1, Q3 and IQR per side, m
 milliseconds with three decimals. Run 0 is excluded. Quartiles use linear interpolation, numpy's
 default: for `[1,2,3,4,100]` the median is 3, Q1 2, Q3 4 and the IQR 2. A `Per process` section
 follows: the number of processes per side and kind (each `<kind>-<run>.log` is one process, run 0
-excluded), and for every click metric one median per run file, so a slow mode confined to some
+excluded, counted whether or not any of its samples paired), and for every click metric one median per run file, so a slow mode confined to some
 processes is visible instead of averaged away. A last section lists the dropped samples per side and why.
 
 ## Collectors

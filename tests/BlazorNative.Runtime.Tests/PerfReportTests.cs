@@ -186,6 +186,56 @@ public sealed class PerfReportTests : IDisposable
         Assert.Contains("dropped", File.ReadAllText(Path.Combine(_root, "out", "summary.md")), StringComparison.OrdinalIgnoreCase);
     }
 
+    // ---- CodeRabbit on #740: a missing middle mark must cost its own click, not misalign every
+    // later occurrence of the id into a false clock violation or a cascade of drops.
+
+    /// <summary>GoodClicks(41), all id 7, without the one line of click <paramref name="click"/> (1-based) at <paramref name="point"/>.</summary>
+    private static string GoodClicksWithout(int click, string point) =>
+        string.Join('\n', GoodClicks(41).Split('\n')
+            .Where(l => !l.Contains($" {point} seq={click} ")));
+
+    [Theory]
+    [InlineData("dispatch.enter", 40, "1 of 41")]
+    [InlineData("dispatch.handler", 40, "1 of 41")]
+    // A lost post leaves click 20's frame in click 19's window: click 19 is dropped as ambiguous,
+    // by the frame rule, and click 20 is not attempted at all.
+    [InlineData("dispatch.post", 39, "1 of 40")]
+    public void MissingMiddleMark_DropsOneClickOnly(string point, int samples, string dropped)
+    {
+        // 41 clicks of one id; click 20 lost one line. Pairing by order alone hands click 20 the
+        // marks of click 21 and shifts every later click: a false violation or 21 drops.
+        var input = WriteSide("head", ("click-1.log", GoodClicksWithout(20, point)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.True(code == 0, err);
+        var totals = Csv().Where(l => l.Contains(",dispatch,total,")).ToList();
+        Assert.Equal(samples, totals.Count);
+        Assert.All(totals, l => Assert.EndsWith(",2", l));
+        Assert.Contains($"| head | {dropped} |", File.ReadAllText(Path.Combine(_root, "out", "summary.md")));
+    }
+
+    [Fact]
+    public void MissingMark_DoesNotHideARealClockOffset()
+    {
+        // Every enter is stamped 50 ms before its post, and one enter is missing. The resync may
+        // skip one occurrence, no more: the other clicks still report the violation.
+        var sb = new System.Text.StringBuilder();
+        for (var i = 1; i <= 41; i++)
+        {
+            long b = i * 100_000_000L;
+            if (i != 20) sb.Append(Mk("dispatch.enter", b - 50_000_000, 7)).Append(Mk("dispatch.handler", b - 49_000_000, 7));
+            sb.Append(Mk("dispatch.post", b, 7)).Append(Mk("frame.recv", b + 3_000_000)).Append(Mk("frame.applied", b + 4_000_000));
+        }
+        var input = WriteSide("head", ("click-1.log", sb.ToString()));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("dispatch.enter", err);
+        Assert.Contains("precedes dispatch.post", err);
+    }
+
     [Fact]
     public void Pairing_ExtraFrameInWindow_IsDropped()
     {
@@ -632,6 +682,93 @@ public sealed class PerfReportTests : IDisposable
         var (code, err, _) = Run(input);
 
         Assert.True(code == 0, err);
+    }
+
+    // ---- CodeRabbit on #740: a failed run still writes this run's partial artifacts, and never
+    // leaves an earlier run's artifacts behind.
+
+    private string Out(string file) => Path.Combine(_root, "out", file);
+
+    private void PlantStaleArtifacts()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "out"));
+        File.WriteAllText(Out("samples.csv"), "stale\n");
+        File.WriteAllText(Out("summary.md"), "stale\n");
+    }
+
+    [Fact]
+    public void MalformedLog_ExitOne_WritesThePartialArtifacts()
+    {
+        PlantStaleArtifacts();
+        var input = WriteSide("head",
+            ("click-1.log", GoodClicks(3)),
+            ("click-2.log", $"{Prefix} dispatch.enter seq=1 t=12\n"));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("click-2.log:1", err);
+        // click-1's samples, completed before the bad file, are in this run's artifacts.
+        Assert.Equal(3, Csv().Count(l => l.Contains(",dispatch,total,1,")));
+        Assert.DoesNotContain("stale", File.ReadAllText(Out("summary.md")));
+    }
+
+    [Fact]
+    public void DuplicateRuler_ExitOne_WritesThePartialArtifacts()
+    {
+        PlantStaleArtifacts();
+        var input = WriteSide("head", ("boot-1.log", BootLog(true, true)), ("boot-2.log", BootLog(true, true, twoFullyDrawn: true)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(1, code);
+        Assert.Contains("boot-2.log", err);
+        Assert.Contains("head,10.0.100,abc1234,boot,total,1,250", Csv());
+        Assert.DoesNotContain("stale", File.ReadAllText(Out("summary.md")));
+    }
+
+    [Fact]
+    public void LayoutError_ExitTwo_LeavesNoStaleArtifacts()
+    {
+        PlantStaleArtifacts();
+        var input = WriteSide("head", ("click-one.log", GoodClicks(3)));
+
+        Assert.Equal(2, Run(input).Code);
+        Assert.False(File.Exists(Out("samples.csv")));
+        Assert.False(File.Exists(Out("summary.md")));
+    }
+
+    // ---- CodeRabbit on #740: the process rows count input files, not files that kept a sample.
+    [Fact]
+    public void Summary_ProcessCount_IncludesAFileWhoseSamplesAllDropped()
+    {
+        var noFrames = Click(100_000_000, 101_000_000, 102_000_000, null, null);
+        var input = WriteSide("head",
+            ("boot-1.log", BootLog(false, false)),
+            ("boot-2.log", $"{Prefix} boot.start seq=1 t=100000000\n"),
+            ("click-0.log", GoodClicks(3)),
+            ("click-1.log", GoodClicks(3)),
+            ("click-2.log", noFrames));
+
+        Run(input);
+
+        var summary = File.ReadAllText(Out("summary.md"));
+        Assert.Contains("| head | boot | 2 |", summary);
+        Assert.Contains("| head | click | 2 |", summary);
+    }
+
+    // ---- CodeRabbit on #740: the side name is written unquoted, so a delimiter in it is refused.
+    [Theory]
+    [InlineData("he,ad")]
+    [InlineData("he|ad")]
+    public void SideNameWithADelimiter_ExitTwo(string side)
+    {
+        var input = WriteSide(side, ("click-1.log", GoodClicks(3)));
+
+        var (code, err, _) = Run(input);
+
+        Assert.Equal(2, code);
+        Assert.Contains("side directory name", err);
     }
 
     private static void CopyDirectory(string from, string to)

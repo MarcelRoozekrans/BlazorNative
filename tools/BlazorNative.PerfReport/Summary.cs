@@ -40,6 +40,9 @@ internal sealed class SideReport(string name, string sdk, string commit)
     public int ClickFiles { get; set; }
     public int BootsAttempted { get; set; }
     public int BootsDropped { get; set; }
+    /// <summary>Boot and click input files above run 0, each one process, whether or not any of its samples paired.</summary>
+    public int BootProcesses { get; set; }
+    public int ClickProcesses { get; set; }
     public List<string> Drops { get; } = [];
 }
 
@@ -100,8 +103,8 @@ internal static class Writers
         sb.Append("| side | kind | processes |\n|---|---|---|\n");
         foreach (var s in sides)
         {
-            sb.Append($"| {s.Name} | boot | {Processes(s, IsBootMetric)} |\n");
-            sb.Append($"| {s.Name} | click | {Processes(s, m => !IsBootMetric(m))} |\n");
+            sb.Append($"| {s.Name} | boot | {s.BootProcesses} |\n");
+            sb.Append($"| {s.Name} | click | {s.ClickProcesses} |\n");
         }
         sb.Append("\n| side | metric | part | run | n | median |\n|---|---|---|---|---|---|\n");
         foreach (var s in sides)
@@ -116,9 +119,6 @@ internal static class Writers
             }
         }
     }
-
-    private static int Processes(SideReport s, Func<string, bool> metric) =>
-        s.Samples.Where(x => x.Run > 0 && metric(x.Metric)).Select(x => x.Run).Distinct().Count();
 
     private static bool IsBootMetric(string m) => m is Metrics.Boot or Metrics.BootFullyDrawn or Metrics.BootTotalTime;
 
