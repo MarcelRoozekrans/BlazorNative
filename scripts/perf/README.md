@@ -132,8 +132,8 @@ violations, through `BoundedScript`, in the required .NET lane.
 `scripts/perf/android-collect.ps1` writes the layout above from an Android device or emulator, one kind per
 call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
 accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them.
-Each must be non-empty, with no commas, pipes or newlines; the parser also refuses a double quote. Runs are numbered 0 to `-Runs`, run 0
-being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Before anything is written, every requested run's log must be absent unless `-Force` is passed, and when any `<kind>-<n>.log` of either kind will remain in the side directory, its `meta.json` must already name the same `-Sdk` and `-Commit`, so a call cannot relabel samples it did not collect. Failures go to stderr with exit 1. Every
+Each must be non-empty, with no commas, pipes, double quotes or newlines. Runs are numbered 0 to `-Runs`, run 0
+being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Under `-Force` the logs a call replaces are deleted before `meta.json` is rewritten, so a collection that fails cannot leave another build's log under the new label. Before anything is written, every requested run's log must be absent unless `-Force` is passed, and when any `<kind>-<n>.log` of either kind will remain in the side directory, its `meta.json` must already name the same `-Sdk` and `-Commit`, so a call cannot relabel samples it did not collect. Failures go to stderr with exit 1. Every
 adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
 `<Out>/q1-<side>-default.txt`, `-default-click.txt` and `-verbose.txt`, outside the side directory. Android's
 `q1` is: a default launch, asserting no `BNPERF` line and no V, D or I line from a `BlazorNative*` tag, with
@@ -156,7 +156,7 @@ add `--info`. Every launch passes `--terminate-running-process`.
   `BN_LAUNCH_COMPONENT` like `BN_LOG_LEVEL` (see `BnDeepLink.resolveLaunchComponent`), so no URL and no
   `Open in` sheet is involved. `blazornative://perf` still opens PerfProbe for manual runs.
 - `click` runs `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` with
-  `TEST_RUNNER_PERF_CLICKS` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
+  `TEST_RUNNER_PERF_CLICKS`, `TEST_RUNNER_PERF_LEVEL=Verbose` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
   build-for-testing, and waits for every click's `dispatch.post`, `dispatch.enter` and `dispatch.handler` before dumping.
   The PR lane skips that class. Its log is not the subsystem alone. .NET's Console is NSLog on iOS, and
   under XCTest no stderr pump runs on either side: both shells install it in
@@ -168,6 +168,8 @@ add `--info`. Every launch passes `--terminate-running-process`.
   failed wait writes every `BNPERF` record of the window, with its subsystem and category, to
   `<Out>/click-diag-<side>-<run>.txt`.
 - `q1` launches PerfProbe the same way and reads the whole launched process, not only the subsystem. It
+  removes `SIMCTL_CHILD_BN_LOG_LEVEL` and `TEST_RUNNER_BN_LOG_LEVEL` from the child's environment at the default
+  level, so a level set in the caller's environment cannot reach the default-level runs. It
   asserts no `BNPERF` line, no debug or info line from the subsystem, and no .NET line below Warn at the
   default level, with a control that the launched process logged. The .NET lines carry no level in the
   unified log: NSLog records them as the app's Default records and the stderr pump relays them as Default

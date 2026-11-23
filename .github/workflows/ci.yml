@@ -4,7 +4,7 @@
 #
 #   build-test (windows-latest) — the local verification procedure verbatim
 #   (setup.ps1 §1–7 documents the toolchain pins):
-#     build (analyzers ride it) → .NET tests (3000 passed / 0 skipped) →
+#     build (analyzers ride it) → .NET tests (3038 passed / 0 skipped) →
 #     three NativeAOT publishes of samples/BlazorNative.SampleApp — the
 #     publish head since Phase 8.0: the app owns PublishAot, the exports stay
 #     in Runtime via UnmanagedEntryPointsAssembly, and the artifact is
@@ -2413,7 +2413,8 @@ jobs:
       # 2934 -> 2938 (19.2 Task 8 fix, +2, 2026-11-23): Runtime 1293 -> 1295. IosRouteComponentsDriftTests: every component in BnDeepLink.routeComponents is a registered page and /perf is PerfProbe, and the planted-bad control for the detector.
       # 2938 -> 2966 (19.2 final review, +14, 2026-11-23): Runtime 1295 -> 1309. BnPerfMarksTests +3: a mark below WakeDepth wakes no writer and the poll still drains in order, the WakeDepth mark wakes a parked writer, a failed writer start drops one line and is retried. PerfReportTests +1: the summary's per-process section. PerfCollectorTests +10: every collector detector passes a good input and reds on planted violations. The 2928 -> 2930 and 2930 -> 2934 lines above now give fact deltas, as the earlier ones do; they gave test deltas. 2934 -> 2938 gave its fact delta, +2, all along.
       # 2966 -> 3000 (19.2 CodeRabbit fix wave, +17 facts on each of two target frameworks, 2026-11-23): Runtime 1309 -> 1326. PerfReportTests +10: pairing survives a missing enter, handler or post mark (3), a missing mark does not hide a real clock offset, a malformed log or a duplicate ruler exits 1 with both partial artifacts, a layout error leaves no stale artifacts, the process rows count a file whose samples all dropped, and a side name with a comma or pipe exits 2 (2). PerfCollectorTests +7: the side-write guard, the bounded process wait (2), exactly one instrumented test, the fully-drawn component match, the side cleanup after a failure, and the simctl log and launch arguments.
-      - name: .NET tests (assert 3000 passed / 0 skipped)
+      # 3000 -> 3038 (19.2 CodeRabbit second review, +19 facts on each of two target frameworks, 2026-11-23): Runtime 1326 -> 1345. PerfReportTests +9: an out-of-range ruler fails its own file (3), an out-of-range run number exits 2, a non-object meta.json exits 2, a comma, pipe or double quote in sdk or commit exits 2 (4), a lost frame.recv cannot lend its applied mark to the earlier click, and the side-name delimiter theory became one comma fact. PerfCollectorTests +10: the replaced run is removed before the relabel, a relative -Out resolves from the PowerShell location, each log read gets the budget left (2), Stop-Side bounds every tool call, the measurement env sets and clears the levels, a null env var is removed from the child, only the selected activity's Fully drawn records are kept, both boot marks come from the launched pid, and a meta value refuses a double quote.
+      - name: .NET tests (assert 3038 passed / 0 skipped)
         run: |
           $log = Join-Path $env:RUNNER_TEMP "dotnet-test.log"
           dotnet test BlazorNative.sln -c Release --no-build --nologo -v minimal --collect "XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults 2>&1 | Tee-Object -FilePath $log
@@ -2431,8 +2432,8 @@ jobs:
           $passed  = ($results | ForEach-Object { [int]$_.Groups[2].Value } | Measure-Object -Sum).Sum
           $skipped = ($results | ForEach-Object { [int]$_.Groups[3].Value } | Measure-Object -Sum).Sum
           Write-Host "dotnet test totals across $($results.Count) projects: passed=$passed skipped=$skipped failed=$failed"
-          if ($failed -ne 0 -or $passed -ne 3000 -or $skipped -ne 0) {
-            throw ".NET test baseline drift: expected 3000 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
+          if ($failed -ne 0 -or $passed -ne 3038 -or $skipped -ne 0) {
+            throw ".NET test baseline drift: expected 3038 passed / 0 skipped / 0 failed, got $passed passed / $skipped skipped / $failed failed. Baseline changes must be deliberate — update ci.yml alongside the change."
           }
 
       # The coverage job below gates these reports and uploads them to Codecov. It
