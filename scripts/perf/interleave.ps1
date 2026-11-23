@@ -54,6 +54,9 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
+# perf-common.ps1 holds Select-RunningAppJobs, the pure half of Stop-Side on iOS, where PerfCollectorTests reach it.
+. (Join-Path $PSScriptRoot 'perf-common.ps1')
+
 function Read-Meta {
     param([string]$Path)
     $m = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
@@ -118,9 +121,7 @@ function Stop-Side {
     }
 }
 
-# The simulator's launchd jobs for the app that have a pid. A UIKit app's label is
-# UIKitApplication:<bundle id>[<hex>][...], so the bracket after the id keeps io.blazornative.bnhost from
-# matching io.blazornative.bnhost.v015.
+# The simulator's launchd jobs for the app that have a pid; perf-common.ps1's Select-RunningAppJobs picks them.
 function Get-RunningAppJobs {
     param([string]$BundleId)
     $list = & xcrun simctl spawn $Udid launchctl list
@@ -128,12 +129,6 @@ function Get-RunningAppJobs {
     return , @(Select-RunningAppJobs @($list) $BundleId)
 }
 
-# Pure: the `launchctl list` lines (PID, status, label) of the app's jobs whose PID column is a number.
-function Select-RunningAppJobs {
-    param([string[]]$Lines, [string]$BundleId)
-    $label = 'UIKitApplication:' + [regex]::Escape($BundleId) + '\['
-    return @($Lines | Where-Object { $_ -match ('^\s*\d+\s+\S+\s+' + $label) })
-}
 
 function Invoke-Collector {
     param([object]$Side, [object]$Other, [string]$Kind, [int]$Run = -1)

@@ -21,11 +21,13 @@
     q1     one default launch asserting zero BNPERF lines and zero V, D or I lines from BlazorNative* tags,
            with a control that the log was read as logcat lines; then one default-level run of
            PerfMeasurementTest for -Q1Clicks clicks, through the click kind's am instrument and logcat,
-           asserting zero BNPERF lines, so the .NET dispatch marks are shown quiet too; then one Verbose
+           asserting zero BNPERF lines and the same tag check, the androidTest sources' own tags excluded,
+           so the .NET dispatch marks and the relayed .NET lines are shown quiet too; then one Verbose
            launch asserting boot.start, boot.content, frame.recv and frame.applied. That the dispatch marks
            are present at Verbose is the click kind's check.
 
-  The parsing and assertion logic is in functions, so the file can be dot-sourced without running.
+  The parsing and assertion logic is in functions, so the file can be dot-sourced without running. The
+  functions both collectors share are in perf-common.ps1, which this file dot-sources from its own directory.
 
   Requirements: pwsh 7 (the script uses .NET Core APIs, ProcessStartInfo.ArgumentList and
   Process.Kill with a process tree; Windows PowerShell 5.1 can parse the file but is not supported for running it), adb on PATH, and a device that accepts `logcat -G 16M`. The boot and click
@@ -57,6 +59,12 @@ $script:ExtraComponent = 'io.blazornative.shell.EXTRA_COMPONENT'
 $script:ExtraLogLevel = 'io.blazornative.shell.EXTRA_LOG_LEVEL'
 $script:PerfAnnotation = 'io.blazornative.shell.PerfMeasurement'
 $script:TestRunner = 'io.blazornative.shell.BlazorNativeTestRunner'
+# The tags the androidTest sources log under. They are the instrumentation's own lines, not the
+# framework's, and run in the app's process; PerfMeasurementTest writes none of them today.
+$script:InstrumentationTags = @('BlazorNative.Test', 'BlazorNativeTest')
+
+# The shared pure functions: the mark counts, Q1 Verbose, the side and id check, the run list and paths.
+. (Join-Path $PSScriptRoot 'perf-common.ps1')
 
 # ── Pure functions: no device, testable by dot-sourcing ─────────────────────
 
@@ -68,15 +76,14 @@ function ConvertFrom-LogcatLine {
     return [pscustomobject]@{ Priority = $m.Groups[1].Value; Tag = $m.Groups[2].Value; Message = $m.Groups[3].Value }
 }
 
-# The mark points present in a log: every `BNPERF <point> ` token.
-function Get-MarkPoints {
-    param([string[]]$Lines)
-    $points = New-Object 'System.Collections.Generic.HashSet[string]'
-    foreach ($l in $Lines) {
-        $m = [regex]::Match($l, 'BNPERF (\S+) ')
-        if ($m.Success) { [void]$points.Add($m.Groups[1].Value) }
-    }
-    return , $points
+# A framework line below Warn: V, D or I from a BlazorNative* tag that is not one of the instrumentation's.
+# Returns the failure text, or $null. -Parsed is a ConvertFrom-LogcatLine result.
+function Get-GatedTagFailure {
+    param([object]$Parsed, [string]$Line, [string]$Where)
+    if ($null -eq $Parsed) { return $null }
+    if ($Parsed.Tag -notlike 'BlazorNative*' -or 'V', 'D', 'I' -notcontains $Parsed.Priority) { return $null }
+    if ($script:InstrumentationTags -contains $Parsed.Tag) { return $null }
+    return "$($Parsed.Priority) line from tag $($Parsed.Tag) $Where`: $Line"
 }
 
 # Q1 default level: returns the failures, an empty list when the contract holds. The tag check holds
@@ -91,19 +98,19 @@ function Test-Q1Default {
         if ($l -match 'BNPERF ') { $failures.Add("BNPERF line at the default level: $l"); continue }
         $p = ConvertFrom-LogcatLine $l
         if ($null -ne $p -and $p.Message -match '^Fully drawn \S+: \+[0-9ms]+$') { $fullyDrawn = $true }
-        if ($null -ne $p -and $p.Tag -like 'BlazorNative*' -and 'V', 'D', 'I' -contains $p.Priority) {
-            $failures.Add("$($p.Priority) line from tag $($p.Tag) at the default level: $l")
-        }
+        $gated = Get-GatedTagFailure $p $l 'at the default level'
+        if ($gated) { $failures.Add($gated) }
     }
     if (-not $fullyDrawn) { $failures.Add("control failed: no Fully drawn line parsed as a logcat line of its own among $(@($Lines).Count) lines, so the tag check is not shown to have read the log line by line") }
     return , $failures
 }
 
-# Q1 default-level click: only the BNPERF half applies. The instrumentation itself logs at I from tags
-# that are not the framework's, and the click kind's log source is the whole logcat. The control, as on
-# iOS, is that the window holds the app's own records: the test's launch of $Package must appear as a
-# `Displayed <package>/<activity>` line that parses as a logcat line of its own, so an unread or joined
-# log cannot pass as a quiet one.
+# Q1 default-level click: zero BNPERF lines, and the default launch's tag check: no V, D or I line from a
+# BlazorNative* tag. The click kind's log source is the whole logcat, so the instrumentation's own lines
+# are in it: its runner logs from tags that are not BlazorNative*, and the androidTest sources' own
+# BlazorNative* tags are excluded by name. The control, as on iOS, is that the window holds the app's own
+# records: the test's launch of $Package must appear as a `Displayed <package>/<activity>` line that
+# parses as a logcat line of its own, so an unread or joined log cannot pass as a quiet one.
 function Test-Q1DefaultClick {
     param([string[]]$Lines, [string]$Package)
     $failures = New-Object System.Collections.Generic.List[string]
@@ -113,26 +120,11 @@ function Test-Q1DefaultClick {
         if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l"); continue }
         $p = ConvertFrom-LogcatLine $l
         if ($null -ne $p -and $p.Message -match $displayed) { $control = $true }
+        $gated = Get-GatedTagFailure $p $l 'in a default-level click run'
+        if ($gated) { $failures.Add($gated) }
     }
     if (-not $control) { $failures.Add("control failed: no 'Displayed $Package/...' line parsed as a logcat line of its own among $(@($Lines).Count) lines, so the default-level click window is not shown to hold the app's launch") }
     return , $failures
-}
-
-# Q1 Verbose: every required point must be present.
-function Test-Q1Verbose {
-    param([string[]]$Lines)
-    $failures = New-Object System.Collections.Generic.List[string]
-    $points = Get-MarkPoints $Lines
-    foreach ($need in 'boot.start', 'boot.content', 'frame.recv', 'frame.applied') {
-        if (-not $points.Contains($need)) { $failures.Add("no BNPERF $need at Verbose") }
-    }
-    return , $failures
-}
-
-function Test-LogHasMark {
-    param([string[]]$Lines, [string]$Point)
-    foreach ($l in $Lines) { if ($l -match ('BNPERF ' + [regex]::Escape($Point) + ' ')) { return $true } }
-    return $false
 }
 
 function Test-LogHasFullyDrawn {
@@ -156,68 +148,6 @@ function Test-InstrumentPassed {
     param([string[]]$Lines)
     $text = $Lines -join "`n"
     return ($text -match '(?m)^OK \(\d+ tests?\)') -and ($text -notmatch 'FAILURES!!!') -and ($text -notmatch 'INSTRUMENTATION_FAILED')
-}
-
-# The parser's meta.json rule: a non-empty string without commas, pipes or newlines. Returns an error or $null.
-function Test-MetaValue {
-    param([string]$Name, [string]$Value)
-    if ([string]::IsNullOrWhiteSpace($Value)) { return "-$Name is required for the boot and click kinds" }
-    if ($Value.IndexOfAny([char[]]@(',', '|', "`n", "`r")) -ge 0) { return "-$Name must not contain commas, pipes or newlines" }
-    return $null
-}
-
-# The side and the app id must agree, so a baseline run can never measure HEAD's app: v015 needs an id
-# ending in .v015 (the backport's suffix), head one that does not. Returns the error, or null.
-function Test-SideId {
-    param([string]$Side, [string]$Id)
-    if ([string]::IsNullOrWhiteSpace($Id)) { return "-Package must not be empty" }
-    $suffixed = $Id.EndsWith('.v015', [System.StringComparison]::Ordinal)
-    if ($Side -eq 'v015' -and -not $suffixed) { return "-Side v015 needs the backport's package id ending in .v015, got '$Id'" }
-    if ($Side -eq 'head' -and $suffixed) { return "-Side head needs HEAD's package id, not the backport's '$Id'" }
-    return $null
-}
-
-function Get-MarkCount {
-    param([string[]]$Lines, [string]$Point)
-    $n = 0
-    foreach ($l in $Lines) { if ($l -match ('BNPERF ' + [regex]::Escape($Point) + ' ')) { $n++ } }
-    return $n
-}
-
-# A click log is complete when every click's post and handler are in, and post equals the click count.
-function Test-ClickLogComplete {
-    param([string[]]$Lines, [int]$Clicks)
-    if ($Clicks -lt 1) { return $false }
-    $post = Get-MarkCount $Lines 'dispatch.post'
-    $handler = Get-MarkCount $Lines 'dispatch.handler'
-    return ($post -eq $Clicks) -and ($handler -ge $post)
-}
-
-# The run numbers one call collects: 0..Runs, or exactly -Run when it is 0 or more.
-function Get-RunList {
-    param([int]$Runs, [int]$Run = -1)
-    if ($Run -ge 0) { return , @($Run) }
-    return , @(0..$Runs)
-}
-
-# The path for a run's log; throws when it exists, which is how a duplicate run number is refused.
-function Get-RunLogPath {
-    param([string]$SideDir, [string]$Kind, [int]$Run)
-    $path = Join-Path $SideDir ('{0}-{1}.log' -f $Kind, $Run)
-    if ((Test-Path -LiteralPath $path) -and -not $script:Force) {
-        throw "refusing to overwrite ${path}: the parser rejects duplicate run numbers. Delete the side directory $SideDir, or pass -Force."
-    }
-    return $path
-}
-
-# Under -Force: removes the side directory's <kind>-<n>.log files for the kind being collected, and nothing
-# else, so a run above the new -Runs cannot survive from an earlier collection.
-function Remove-KindLogs {
-    param([string]$SideDir, [string]$Kind)
-    if (-not (Test-Path -LiteralPath $SideDir)) { return }
-    foreach ($f in Get-ChildItem -LiteralPath $SideDir -File) {
-        if ($f.Name -match ('^' + [regex]::Escape($Kind) + '-\d+\.log$')) { Remove-Item -LiteralPath $f.FullName }
-    }
 }
 
 # ── Device functions ────────────────────────────────────────────────────────
@@ -331,33 +261,40 @@ function Invoke-ClickRun {
 function Invoke-Q1 {
     param([string]$OutDir, [string]$SideName)
     $failures = New-Object System.Collections.Generic.List[string]
+    try {
+        Start-Cold $false | Out-Null
+        $default = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l } 'the Fully drawn line at the default level'
+        # Let late marks and shell logs reach the log before it is read.
+        Start-Sleep -Seconds 3
+        $default = Get-Logcat
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
+        foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
-    Start-Cold $false | Out-Null
-    $default = Wait-ForLog { param($l) Test-LogHasFullyDrawn $l } 'the Fully drawn line at the default level'
-    # Let late marks and shell logs reach the log before it is read.
-    Start-Sleep -Seconds 3
-    $default = Get-Logcat
-    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
-    foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
+        Invoke-Measurement $script:Q1Clicks 'default'
+        # The window the click kind waits for its tail marks in, so a late .NET mark would be seen.
+        Start-Sleep -Seconds 5
+        $clickLog = Get-Logcat
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
+        foreach ($f in (Test-Q1DefaultClick $clickLog $script:Package)) { $failures.Add($f) }
+        Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
 
-    Invoke-Measurement $script:Q1Clicks 'default'
-    # The window the click kind waits for its tail marks in, so a late .NET mark would be seen.
-    Start-Sleep -Seconds 5
-    $clickLog = Get-Logcat
-    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
-    foreach ($f in (Test-Q1DefaultClick $clickLog $script:Package)) { $failures.Add($f) }
-    Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
+        Start-Cold $true | Out-Null
+        $verbose = Wait-ForLog { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose'
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
+        foreach ($f in (Test-Q1Verbose $verbose)) { $failures.Add($f) }
 
-    Start-Cold $true | Out-Null
-    $verbose = Wait-ForLog { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose'
-    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
-    foreach ($f in (Test-Q1Verbose $verbose)) { $failures.Add($f) }
-
-    if ($failures.Count -gt 0) {
-        $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
-        throw "q1 failed with $($failures.Count) violation(s)"
+        if ($failures.Count -gt 0) {
+            $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
+            throw "q1 failed with $($failures.Count) violation(s)"
+        }
+        Write-Host 'q1 passed: quiet at the default level for a launch and a click, all boot marks at Verbose'
     }
-    Write-Host 'q1 passed: quiet at the default level for a launch and a click, all boot marks at Verbose'
+    finally {
+        # A timeout or failed assertion must not leave the app or its test package running, as on iOS.
+        foreach ($pkg in "$($script:Package).test", $script:Package) {
+            try { Invoke-Adb 10 'shell' 'am' 'force-stop' $pkg | Out-Null } catch { }
+        }
+    }
 }
 
 # ── Main: skipped when dot-sourced ──────────────────────────────────────────
@@ -367,7 +304,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Serial', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
-        $idErr = Test-SideId $Side $Package
+        $idErr = Test-SideId $Side $Package 'Package'
         if ($idErr) { throw $idErr }
         $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
         $sideDir = Join-Path $Out $Side

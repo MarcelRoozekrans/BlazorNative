@@ -26,18 +26,20 @@
            as SIMCTL_CHILD_ variables. Waits for boot.start and boot.content and dumps the window.
     click  `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` for -Clicks
            serial clicks, then waits for every dispatch.post and dispatch.handler mark and dumps the window.
-    q1     one default launch of PerfProbe asserting zero BNPERF lines and zero debug or info lines from the subsystem,
-           with a positive control that the process ran; then one default-level run of BnPerfMeasurementTests for
-           -Q1Clicks clicks, read with the click kind's predicate, asserting zero BNPERF lines, with a control that
-           the window holds the host's records; then one Verbose launch asserting boot.start,
-           boot.content, frame.recv and frame.applied.
+    q1     one default launch of PerfProbe, read for the whole process, asserting zero BNPERF lines, zero debug or
+           info lines from the subsystem and zero .NET lines below Warn ([BN|I|, [BN|D|, [BN|V|), with a positive
+           control that the process ran; then one default-level run of BnPerfMeasurementTests for -Q1Clicks
+           clicks, read with the click kind's predicate, asserting zero BNPERF lines, and read for the whole test
+           host, asserting zero .NET lines below Warn, with a control that the window holds the host's records;
+           then one Verbose launch asserting boot.start, boot.content, frame.recv and frame.applied.
 
   Environment passed to the app: BN_LOG_LEVEL must be the NAME Verbose. BnLogLevel.fromName does not read
   digits, so 5 would resolve to the default and the run would hold no marks. `simctl launch` has no
   per-launch flag for it on every Xcode version, so q1 passes it as SIMCTL_CHILD_BN_LOG_LEVEL, and xcodebuild
   gets TEST_RUNNER_BN_LOG_LEVEL and TEST_RUNNER_PERF_CLICKS.
 
-  The parsing and assertion logic is in functions, so the file can be dot-sourced without running.
+  The parsing and assertion logic is in functions, so the file can be dot-sourced without running. The
+  functions both collectors share are in perf-common.ps1, which this file dot-sources from its own directory.
 
   Requirements: pwsh 7 (the script uses .NET Core APIs, ProcessStartInfo.ArgumentList and Process.Kill with
   a process tree; Windows PowerShell 5.1 can parse the file but is not supported for running it), macOS with
@@ -75,18 +77,10 @@ $script:PerfComponent = 'PerfProbe'
 # The app's process name, the executable of BnHost.app on both sides.
 $script:Process = 'BnHost'
 
-# ── Pure functions: no simulator, testable by dot-sourcing ──────────────────
+# The shared pure functions: the mark counts, Q1 Verbose, the side and id check, the run list and paths.
+. (Join-Path $PSScriptRoot 'perf-common.ps1')
 
-# The mark points present in a log: every `BNPERF <point> ` token.
-function Get-MarkPoints {
-    param([string[]]$Lines)
-    $points = New-Object 'System.Collections.Generic.HashSet[string]'
-    foreach ($l in $Lines) {
-        $m = [regex]::Match($l, 'BNPERF (\S+) ')
-        if ($m.Success) { [void]$points.Add($m.Groups[1].Value) }
-    }
-    return , $points
-}
+# ── Pure functions: no simulator, testable by dot-sourcing ──────────────────
 
 # One `log show --style ndjson` line as an object with Type, Subsystem, Pid and Message. Null when it is
 # not a log record (the header lines, blank lines).
@@ -104,17 +98,44 @@ function ConvertFrom-OsLogLine {
     }
 }
 
-# Q1 default level: returns the failures, an empty list when the contract holds. The lines are ndjson.
+# A .NET framework line below Warn: `[BN|I|`, `[BN|D|` or `[BN|V|`. The .NET lines are not typed by level in
+# the unified log: NSLog records them as the app's own Default records, and the stderr pump relays them as
+# subsystem records of category native, also Default. Only the prefix says what level they were written at.
+function Test-GatedDotNetLine {
+    param([string]$Line)
+    return $Line -match '\[BN\|[IDV]\|'
+}
+
+# Q1 default level: returns the failures, an empty list when the contract holds. The lines are ndjson, the
+# whole launched process: a debug or info record of the subsystem, or a gated .NET line from any source.
 function Test-Q1Default {
     param([string[]]$Lines)
     $failures = New-Object System.Collections.Generic.List[string]
     foreach ($l in $Lines) {
         if ($l -match 'BNPERF ') { $failures.Add("BNPERF line at the default level: $l"); continue }
+        if (Test-GatedDotNetLine $l) { $failures.Add(".NET line below Warn at the default level: $l"); continue }
         $r = ConvertFrom-OsLogLine $l
         if ($null -ne $r -and $r.Subsystem -eq $script:Subsystem -and 'Debug', 'Info' -contains $r.Type) {
             $failures.Add("$($r.Type) line from subsystem $($r.Subsystem) at the default level: $l")
         }
     }
+    return , $failures
+}
+
+# Q1 default-level click: zero BNPERF lines in the click predicate's window, and in the test host's whole
+# window (ndjson) no gated .NET line, with the control that the host window holds a record of the process,
+# so an empty click log is quiet, not unread.
+function Test-Q1DefaultClick {
+    param([string[]]$ClickLines, [string[]]$HostLines)
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($l in $ClickLines) { if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l") } }
+    $control = $false
+    foreach ($l in $HostLines) {
+        $r = ConvertFrom-OsLogLine $l
+        if ($null -ne $r -and $r.Pid -ge 0) { $control = $true }
+        if (Test-GatedDotNetLine $l) { $failures.Add(".NET line below Warn in a default-level click run: $l") }
+    }
+    if (-not $control) { $failures.Add("control failed: the default-level click window holds no record of the $($script:Process) process") }
     return , $failures
 }
 
@@ -138,23 +159,6 @@ function Get-LaunchPid {
     return $null
 }
 
-# Q1 Verbose: every required point must be present.
-function Test-Q1Verbose {
-    param([string[]]$Lines)
-    $failures = New-Object System.Collections.Generic.List[string]
-    $points = Get-MarkPoints $Lines
-    foreach ($need in 'boot.start', 'boot.content', 'frame.recv', 'frame.applied') {
-        if (-not $points.Contains($need)) { $failures.Add("no BNPERF $need at Verbose") }
-    }
-    return , $failures
-}
-
-function Test-LogHasMark {
-    param([string[]]$Lines, [string]$Point)
-    foreach ($l in $Lines) { if ($l -match ('BNPERF ' + [regex]::Escape($Point) + ' ')) { return $true } }
-    return $false
-}
-
 # `xcodebuild test` prints "** TEST SUCCEEDED **", `test-without-building` "** TEST EXECUTE SUCCEEDED **", and
 # both an "Executed 1 test" summary; the marker and the summary are both required, so a
 # run that executed nothing (a class name that matched no test) is not a pass.
@@ -162,41 +166,6 @@ function Test-XcodebuildPassed {
     param([string[]]$Lines)
     $text = $Lines -join "`n"
     return ($text -match '\*\* TEST (EXECUTE )?SUCCEEDED \*\*') -and ($text -match 'Executed 1 test, with 0 failures') -and ($text -notmatch '\*\* TEST (EXECUTE )?FAILED \*\*')
-}
-
-# The parser's meta.json rule: a non-empty string without commas, pipes or newlines. Returns an error or $null.
-function Test-MetaValue {
-    param([string]$Name, [string]$Value)
-    if ([string]::IsNullOrWhiteSpace($Value)) { return "-$Name is required for the boot and click kinds" }
-    if ($Value.IndexOfAny([char[]]@(',', '|', "`n", "`r")) -ge 0) { return "-$Name must not contain commas, pipes or newlines" }
-    return $null
-}
-
-# The side and the app id must agree, so a baseline run can never measure HEAD's app: v015 needs an id
-# ending in .v015 (the backport's suffix), head one that does not. Returns the error, or null.
-function Test-SideId {
-    param([string]$Side, [string]$Id)
-    if ([string]::IsNullOrWhiteSpace($Id)) { return "-Bundle must not be empty" }
-    $suffixed = $Id.EndsWith('.v015', [System.StringComparison]::Ordinal)
-    if ($Side -eq 'v015' -and -not $suffixed) { return "-Side v015 needs the backport's bundle id ending in .v015, got '$Id'" }
-    if ($Side -eq 'head' -and $suffixed) { return "-Side head needs HEAD's bundle id, not the backport's '$Id'" }
-    return $null
-}
-
-function Get-MarkCount {
-    param([string[]]$Lines, [string]$Point)
-    $n = 0
-    foreach ($l in $Lines) { if ($l -match ('BNPERF ' + [regex]::Escape($Point) + ' ')) { $n++ } }
-    return $n
-}
-
-# A click log is complete when every click's post and handler are in, and post equals the click count.
-function Test-ClickLogComplete {
-    param([string[]]$Lines, [int]$Clicks)
-    if ($Clicks -lt 1) { return $false }
-    $post = Get-MarkCount $Lines 'dispatch.post'
-    $handler = Get-MarkCount $Lines 'dispatch.handler'
-    return ($post -eq $Clicks) -and ($handler -ge $post)
 }
 
 # The xcodebuild deadline: a margin for the build products and the boot, plus time per click.
@@ -218,33 +187,6 @@ function Get-LaunchEnv {
     $envVars = @{ SIMCTL_CHILD_BN_LAUNCH_COMPONENT = $Component }
     if ($VerboseLevel) { $envVars['SIMCTL_CHILD_BN_LOG_LEVEL'] = 'Verbose' }
     return $envVars
-}
-
-# The run numbers one call collects: 0..Runs, or exactly -Run when it is 0 or more.
-function Get-RunList {
-    param([int]$Runs, [int]$Run = -1)
-    if ($Run -ge 0) { return , @($Run) }
-    return , @(0..$Runs)
-}
-
-# The path for a run's log; throws when it exists, which is how a duplicate run number is refused.
-function Get-RunLogPath {
-    param([string]$SideDir, [string]$Kind, [int]$Run)
-    $path = Join-Path $SideDir ('{0}-{1}.log' -f $Kind, $Run)
-    if ((Test-Path -LiteralPath $path) -and -not $script:Force) {
-        throw "refusing to overwrite ${path}: the parser rejects duplicate run numbers. Delete the side directory $SideDir, or pass -Force."
-    }
-    return $path
-}
-
-# Under -Force: removes the side directory's <kind>-<n>.log files for the kind being collected, and nothing
-# else, so a run above the new -Runs cannot survive from an earlier collection.
-function Remove-KindLogs {
-    param([string]$SideDir, [string]$Kind)
-    if (-not (Test-Path -LiteralPath $SideDir)) { return }
-    foreach ($f in Get-ChildItem -LiteralPath $SideDir -File) {
-        if ($f.Name -match ('^' + [regex]::Escape($Kind) + '-\d+\.log$')) { Remove-Item -LiteralPath $f.FullName }
-    }
 }
 
 # ── Process functions ───────────────────────────────────────────────────────
@@ -437,15 +379,13 @@ function Invoke-Q1 {
         $launch = Start-Launch $false
         # Nothing marks the end of a boot at the default level, so give it a bounded settle before reading.
         Start-Sleep -Seconds $script:SettleSeconds
-        $default = Get-OsLog $launch.Start 'ndjson'
+        # The whole launched process, not only the subsystem: the .NET lines NSLog records are the app's own
+        # records outside the subsystem, and a gated one must be seen wherever it landed.
+        $default = Get-OsLog $launch.Start 'ndjson' "processID == $($launch.Pid)"
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
-        if (-not (Test-LaunchControl $default $launch.Pid)) {
-            # This control proves only that the launched process ran and logged. That debug capture works
-            # is proved by the Verbose phase below: its marks are debug records read through the same persistence.
-            # The control needs a record from the process itself; the subsystem filter may hide it, so ask unfiltered.
-            $any = (Invoke-Simctl 90 'spawn' $script:Udid 'log' 'show' '--style' 'ndjson' '--start' $launch.Start '--predicate' "processID == $($launch.Pid)").Lines
-            if (-not (Test-LaunchControl $any $launch.Pid)) { $failures.Add("positive control failed: process $($launch.Pid) logged nothing, so the default launch is not shown to have happened") }
-        }
+        # This control proves only that the launched process ran and logged. That debug capture works
+        # is proved by the Verbose phase below: its marks are debug records read through the same persistence.
+        if (-not (Test-LaunchControl $default $launch.Pid)) { $failures.Add("positive control failed: process $($launch.Pid) logged nothing, so the default launch is not shown to have happened") }
         foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
         # The default-level click: the .NET dispatch marks, read from the click kind's predicate and log.
@@ -454,12 +394,10 @@ function Invoke-Q1 {
         Start-Sleep -Seconds 5
         $clickLog = Get-OsLog $clickStart 'compact' (Get-ClickPredicate)
         Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
-        foreach ($l in $clickLog) { if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l") } }
-        # Control: the window is readable and holds the test host's records, so an empty click log is quiet, not unread.
+        # The test host's whole window: the gated .NET line check and the control that the window is readable.
         $hostLog = Get-OsLog $clickStart 'ndjson' ('process == "' + $script:Process + '"')
-        if (@($hostLog | Where-Object { $_ -match '"processID"' }).Count -eq 0) {
-            $failures.Add('control failed: the default-level click window holds no record of the BnHost process')
-        }
+        Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click-host.txt") -Value $hostLog -Encoding UTF8
+        foreach ($f in (Test-Q1DefaultClick $clickLog $hostLog)) { $failures.Add($f) }
         Stop-App
 
         $launch = Start-Launch $true
@@ -488,7 +426,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($required in 'Udid', 'Side', 'Kind', 'Out') {
             if (-not (Get-Variable $required -ValueOnly)) { throw "-$required is required" }
         }
-        $idErr = Test-SideId $Side $Bundle
+        $idErr = Test-SideId $Side $Bundle 'Bundle'
         if ($idErr) { throw $idErr }
         if ('click', 'q1' -contains $Kind -and -not $DerivedData) { throw '-DerivedData is required for the click and q1 kinds: the directory of a build-for-testing result' }
         $script:Udid = $Udid; $script:Bundle = $Bundle; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds
