@@ -1304,6 +1304,15 @@ final class BnWidgetMapper {
             // the guard dropped — a dispatch from inside the guard would be
             // swallowed, and the clamped offset would never reach .NET.
             flushScrollWires()
+            // Phase 19.2: the batch is applied. `frame.applied` follows the scroll flush. This
+            // mapper has no back-state publish to wait for, unlike Android's. It sits in the defer
+            // of applyBatch, which is not throwing, so it runs once per batch that passed the
+            // destroyed guard.
+            BnPerfMark.mark("frame.applied")
+            // The scan runs only until boot.content has fired; after that it is one flag read.
+            if BnPerfMark.bootContentPending() && patches.contains(where: { if case .commitFrame = $0 { return true } else { return false } }) {
+                BnPerfMark.bootContentOnce()
+            }
         }
         for patch in patches {
             switch patch {

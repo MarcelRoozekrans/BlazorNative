@@ -14,10 +14,14 @@
 	     A bare literal group (no $(AppIdentifierPrefix) team prefix) is deliberate: the
 	     lane builds UNSIGNED for the simulator, where the prefix is undefined; the group
 	     only has to be self-consistent for one app reading its own items. There is no iOS
-	     template tree (the demo is sample-only), so no real-app entitlement is affected. -->
+	     template tree (the demo is sample-only), so no real-app entitlement is affected.
+
+	     Phase 19.2 measurement backport: the group carries the same `.v015` suffix as the
+	     bundle id, so this build and main's, installed side by side on one simulator, do
+	     not share keychain items. -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>io.blazornative.bnhost</string>
+		<string>io.blazornative.bnhost.v015</string>
 	</array>
 </dict>
 </plist>
