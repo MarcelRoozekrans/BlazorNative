@@ -20,12 +20,12 @@ import org.junit.runner.RunWith
 /**
  * Phase 19.2 click-to-frame measurement. It drives PerfProbe, whose handler is a synchronous
  * counter increment, so each click is one dispatch and one frame. The marks land in logcat; the
- * collector (scripts/perf/android-collect.ps1) dumps them for tools/BlazorNative.PerfReport.
+ * collector (main's scripts/perf/android-collect.ps1) dumps them for tools/BlazorNative.PerfReport.
  *
  * Clicks are serial: after each performClick the test waits until the counter shows the new
  * value, because the parser pairs clicks by order. The wire has no test-id prop, so nodes are
  * found by text: the button by its label "Click", the counter by the exact string "Count: n".
- * Row 0 reads "Row 0 count n" and cannot match.
+ * Each row reads "Row i count n" and cannot match.
  *
  * Excluded from the PR lane by [PerfMeasurement]. Run it with `-PperfOnly`, or through the
  * collector's click kind. The click count comes from the instrumentation argument perfClicks,
