@@ -10,7 +10,8 @@
     <Out>/q1-<Side>-default.txt   q1 evidence, kept out of the side directory: the parser rejects any
     <Out>/q1-<Side>-verbose.txt   .log file there that is not named <kind>-<run>.log
 
-  Run numbers are 0..Runs. Run 0 is warm-up. A file that exists is never overwritten, so a rerun cannot
+  Run numbers are 0..Runs. Run 0 is warm-up. -Run <k> collects exactly run k instead, so a caller can
+  interleave two sides one run at a time; -Runs is then ignored. A file that exists is never overwritten, so a rerun cannot
   produce a duplicate run number; the script stops instead. Any timeout or failed assertion exits 1.
 
   Kinds:
@@ -34,6 +35,7 @@ param(
     [ValidateSet('head', 'v015')][string]$Side,
     [ValidateSet('boot', 'click', 'q1')][string]$Kind,
     [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
+    [ValidateRange(-1, [int]::MaxValue)][int]$Run = -1,
     [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
     [string]$Out,
     [string]$Sdk,
@@ -159,6 +161,13 @@ function Test-ClickLogComplete {
     $post = Get-MarkCount $Lines 'dispatch.post'
     $handler = Get-MarkCount $Lines 'dispatch.handler'
     return ($post -eq $Clicks) -and ($handler -ge $post)
+}
+
+# The run numbers one call collects: 0..Runs, or exactly -Run when it is 0 or more.
+function Get-RunList {
+    param([int]$Runs, [int]$Run = -1)
+    if ($Run -ge 0) { return , @($Run) }
+    return , @(0..$Runs)
 }
 
 # The path for a run's log; throws when it exists, which is how a duplicate run number is refused.
@@ -316,15 +325,17 @@ if ($MyInvocation.InvocationName -ne '.') {
                 if ($err) { throw $err }
             }
             New-Item -ItemType Directory -Force -Path $sideDir | Out-Null
-            if ($Force) { Remove-KindLogs $sideDir $Kind }
+            # Under -Run only that run's file is replaced, by Get-RunLogPath; the other runs are kept.
+            if ($Force -and $Run -lt 0) { Remove-KindLogs $sideDir $Kind }
             $meta = [ordered]@{ sdk = $Sdk; commit = $Commit } | ConvertTo-Json
             [System.IO.File]::WriteAllText((Join-Path $sideDir 'meta.json'), $meta, (New-Object System.Text.UTF8Encoding($false)))
         }
         else { New-Item -ItemType Directory -Force -Path $Out | Out-Null }
 
+        $runList = Get-RunList $Runs $Run
         switch ($Kind) {
-            'boot'  { foreach ($r in 0..$Runs) { Invoke-BootRun $sideDir $r } }
-            'click' { foreach ($r in 0..$Runs) { Invoke-ClickRun $sideDir $r } }
+            'boot'  { foreach ($r in $runList) { Invoke-BootRun $sideDir $r } }
+            'click' { foreach ($r in $runList) { Invoke-ClickRun $sideDir $r } }
             'q1'    { Invoke-Q1 $Out $Side }
         }
     }
