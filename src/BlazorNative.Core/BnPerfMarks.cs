@@ -32,9 +32,15 @@ namespace BlazorNative.Core;
 // instead polls: it waits up to `PollInterval` for lines, and a mark pulses it
 // only once the queue is `WakeDepth` deep, half its capacity, so a burst cannot
 // fill the queue between polls. Lines still drain in the order they were
-// queued, by the one writer, and at the latest one poll interval after they
-// were queued. `Flush`, which the process-exit and unhandled-exception handlers
-// call, wakes the writer and waits, bounded, until the queue is empty.
+// queued, by the one writer. While the writer is idle a line leaves within one
+// poll interval; while it is writing a backlog, the line waits its turn.
+//
+// THE EXIT DRAIN IS BEST EFFORT. `Flush` wakes the writer and waits, bounded,
+// until the queue is empty. The process-exit and unhandled-exception handlers
+// call it, but a NativeAOT library may never see ProcessExit, and where it
+// does, BnLog's own queue may have run its exit handler first, so a line handed
+// over after that is not waited for. On main, blazornative_shutdown calls
+// `Flush` before it flushes BnLog, which covers the exit the framework controls.
 //
 // NO INHERITED CONTEXT. The thread is started with UnsafeStart, as BnLogQueue
 // does, so it does not root the first caller's AsyncLocals (dispatch scope,

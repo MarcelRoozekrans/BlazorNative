@@ -98,8 +98,9 @@ enum BnPerfMark {
     }
 
     /// `boot.start`: the process start the kernel recorded, in wall-clock nanoseconds.
-    /// When sysctl cannot say, no mark is written: the parser then counts the boot as
-    /// dropped, instead of measuring from a start time that is not the process's.
+    /// When sysctl cannot say, no mark is written, instead of measuring from a start time
+    /// that is not the process's. The collector's boot run waits for both boot points, so
+    /// it then times out and fails the phase loudly, naming the missing marks.
     static func bootStart() {
         guard BnLog.isEnabled(BnLogLevel.verbose) else { return }
         let read = clockForTest
@@ -125,8 +126,8 @@ enum BnPerfMark {
     }
 
     /// `kp_proc.p_starttime` of this process, as nanoseconds since the epoch. Nil when
-    /// sysctl fails: "now" would be a silently wrong start, and a missing mark is a drop
-    /// the parser counts.
+    /// sysctl fails: "now" would be a silently wrong start, and a missing mark fails the
+    /// collector's boot run instead.
     private static func processStartWallNs() -> UInt64? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
