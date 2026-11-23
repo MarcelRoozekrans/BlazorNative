@@ -132,3 +132,17 @@ and reads `log show --debug` over a window that starts before each run's launch.
   a control that the launched process logged, then all four marks at Verbose.
 
 `BN_LOG_LEVEL` takes the name `Verbose`, not a digit: `BnLogLevel.fromName` reads names only.
+
+### Side and app id
+
+Each side is installed under its own app id, so both stay installed on one device and runs alternate
+without a reinstall. The backport branch adds the `.v015` suffix:
+
+| `-Side` | Android `-Package` | iOS `-Bundle` |
+|---|---|---|
+| `head` | `io.blazornative.shell` (the default) | `io.blazornative.bnhost` (the default) |
+| `v015` | `io.blazornative.shell.v015` | `io.blazornative.bnhost.v015` |
+
+Both collectors refuse a mismatch with exit 1 before they create any directory: `-Side v015` with an id
+that does not end in `.v015`, or `-Side head` with one that does (`Test-SideId`). The defaults are HEAD's
+ids, so a `v015` run must pass its id explicitly; without the check it would silently measure HEAD's app.
