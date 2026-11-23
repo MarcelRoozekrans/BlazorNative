@@ -14,7 +14,7 @@
 // Clicks are serial: after each sendActions the test waits until the counter shows the
 // new value, because the parser pairs clicks by order. The wire has no test-id prop, so
 // nodes are found by text: the button by its label "Click", the counter by the exact
-// string "Count: n". Row 0 reads "Row 0 count n" and cannot match.
+// string "Count: n". Each row reads "Row i count n" and cannot match.
 //
 // The click count comes from env PERF_CLICKS (TEST_RUNNER_PERF_CLICKS on the xcodebuild
 // command line), default 25. Env PERF_LEVEL (TEST_RUNNER_PERF_LEVEL) is Verbose by default;
@@ -120,10 +120,13 @@ final class BnPerfMeasurementTests: BnHostTestCase {
         return nil
     }
 
+    // The main run loop is turned in 1 ms slices: the counter is checked between slices, so a
+    // coarser slice would add up to its length to every click's wait and set a beat that the next
+    // click's dispatch.post lands on.
     private func pollUntil(deadline seconds: TimeInterval, _ cond: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.001))
             if cond() { return true }
         }
         return cond()

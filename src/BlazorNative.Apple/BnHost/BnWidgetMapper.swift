@@ -1283,6 +1283,10 @@ final class BnWidgetMapper {
         }
     }
 
+    /// Phase 19.2: true once this mapper has seen the process's `boot.content` flag fired.
+    /// Read and written in [applyBatch] only, which runs on the main thread.
+    private var bootContentSeen = false
+
     private func applyBatch(_ patches: [BnPatch]) {
         // THE THREADING CONTRACT, ASSERTED. UIKit is main-thread-only, and so is the
         // `.mm` — whose measure registry is a bare `std::unordered_map` whose safety
@@ -1309,9 +1313,16 @@ final class BnWidgetMapper {
             // of applyBatch, which is not throwing, so it runs once per batch that passed the
             // destroyed guard.
             BnPerfMark.mark("frame.applied")
-            // The scan runs only until boot.content has fired; after that it is one flag read.
-            if BnPerfMark.bootContentPending() && patches.contains(where: { if case .commitFrame = $0 { return true } else { return false } }) {
-                BnPerfMark.bootContentOnce()
+            // Until boot.content has fired, each batch asks the process-wide once-flag, which
+            // takes its lock, and scans for a commit. Once this mapper has seen it fired, the
+            // check is one read of `bootContentSeen`, a main-thread-only Bool: no lock, no scan.
+            if !bootContentSeen {
+                if !BnPerfMark.bootContentPending() {
+                    bootContentSeen = true
+                } else if patches.contains(where: { if case .commitFrame = $0 { return true } else { return false } }) {
+                    BnPerfMark.bootContentOnce()
+                    bootContentSeen = true
+                }
             }
         }
         for patch in patches {

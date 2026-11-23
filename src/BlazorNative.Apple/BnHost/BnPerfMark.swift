@@ -92,9 +92,12 @@ enum BnPerfMark {
     }
 
     /// `boot.start`: the process start the kernel recorded, in wall-clock nanoseconds.
+    /// When sysctl cannot say, no mark is written: the parser then counts the boot as
+    /// dropped, instead of measuring from a start time that is not the process's.
     static func bootStart() {
         guard BnLog.isEnabled(BnLogLevel.verbose) else { return }
-        let t = (clockForTest ?? processStartWallNs)()
+        let read = clockForTest
+        guard let t = read.map({ $0() }) ?? processStartWallNs() else { return }
         write("boot.start", t, 0)
     }
 
@@ -108,20 +111,22 @@ enum BnPerfMark {
         write("boot.content", t, 0)
     }
 
-    /// True until [bootContentOnce] has run once on [once]: one flag read, so a caller can
-    /// skip the work of deciding whether a batch is the first with content.
+    /// True until [bootContentOnce] has run once on [once]. It takes [once]'s lock, so a
+    /// per-batch caller keeps its own record of a false answer and stops asking; see
+    /// BnWidgetMapper's `bootContentSeen`.
     static func bootContentPending(once: BnOnceFlag = bootContentFlag) -> Bool {
         !once.hasFired
     }
 
-    /// `kp_proc.p_starttime` of this process, as nanoseconds since the epoch. Falls back
-    /// to the wall clock now when sysctl fails, so a mark is never silently missing.
-    private static func processStartWallNs() -> UInt64 {
+    /// `kp_proc.p_starttime` of this process, as nanoseconds since the epoch. Nil when
+    /// sysctl fails: "now" would be a silently wrong start, and a missing mark is a drop
+    /// the parser counts.
+    private static func processStartWallNs() -> UInt64? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
         let rc = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
-        guard rc == 0 else { return clock_gettime_nsec_np(CLOCK_REALTIME) }
+        guard rc == 0 else { return nil }
         let tv = info.kp_proc.p_un.__p_starttime
         return UInt64(tv.tv_sec) * 1_000_000_000 + UInt64(tv.tv_usec) * 1_000
     }
