@@ -110,7 +110,7 @@ dropped samples per side and why.
 call: `boot`, `click` or `q1`. It needs pwsh 7 (it uses the .NET Core APIs `ProcessStartInfo.ArgumentList` and `Process.Kill` with a process tree), adb on PATH, and a device that
 accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and write `meta.json` from them,
 under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
-being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. Failures go to stderr with exit 1. Every
+being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Failures go to stderr with exit 1. Every
 adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
 `<Out>/q1-<side>-default.txt` and `-verbose.txt`, outside the side directory.
 
