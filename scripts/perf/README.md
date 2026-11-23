@@ -10,8 +10,10 @@ built on its output.
 dotnet run --project tools/BlazorNative.PerfReport -- --input <dir> --out <dir> --min-runs 20
 ```
 
-`--min-runs` defaults to 20. Every invocation first deletes `samples.csv` and `summary.md` from `--out`,
-so an earlier invocation's files never survive it. Exit codes:
+`--min-runs` defaults to 20. Once the arguments parse, an invocation first deletes `samples.csv` and
+`summary.md` from `--out`, so an earlier invocation's files never survive it. An argument error (an
+unknown argument, one without its value, a bad `--min-runs`, a missing `--input` or `--out`) exits 2
+before that and leaves `--out` as it was. Exit codes:
 
 | Code | Meaning |
 |---|---|
