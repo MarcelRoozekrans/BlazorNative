@@ -27,7 +27,8 @@ import org.junit.runner.RunWith
  *
  * Excluded from the PR lane by [PerfMeasurement]. Run it with `-PperfOnly`, or through the
  * collector's click kind. The click count comes from the instrumentation argument perfClicks,
- * default 25.
+ * default 25. The argument perfLevel is Verbose by default; `default` launches with no level extra,
+ * which is how the collector's q1 shows that a click at the default level writes no BNPERF line.
  */
 @PerfMeasurement
 @RunWith(AndroidJUnit4::class)
@@ -39,10 +40,13 @@ class PerfMeasurementTest {
         val clicks = args.getString("perfClicks")?.toIntOrNull() ?: DEFAULT_CLICKS
         assertTrue("perfClicks must be positive, got $clicks", clicks > 0)
 
+        val level = args.getString("perfLevel") ?: "Verbose"
+        assertTrue("perfLevel must be Verbose or default, got $level", level == "Verbose" || level == "default")
+
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(ctx, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_COMPONENT, "PerfProbe")
-            .putExtra(MainActivity.EXTRA_LOG_LEVEL, "Verbose")
+        if (level == "Verbose") intent.putExtra(MainActivity.EXTRA_LOG_LEVEL, "Verbose")
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.awaitBooted()
             assertTrue(

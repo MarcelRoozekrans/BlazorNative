@@ -19,7 +19,11 @@
            platform's Fully drawn line, dump logcat and append the am start output (it holds TotalTime).
     click  am instrument runs PerfMeasurementTest for -Clicks serial clicks, then dumps logcat.
     q1     one default launch asserting zero BNPERF lines and zero V, D or I lines from BlazorNative* tags,
-           then one Verbose launch asserting boot.start, boot.content, frame.recv and frame.applied.
+           with a control that the log was read as logcat lines; then one default-level run of
+           PerfMeasurementTest for -Q1Clicks clicks, through the click kind's am instrument and logcat,
+           asserting zero BNPERF lines, so the .NET dispatch marks are shown quiet too; then one Verbose
+           launch asserting boot.start, boot.content, frame.recv and frame.applied. That the dispatch marks
+           are present at Verbose is the click kind's check.
 
   The parsing and assertion logic is in functions, so the file can be dot-sourced without running.
 
@@ -37,6 +41,7 @@ param(
     [ValidateRange(1, [int]::MaxValue)][int]$Runs = 20,
     [ValidateRange(-1, [int]::MaxValue)][int]$Run = -1,
     [ValidateRange(1, [int]::MaxValue)][int]$Clicks = 25,
+    [ValidateRange(1, [int]::MaxValue)][int]$Q1Clicks = 3,
     [string]$Out,
     [string]$Sdk,
     [string]$Commit,
@@ -74,17 +79,32 @@ function Get-MarkPoints {
     return , $points
 }
 
-# Q1 default level: returns the failures, an empty list when the contract holds.
+# Q1 default level: returns the failures, an empty list when the contract holds. The tag check holds
+# only for lines that parse as logcat lines one by one, so the control is that the launch's own
+# `Fully drawn` line parses as a record of its own: a read that joined the lines into one string, as
+# one did in 19.2, parses as one record whose message runs on past that line, and fails here.
 function Test-Q1Default {
     param([string[]]$Lines)
     $failures = New-Object System.Collections.Generic.List[string]
+    $fullyDrawn = $false
     foreach ($l in $Lines) {
         if ($l -match 'BNPERF ') { $failures.Add("BNPERF line at the default level: $l"); continue }
         $p = ConvertFrom-LogcatLine $l
+        if ($null -ne $p -and $p.Message -match '^Fully drawn \S+: \+[0-9ms]+$') { $fullyDrawn = $true }
         if ($null -ne $p -and $p.Tag -like 'BlazorNative*' -and 'V', 'D', 'I' -contains $p.Priority) {
             $failures.Add("$($p.Priority) line from tag $($p.Tag) at the default level: $l")
         }
     }
+    if (-not $fullyDrawn) { $failures.Add("control failed: no Fully drawn line parsed as a logcat line of its own among $(@($Lines).Count) lines, so the tag check is not shown to have read the log line by line") }
+    return , $failures
+}
+
+# Q1 default-level click: only the BNPERF half applies. The instrumentation itself logs at I from tags
+# that are not the framework's, and the click kind's log source is the whole logcat.
+function Test-Q1DefaultClick {
+    param([string[]]$Lines)
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($l in $Lines) { if ($l -match 'BNPERF ') { $failures.Add("BNPERF line in a default-level click run: $l") } }
     return , $failures
 }
 
@@ -265,16 +285,17 @@ function Invoke-BootRun {
     Write-Host "boot run $Run -> $path"
 }
 
-function Invoke-ClickRun {
-    param([string]$SideDir, [int]$Run)
-    $path = Get-RunLogPath $SideDir 'click' $Run
+# Runs PerfMeasurementTest for $Clicks clicks at $Level (Verbose, or default for no level extra), after a
+# force-stop and a cleared logcat. Throws unless it passed.
+function Invoke-Measurement {
+    param([int]$Clicks, [string]$Level = 'Verbose')
     Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
     Reset-Logcat
     $runner = "$($script:Package).test/$($script:TestRunner)"
     # Bound: a few seconds per click plus a margin for the boot.
-    $instrumentTimeout = 120 + 5 * $script:Clicks
+    $instrumentTimeout = 120 + 5 * $Clicks
     try {
-        $result = Invoke-Adb $instrumentTimeout 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$($script:Clicks)" $runner
+        $result = Invoke-Adb $instrumentTimeout 'shell' 'am' 'instrument' '-w' '-e' 'annotation' $script:PerfAnnotation '-e' 'perfClicks' "$Clicks" '-e' 'perfLevel' $Level $runner
     }
     catch {
         # Killing the host adb tree does not stop the device-side test. Best effort; the original error stays.
@@ -284,6 +305,12 @@ function Invoke-ClickRun {
         throw
     }
     if (-not (Test-InstrumentPassed $result)) { throw "PerfMeasurementTest did not pass:`n$($result -join "`n")" }
+}
+
+function Invoke-ClickRun {
+    param([string]$SideDir, [int]$Run)
+    $path = Get-RunLogPath $SideDir 'click' $Run
+    Invoke-Measurement $script:Clicks 'Verbose'
     # The .NET marks reach the log late through the writer thread and the stderr pump, so wait for the tail.
     $clicks = $script:Clicks
     $lines = Wait-ForLog { param($l) Test-ClickLogComplete $l $clicks } "every click's dispatch.post ($clicks) and dispatch.handler marks" -Seconds 15
@@ -303,6 +330,14 @@ function Invoke-Q1 {
     Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default.txt") -Value $default -Encoding UTF8
     foreach ($f in (Test-Q1Default $default)) { $failures.Add($f) }
 
+    Invoke-Measurement $script:Q1Clicks 'default'
+    # The window the click kind waits for its tail marks in, so a late .NET mark would be seen.
+    Start-Sleep -Seconds 5
+    $clickLog = Get-Logcat
+    Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-default-click.txt") -Value $clickLog -Encoding UTF8
+    foreach ($f in (Test-Q1DefaultClick $clickLog)) { $failures.Add($f) }
+    Invoke-Adb 30 'shell' 'am' 'force-stop' $script:Package | Out-Null
+
     Start-Cold $true | Out-Null
     $verbose = Wait-ForLog { param($l) (Test-Q1Verbose $l).Count -eq 0 } 'boot.start, boot.content, frame.recv and frame.applied at Verbose'
     Set-Content -LiteralPath (Join-Path $OutDir "q1-$SideName-verbose.txt") -Value $verbose -Encoding UTF8
@@ -312,7 +347,7 @@ function Invoke-Q1 {
         $failures | Select-Object -First 20 | ForEach-Object { Write-Error $_ -ErrorAction Continue }
         throw "q1 failed with $($failures.Count) violation(s)"
     }
-    Write-Host 'q1 passed: quiet at the default level, all marks at Verbose'
+    Write-Host 'q1 passed: quiet at the default level for a launch and a click, all boot marks at Verbose'
 }
 
 # ── Main: skipped when dot-sourced ──────────────────────────────────────────
@@ -324,7 +359,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         $idErr = Test-SideId $Side $Package
         if ($idErr) { throw $idErr }
-        $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
+        $script:Serial = $Serial; $script:Package = $Package; $script:Clicks = $Clicks; $script:Q1Clicks = $Q1Clicks; $script:WaitSeconds = $WaitSeconds; $script:Force = [bool]$Force
         $sideDir = Join-Path $Out $Side
         if ($Kind -ne 'q1') {
             foreach ($pair in @(@('Sdk', $Sdk), @('Commit', $Commit))) {

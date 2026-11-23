@@ -112,7 +112,11 @@ accepts `logcat -G 16M`. `boot` and `click` require `-Sdk` and `-Commit` and wri
 under the parser's rule: non-empty, no commas, pipes or newlines. Runs are numbered 0 to `-Runs`, run 0
 being warm-up. A rerun after a failed collection must delete `<Out>/<Side>` first, or pass `-Force`. `-Force` deletes the side directory's existing `<kind>-<n>.log` files for the kind being collected, and nothing else, before writing, so no run above the new `-Runs` survives from an earlier collection. `-Runs` must be at least 1. `-Run <k>` collects exactly run `k` and ignores `-Runs`, so `perf.yml` can alternate the two sides one run at a time; with `-Force` it replaces only that run's file. Failures go to stderr with exit 1. Every
 adb call has a deadline, and any timeout or failed assertion exits 1. `q1` evidence goes to
-`<Out>/q1-<side>-default.txt` and `-verbose.txt`, outside the side directory.
+`<Out>/q1-<side>-default.txt`, `-default-click.txt` and `-verbose.txt`, outside the side directory. Android's
+`q1` is: a default launch, asserting no `BNPERF` line and no V, D or I line from a `BlazorNative*` tag, with
+a control that the launch's `Fully drawn` line parsed as a logcat line of its own; then `PerfMeasurementTest`
+for `-Q1Clicks` clicks (default 3) with `perfLevel=default`, through the click kind's `am instrument` and
+logcat, asserting no `BNPERF` line; then a Verbose launch asserting the four boot marks.
 
 `scripts/perf/ios-collect.ps1` is the simulator counterpart, with the same layout, the same `-Sdk` and
 `-Commit` rules, run numbering, refusal to overwrite (delete `<Out>/<Side>` or pass `-Force`), and
@@ -127,15 +131,20 @@ and reads `log show --debug` over a window that starts before each run's launch.
 - `click` runs `xcodebuild test-without-building -only-testing:BnHostTests/BnPerfMeasurementTests` with
   `TEST_RUNNER_PERF_CLICKS` and `TEST_RUNNER_BN_LOG_LEVEL=Verbose`, needs `-DerivedData` from a
   build-for-testing, and waits for every click's `dispatch.post` and `dispatch.handler` before dumping.
-  The PR lane skips that class. Its log is not the subsystem alone: under `xcodebuild test` Xcode sets
-  `OS_ACTIVITY_DT_MODE`, HEAD's stderr pump stands aside, and the .NET marks reach the unified log only as
-  the app's own NSLog records. The click predicate therefore takes the subsystem's `Perf` category for the
-  shell marks and the app's non-subsystem records carrying `BNPERF ` for the .NET marks, and never the
-  pump's `native` relay, which the `v0.15.0` pump still writes. Each dispatch point must then appear exactly
-  once per click, or the run fails; a failed wait writes every `BNPERF` record of the window, with its
-  subsystem and category, to `<Out>/click-diag-<side>-<run>.txt`.
+  The PR lane skips that class. Its log is not the subsystem alone. .NET's Console is NSLog on iOS, and
+  under XCTest no stderr pump runs on either side: both shells install it in
+  `HostViewController.viewDidLoad` after the XCTest guard. So the .NET marks reach the unified log only as
+  the app's own NSLog records, outside the subsystem. The click predicate takes the subsystem's `Perf`
+  category for the shell marks and the app's non-subsystem records carrying `BNPERF ` for the .NET marks.
+  It excludes the subsystem's `native` category, where a running pump relays NSLog's stderr copy, as it does
+  in the boot and q1 launches. Each dispatch point must appear exactly once per click, or the run fails; a
+  failed wait writes every `BNPERF` record of the window, with its subsystem and category, to
+  `<Out>/click-diag-<side>-<run>.txt`.
 - `q1` launches PerfProbe the same way and asserts no `BNPERF` line and no debug or info line from the subsystem at the default level, with
-  a control that the launched process logged, then all four marks at Verbose.
+  a control that the launched process logged. It then runs the measurement class for `-Q1Clicks` clicks (default 3) at the default level,
+  reads the window with the click kind's predicate, and asserts no `BNPERF` line, with a control that the window holds the host's records.
+  Last, it asserts all four boot marks at Verbose. That the dispatch marks are present at Verbose is the click kind's exactly-once check.
+  The q1 kind needs `-DerivedData` too.
 
 `BN_LOG_LEVEL` takes the name `Verbose`, not a digit: `BnLogLevel.fromName` reads names only.
 
