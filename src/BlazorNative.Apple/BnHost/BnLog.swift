@@ -32,9 +32,13 @@
 // CHECKED AGAINST IT: **a message is `.redacted` unless its text is a compile-
 // time constant plus, at most, the framework's own version string.** Nothing
 // that came from the app, the user, the OS, the keychain, the network or an
-// `Error` is ever marked `.safe` — which is why only three call sites in the
-// whole shell (BnRuntime's "frame callback registered", "shell bridge
-// registered" and "native init ok — <framework version>") pass `.safe`.
+// `Error` is ever marked `.safe`. The `.safe` sites are a closed list that
+// LogPrivacyDriftTests pins by file: BnRuntime's three constant lines ("frame
+// callback registered", "shell bridge registered" and "native init ok —
+// <framework version>"), BnPerfMark's one BNPERF line, which carries only a
+// literal point name, counters, a timestamp and a handler id (PerfMarkSiteDriftTests
+// pins the point names), and the constant lines in BnStderrPump, BnDeepLink,
+// BnBiometrics and BnSecureStorage.
 // Everything else, including every node id and every `ignored` diagnostic, is
 // redacted. Redaction is NOT invisibility to the developer: private data is
 // shown in full when a debugger is attached, which is where these lines are

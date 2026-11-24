@@ -1283,6 +1283,10 @@ final class BnWidgetMapper {
         }
     }
 
+    /// Phase 19.2: true once this mapper has seen the process's `boot.content` flag fired.
+    /// Read and written in [applyBatch] only, which runs on the main thread.
+    private var bootContentSeen = false
+
     private func applyBatch(_ patches: [BnPatch]) {
         // THE THREADING CONTRACT, ASSERTED. UIKit is main-thread-only, and so is the
         // `.mm` — whose measure registry is a bare `std::unordered_map` whose safety
@@ -1304,6 +1308,22 @@ final class BnWidgetMapper {
             // the guard dropped — a dispatch from inside the guard would be
             // swallowed, and the clamped offset would never reach .NET.
             flushScrollWires()
+            // Phase 19.2: the batch is applied. `frame.applied` follows the scroll flush. This
+            // mapper has no back-state publish to wait for, unlike Android's. It sits in the defer
+            // of applyBatch, which is not throwing, so it runs once per batch that passed the
+            // destroyed guard.
+            BnPerfMark.mark("frame.applied")
+            // Until boot.content has fired, each batch asks the process-wide once-flag, which
+            // takes its lock, and scans for a commit. Once this mapper has seen it fired, the
+            // check is one read of `bootContentSeen`, a main-thread-only Bool: no lock, no scan.
+            if !bootContentSeen {
+                if !BnPerfMark.bootContentPending() {
+                    bootContentSeen = true
+                } else if patches.contains(where: { if case .commitFrame = $0 { return true } else { return false } }) {
+                    BnPerfMark.bootContentOnce()
+                    bootContentSeen = true
+                }
+            }
         }
         for patch in patches {
             switch patch {

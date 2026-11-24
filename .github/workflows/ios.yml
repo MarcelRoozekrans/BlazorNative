@@ -528,7 +528,10 @@ jobs:
           set -o pipefail
           # #444: the simulator log collected on failure starts here.
           date '+%Y-%m-%d %H:%M:%S' > ../../ios-out/test-start.txt
+          # 19.2: BnPerfMeasurementTests is a measurement, not a correctness test. The lane
+          # skips it, so the baseline below is unchanged; scripts/perf/ios-collect.ps1 runs it.
           xcodebuild test \
+            -skip-testing:BnHostTests/BnPerfMeasurementTests \
             -project BnHost.xcodeproj \
             -scheme BnHost \
             -onlyUsePackageVersionsFromResolvedFile \
@@ -631,7 +634,7 @@ jobs:
             > ios-out/usernotifications.log 2>&1 || true
           echo "usernotifications.log: $(wc -l < ios-out/usernotifications.log) lines from ${start:-the last 30 min}"
 
-      - name: Assert XCTest baseline (307 passed / 0 failed)
+      - name: Assert XCTest baseline (315 passed / 0 failed)
         if: ${{ always() && matrix.runs_tests }}
         run: |
           log=ios-out/xcodebuild-test.log
@@ -1499,9 +1502,15 @@ jobs:
           # Granted while its presentation is held, a late add error goes to the runtime's
           # onError or, with no runtime, to BnLog and is never returned, and schedule still
           # completes with its add's outcome.
-          if [ "$failed" -ne 0 ] || [ "$passed" -ne 307 ]; then
+          # 307 -> 312 (19.2 Task 6, +5, 2026-11-22): BnPerfMarkTests, the Verbose gate reads no
+          # clock and writes nothing at Warn, the line format, boot.content once, the flag
+          # consumed at Warn, and boot.start.
+          # 312 -> 315 (19.2 Task 8 launch seam, +3, 2026-11-23): BnDeepLinkTests, the launch component
+          # precedence: a deep link outranks BN_LAUNCH_COMPONENT, the env value outranks the notification
+          # and BnDemo, and an empty or absent value falls through.
+          if [ "$failed" -ne 0 ] || [ "$passed" -ne 315 ]; then
             grep -E "Test Case '.*' (passed|failed)" "$log" || true
-            echo "iOS XCTest baseline drift: expected 307 passed / 0 failed, got passed=$passed failed=$failed" >&2
+            echo "iOS XCTest baseline drift: expected 315 passed / 0 failed, got passed=$passed failed=$failed" >&2
             exit 1
           fi
 

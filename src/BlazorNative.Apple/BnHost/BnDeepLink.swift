@@ -64,6 +64,10 @@ final class BnDeepLink {
     static let routeComponents: [String: String] = [
         "/notifications": "BnNotificationsDemo",
         "/geolocation": "BnGeolocationDemo",
+        // 19.2: the measurement fixture, so a cold link can mount it by name. Registered in
+        // SampleAppPages as Routed("/perf", "PerfProbe"). IosRouteComponentsDriftTests parses this
+        // literal and pins that every component here is a registered page and /perf is PerfProbe.
+        "/perf": "PerfProbe",
     ]
 
     private let lock = NSLock()
@@ -142,6 +146,21 @@ final class BnDeepLink {
     func resolvedLaunchComponent() -> String? {
         guard let route = pendingLaunchRouteForTest() else { return nil }
         return Self.routeComponents[route]
+    }
+
+    /// The environment variable that names the component a launch mounts, the iOS twin of
+    /// Android's `EXTRA_COMPONENT`. It is a documented launch configuration: set it from an Xcode
+    /// scheme or `SIMCTL_CHILD_BN_LAUNCH_COMPONENT` with `xcrun simctl launch`, which is how the
+    /// 19.2 perf collector cold-boots PerfProbe without the `Open in` sheet `simctl openurl` raises.
+    static let launchComponentEnvVar = "BN_LAUNCH_COMPONENT"
+
+    /// The cold-launch mount name. A resolved deep link wins, because a URL is the more explicit
+    /// request. Then a non-empty [env] value, then [notification], then `BnDemo`. Pure, so a test
+    /// pins the precedence without a process environment.
+    static func resolveLaunchComponent(deepLink: String?, env: String?, notification: String?) -> String {
+        if let d = deepLink { return d }
+        if let e = env?.trimmingCharacters(in: .whitespacesAndNewlines), !e.isEmpty { return e }
+        return notification ?? "BnDemo"
     }
 
     /// Test seam: drops any stashed route (the hosted bundle is one process, so a

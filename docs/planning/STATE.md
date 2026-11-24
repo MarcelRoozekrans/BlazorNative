@@ -1,71 +1,77 @@
 # Session State
 
-**Last session:** 2026-11-17
-**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17 (#732, merged as `51c837bd`).
-**Phase:** 19.1 (re-grade the 1.0 criteria) is complete on branch `docs/19.1-criteria-regrade`, PR #733. Phases 19.2 to 19.9 are `[status: pending]`, with no design or plan yet.
-**Next step:**
-1. Get PR #733 green. Mark it ready when CI passes, then the owner merges it.
-2. Run `start-next-phase`. It routes to Phase 19.2 (measurement harness, Surface: Infra), which starts with a phase-scope brainstorm.
+**Last session:** 2026-11-23
+**Milestone:** 19, 1.0 Readiness and Performance, `[status: active]` since 2026-11-17.
+**Phase:** 19.2, Measurement harness, `[status: complete]` on this branch, 2026-11-23. All 11 plan
+tasks are done and reviewed. The final whole-branch review's fix wave and its residuals are fixed.
+**Branch:** `docs/19.2-measurement-harness`, PR #740, head at the commit that adds this file. Another
+worktree holds that branch name, so check it out under a local alias and push with
+`git push origin HEAD:docs/19.2-measurement-harness`.
+**Backport branch:** `perf/v0.15.0-marks` at fe4a8bf3. It is never merged and has no PR.
+**Next step:** get PR #740 through CodeRabbit and merged, then start 19.3.
 
-## What 19.1 produced
+## Current Position
 
-- **The evidence log** is `docs/plans/2026-11-17-phase-19.1-regrade.md`, anchored at `51c837bd`. It has one entry per criteria row and a sweep of 101 issues. It ends with the owner's rulings.
-- **The ledger** is `docs/plans/2026-07-22-phase-11.3-one-point-oh-criteria.md`, re-graded. Every row carries an M19 note.
+- **PR #740:** CodeRabbit's first review gave 16 findings. All 16 are fixed, and the threads are answered
+  and resolved; see the record's "CodeRabbit fix wave". main is merged in. A second review gave 19 more; 16 are fixed and 3 rejected, one of them filed as #744.
+  .NET baseline is now 3038.
+- **Backport:** `perf/v0.15.0-marks` is at 4532a353, which ports the `BnPerfMarks` monotonic-clock fix. Its lanes,
+  android-instrumented 45239122674 and ios 45239128173, are green.
+- **Lanes at 43a3442c:** ci green with .NET 2966, android-instrumented green with 273, and ios green
+  with 315. The JVM count is 216.
+- **Backport lanes at fe4a8bf3:** android-instrumented green with 226, and ios green with 270. The
+  .NET count is 1115, run locally only, because ci.yml at the tag has no `workflow_dispatch`.
+- **perf.yml:**
+  - It runs on `workflow_dispatch` only; the temporary push trigger is removed.
+  - Last full run: 45211320588 at 03379cff, green on all 9 jobs, with 25 click samples per side from
+    5 processes and none dropped.
+  - Earlier full runs, now void because the workload changed: 45155603687, 45171629275, 45181266672
+    and 45190626287.
+- **Record:** `docs/plans/2026-11-22-phase-19.2-record.md`. Its "For 19.3" section holds the facts
+  19.3 must explain.
 
-The interim scoreboard:
+## Owner decisions in 19.2, all 2026-11-23
 
-| | Count |
-|---|---:|
-| Blockers | 17: 14 MET, 2 OPEN, 1 partial |
-| Non-blocking | 13: 8 met, 4 still false but with a published caveat (#402, #495, D3, R4), 1 OPEN (R2, the owner's 1.0 cut) |
+1. iOS cold boot launches PerfProbe through a new shipped env seam, `BN_LAUNCH_COMPONENT`, because
+   `simctl openurl` raises the "Open in" sheet on iOS 26. The seam is ported to the backport.
+2. The backport installs a background-queued `BnLog.Sink` shaped like HEAD's `BnLogQueue`. Without it,
+   v0.15.0 writes its Verbose lines synchronously on the measured thread.
+3. Every PerfProbe row tracks the counter, so one click is 51 ReplaceText patches.
+4. `BnPerfMarks` is `internal` on HEAD, so it adds nothing to the 1.0 API. The backport copy differs
+   only by its access lines.
 
-The two OPEN blockers are P3 (the real iPhone) and #600. The partial blocker is A5. Q3 counts as MET, but provisionally: the #12/#13 verdicts are pending in 19.3/19.4.
+## Facts for 19.3, from the record
 
-## Owner rulings, 2026-11-17
+- iOS HEAD dispatch was slow in all 5 click processes in run 45211320588, and v015 was slow in none.
+  The macOS runner's load average was 45-318 during that run.
+- Android shows no such split.
+- Both shells are Debug builds, and .NET is Release NativeAOT.
+- The first click of every process is a cold outlier, and it is included in the samples.
 
-- **A5, the Unshipped→Shipped drain.** It is a 1.0 requirement. The new **Phase 19.8, API baseline drain (A5)** owns it. The 1.0 decision moved from 19.8 to **19.9**.
-- **Q2.** It means surfacing, so it is MET. The rc clause is narrowed to the parameter-binding fault.
-- **#210.** Narrowing the docs counts, so it is MET.
-- **#402 and #495.** Both are DOCUMENTED, and their caveats are published. The #402 caveat is the corrected `BlazorNativeApp.cs` xmldoc. The #495 caveat is on quick-start, the Android shell page and the template README.
-- **#600.** It is a BLOCKER. The existing **Phase 19.5** owns it, because its goal already includes the #600 fix with a pin. No phase was inserted for it, and no caveat was published.
-- **Q5.** The `IMobileBridge.cs` xmldoc now says a zeroed `MaxDimension` keeps full resolution, so Q5 is MET.
-- **D3 and R4.** Their caveats are published: the api-stability page, and a README Limitations bullet.
-- **README status paragraph.** Count-free; it points at the 1.0 checklist.
-- **R3.** Reworded to name `BlazorNative.Testing`.
+## Open Decisions
 
-## Owner ruling, 2026-11-22
-
-- **P3's scope.** APNs and universal links are dropped from P3's acceptance items, because neither feature is built and both are published 1.0 limitations. CodeRabbit raised it on #733. P3 now has **five** items, and stays OPEN and a BLOCKER until the 19.7 session. Recorded in the ledger (P3 row and §6), the evidence log (ruling 12), the handover, ROADMAP 19.7, MILESTONE's DoD, the M19 design and `website/docs/api-stability.md`.
-
-## Other fixes made in 19.1
-
-These sentences were found false and corrected:
-
-- the S3 xmldoc in `NativeRenderer.cs`, which called the move non-breaking;
-- the PR baseline of the release-validation lane in `.github/workflows/release.yml`, which credited `main`'s release commit to #733 and red its nuget.org preflight; it now diffs against the merge ref's first parent;
-- the stale package counts and a false "404 today" claim in `scripts/release-preflight.ps1`, which was a prose-only edit that kept the BOM;
-- the NOT-API count in the tiers doc, which is now 29;
-- two "last blocker" claims in `docs/ios-device-verification-handover.md`.
-
-## Open for the owner
-
-- Merge PR #733 once it is green.
+- None.
 
 ## Blockers
 
 - None.
 
+## Filed during 19.2
+
+- #743: iOS `BnImageDemoTests.testCleartextLoopbackIsPermittedByATS` failed once with errno 32 from the
+  fixture server. It is unrelated to 19.2.
+
 ## Recommended Next Step
 
-1. On "Merged ?" for #733, follow the merge rule. Check `reviewDecision` and the unresolved threads as well as the checks, and read CodeRabbit's review body even when it says APPROVED.
-2. Then run `start-next-phase`, which routes to the Phase 19.2 brainstorm. Use the M19 design's "Calls made after the builder check" section for 19.2:
-   - a `workflow_dispatch` measurement workflow;
-   - marks gated at `Verbose` and silent at `Warn`, proven both ways;
-   - a `v0.15.0` backport branch, with a build-only check of it as the first task;
-   - the dispatch-lane and frame-apply mark points the design proposes.
-3. Swift and JVM code cannot compile on Linux, so 19.2's shell marks need a draft PR early.
-4. The standing rules still apply:
-   - no Claude signature, and no closing keywords unless they are intended;
+1. Wait for CodeRabbit on PR #740. Read `reviewDecision`, the unresolved threads and its review body.
+   Fix genuine findings on the branch.
+2. Update the branch if it is still behind main, and keep every lane green. Device lanes must pass at
+   attempt 1 on the final head.
+3. The owner merges, or says "Merged ?", which is a standing approval. After the merge, read the
+   milestone state from `origin/main`.
+4. Start 19.3, the baseline run and report: run `resume-work`, then `start-next-phase`.
+5. Standing rules:
+   - no Claude signature or `Co-Authored-By` trailer, and no closing keywords;
    - ask with AskUserQuestion;
    - execution is subagent-driven;
    - never `pkill -f`, and never `&`.

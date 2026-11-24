@@ -27,9 +27,10 @@ public readonly record struct BnSafeAreaInsets(double Top, double Right, double 
     /// <see cref="Report"/> method app code could call, the same trade
     /// <see cref="BnLog.Level"/> makes for the same reason (see that type's remarks):
     /// a public, honestly-named seam beats an InternalsVisibleTo web. Since 18.1 this
-    /// package does grant Runtime <c>InternalsVisibleTo</c>, for one member only:
-    /// <c>BnLog.Flush</c>, which <c>blazornative_shutdown</c> calls to drain BnLog's queue
-    /// and which app code has no reason to call. <see cref="Report"/> stays public.</remarks>
+    /// package does grant Runtime <c>InternalsVisibleTo</c>, for members app code has no
+    /// reason to call: <c>BnLog.Flush</c>, which <c>blazornative_shutdown</c> calls to drain
+    /// BnLog's queue, and since 19.2 the measurement harness's <c>BnPerfMarks.Mark</c>.
+    /// <see cref="Report"/> stays public.</remarks>
     public static BnSafeAreaInsets Current => s_current;
 
     /// <summary>Raised by <see cref="Report"/> every time the shell reports new

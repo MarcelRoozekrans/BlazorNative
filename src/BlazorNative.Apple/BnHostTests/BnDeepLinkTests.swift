@@ -119,6 +119,13 @@ final class BnDeepLinkTests: XCTestCase {
         XCTAssertEqual(BnDeepLink.shared.resolvedLaunchComponent(), "BnNotificationsDemo",
                        "the stashed route must resolve to a mount NAME — that is how the cold path "
                        + "boots the right page instead of the default one")
+
+        // 19.2: the measurement fixture is launchable by link (blazornative://perf).
+        BnDeepLink.shared.clearForTest()
+        XCTAssertTrue(BnDeepLink.shared.handle(url: URL(string: "blazornative://perf")!))
+        XCTAssertEqual(BnDeepLink.shared.pendingLaunchRouteForTest(), "/perf")
+        XCTAssertEqual(BnDeepLink.shared.resolvedLaunchComponent(), "PerfProbe",
+                       "the perf collector cold-launches PerfProbe through this entry")
     }
 
     func testAColdLinkWithNoComponentFallsBackRatherThanFailing() {
@@ -133,6 +140,29 @@ final class BnDeepLinkTests: XCTestCase {
     func testAForeignURLIsReportedUnhandledAndChangesNothing() {
         XCTAssertFalse(BnDeepLink.shared.handle(url: URL(string: "https://example.com/x")!))
         XCTAssertNil(BnDeepLink.shared.pendingLaunchRouteForTest())
+    }
+
+    // ── Launch component precedence (19.2) ───────────────────────────────────
+
+    func testALaunchDeepLinkOutranksTheEnvComponent() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: "BnGeolocationDemo", env: "PerfProbe",
+                                                         notification: "BnNotificationsDemo"),
+                       "BnGeolocationDemo")
+    }
+
+    func testTheEnvComponentOutranksTheNotificationAndTheDefault() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "PerfProbe",
+                                                         notification: "BnNotificationsDemo"),
+                       "PerfProbe")
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "PerfProbe", notification: nil),
+                       "PerfProbe")
+    }
+
+    func testAnEmptyOrAbsentEnvComponentFallsThrough() {
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: "  ",
+                                                         notification: "BnNotificationsDemo"),
+                       "BnNotificationsDemo")
+        XCTAssertEqual(BnDeepLink.resolveLaunchComponent(deepLink: nil, env: nil, notification: nil), "BnDemo")
     }
 
     /// The map is shared with notifications rather than copied — a second copy is

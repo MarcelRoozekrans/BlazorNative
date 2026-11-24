@@ -1,0 +1,48 @@
+@*
+    ─────────────────────────────────────────────────────────────────────────
+    PerfProbe — Phase 19.2 Task 3, route "/perf", mount-registry key
+    "PerfProbe". The page the click-to-frame measurement tests drive.
+
+    ── THE CONTRACT ─────────────────────────────────────────────────────────
+    ONE click causes EXACTLY ONE frame, and every click's frame carries the
+    SAME number of patches (pinned by PerfProbeTests). The handler is a
+    synchronous counter increment: no timer, no async work, no
+    OnAfterRender, nothing that could add a second render. The measured
+    interval is therefore click -> the one frame that shows the new count.
+
+      [0]    BnButton  "Click"      the click target
+      [1]    BnText    "Count: <n>" the settle signal
+      [2..51] BnText   50 rows
+
+    Every row tracks the count (owner decision D1, 2026-11-23), so a click
+    changes a FIXED set of nodes: the count label and all 50 rows, 51
+    ReplaceText patches. The frame then carries a realistic amount of text to
+    relayout, not two labels.
+
+    The wire has no id or test-tag prop, so none is emitted. Device tests
+    locate the button by its label text "Click" and the label by its text
+    "Count: <n>". That text must stay UNIQUE on the page: row i reads
+    "Row <i> count <n>", which differs on purpose, and no other node may carry
+    "Click" or "Count: ".
+    ─────────────────────────────────────────────────────────────────────────
+*@
+<BnColumn>
+    <BnButton Label="Click" OnClick="Increment" />
+    <BnText Text="@CountText" />
+    @for (int i = 0; i < RowCount; i++)
+    {
+        <BnText Text="@RowText(i)" />
+    }
+</BnColumn>
+
+@code {
+    internal const int RowCount = 50;
+
+    private int _count;
+
+    private string CountText => $"Count: {_count}";
+
+    private string RowText(int i) => $"Row {i} count {_count}";
+
+    private void Increment() => _count++;
+}

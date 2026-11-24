@@ -63,6 +63,11 @@ public sealed class LogPrivacyDriftTests
     /// <summary>The one shared-JVM file allowed to touch <c>System.err</c>.</summary>
     private const string ErrSeam = "BnDiagnostics.kt";
 
+    /// <summary>The perf mark writer (19.2). Its one SAFE line is built from a point
+    /// name, two counters and a handler id, so it cannot be a bare literal. It is
+    /// exempt from the literal rule and held to ONE SAFE site per copy.</summary>
+    private const string PerfSeam = "BnPerfMark.kt";
+
     /// <summary>Any use of <c>android.util.Log</c>: the import or a qualified
     /// name, or a <c>Log.</c> member access, a call or a constant. The leading
     /// boundary keeps <c>BnShellLog.</c> and <c>BnLog.</c> out.</summary>
@@ -231,7 +236,12 @@ public sealed class LogPrivacyDriftTests
 
         // The seam compares against SAFE, and the enum declares it; neither is
         // a call site.
-        var sites = hits.Where(h => FileName(h.File) is not (LogSeam or ErrSeam)).ToList();
+        var sites = hits.Where(h => FileName(h.File) is not (LogSeam or ErrSeam or PerfSeam)).ToList();
+
+        var perfSites = hits.Where(h => FileName(h.File) == PerfSeam).ToList();
+        Assert.True(perfSites.Count > 0 && perfSites.GroupBy(h => h.File).All(g => g.Count() == 1),
+            $"{PerfSeam} must hold exactly one SAFE site per copy, the BNPERF line; found "
+            + string.Join(", ", perfSites.GroupBy(h => h.File).Select(g => $"{g.Count()} in {g.Key}")));
 
         int accepted = sites.Count(h => h.Token == Accepted);
         Assert.True(accepted >= 2,
@@ -352,6 +362,61 @@ public sealed class LogPrivacyDriftTests
         Assert.Matches(
             @"static\s+func\s+forward\s*\(\s*_\s+record\s*:\s*BnLogRecord\s*\)\s*\{\s*BnLog\s*\.\s*relay\s*\(\s*record\.level\s*,\s*record\.category\s*,\s*record\.message\s*\)\s*\}",
             pump);
+    }
+
+    // ── 4b. Swift .safe is a closed list ─────────────────────────────────────
+
+    /// <summary>The Swift files that may pass <c>privacy: .safe</c>, and how many call sites each holds.
+    /// BnRuntime has the three constant lines, BnPerfMark its one BNPERF line, whose text is a
+    /// literal point name and numbers (PerfMarkSiteDriftTests pins the names); the rest are
+    /// constant lines that predate 19.2. DOES NOT COVER: a privacy argument that is neither the
+    /// literal nor a stored constant of value .safe, such as one returned by a function or chosen
+    /// by a conditional.</summary>
+    private static readonly Dictionary<string, int> SwiftSafeSites = new()
+    {
+        ["BnBiometrics.swift"] = 1,    // two millisecond numbers plus constant text
+        ["BnDeepLink.swift"] = 1,      // logs only the scheme:// constant, never the URL
+        ["BnPerfMark.swift"] = 1,      // the BNPERF line: a literal point name and numbers
+        ["BnRuntime.swift"] = 3,       // two constant lines and the framework version
+        ["BnSecureStorage.swift"] = 1, // a constant string
+        ["BnStderrPump.swift"] = 3,    // constants, two of them with errno
+    };
+
+    // Matches `privacy: .safe` and the qualified `privacy: BnLogPrivacy.safe`.
+    private static readonly Regex SafeArg = new(@"privacy\s*:\s*(?:BnLogPrivacy\s*\.\s*)?\.?safe\b", RegexOptions.Compiled);
+
+    // A stored constant or variable of value `.safe`, which would pass the argument by name.
+    private static readonly Regex SafeStored = new(@"\b(?:let|var)\s+\w+\s*(?::\s*\w+)?\s*=\s*(?:BnLogPrivacy\s*)?\.safe\b", RegexOptions.Compiled);
+
+    private static int SwiftSafeCount(string code)
+        => SafeArg.Matches(code).Count + SafeStored.Matches(code).Count;
+
+    [Fact]
+    public void SwiftSafe_IsPassedOnlyAtTheListedSites()
+    {
+        var found = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        string dir = Path.Combine(BnRepo.Root(), "src/BlazorNative.Apple/BnHost");
+        foreach (var f in Directory.EnumerateFiles(dir, "*.swift", SearchOption.AllDirectories))
+        {
+            int n = SwiftSafeCount(CommentStrippedSource.Strip(File.ReadAllText(f)));
+            if (n > 0) found[Path.GetFileName(f)] = n;
+        }
+
+        string Show(IEnumerable<KeyValuePair<string, int>> d) => string.Join(", ", d.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => $"{k.Key}={k.Value}"));
+        Assert.True(found.OrderBy(k => k.Key, StringComparer.Ordinal).SequenceEqual(SwiftSafeSites.OrderBy(k => k.Key, StringComparer.Ordinal)),
+            $"`privacy: .safe` call sites in the Swift shell are [{Show(found)}], expected [{Show(SwiftSafeSites)}]. "
+            + "A new .safe site must carry only a constant or a number, and be added to the list with its reason.");
+    }
+
+    [Fact]
+    public void TheSwiftSafeCheck_CountsAPlantedSiteAndIgnoresAComment()
+    {
+        Assert.Equal(0, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x\")\n// privacy: .safe\n")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("BnLog.info(c, \"x \\(y)\", privacy: .safe)")));
+        Assert.Equal(2, SwiftSafeCount(CommentStrippedSource.Strip("a(privacy: .safe)\nb(privacy:.safe)")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("a(privacy: BnLogPrivacy.safe)")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("let p: BnLogPrivacy = .safe")));
+        Assert.Equal(1, SwiftSafeCount(CommentStrippedSource.Strip("var p = BnLogPrivacy.safe")));
     }
 
     // ── 5. The reveal switch is "debuggable", set before the pump ────────────

@@ -64,6 +64,10 @@ class BlazorNativeRuntime(
     // return-at-once rule as [onBackState]; it may also arrive on a .NET thread-pool
     // thread, for a back that yielded and later resolved unhandled.
     private val onBackUnhandled: () -> Unit = {},
+    // Phase 19.2: a perf mark hook, called with "frame.recv" at the entry of the frame
+    // callback. This file is shared JVM code with no android.util.Log, so the shell
+    // supplies the writer. Null costs one null check per frame.
+    private val perfMark: ((String) -> Unit)? = null,
 ) {
     private val callback = object : NativeBindings.FrameCallback {
         override fun invoke(frame: Pointer) {
@@ -77,6 +81,7 @@ class BlazorNativeRuntime(
                     framesDroppedAfterRetire.incrementAndGet()
                     return
                 }
+                perfMark?.invoke("frame.recv")
                 checkFrameProducer()
                 // NativeFrameAdapter.read copies everything (arena memory is
                 // valid only during this invocation), so onFrame receives a

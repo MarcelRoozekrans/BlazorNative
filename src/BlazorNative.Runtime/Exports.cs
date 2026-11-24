@@ -329,6 +329,9 @@ public static class Exports
         {
             // 18.1 (#564): BnLog's lines are queued, and a NativeAOT library may never see
             // ProcessExit, so the exit the framework controls drains them, bounded.
+            // 19.2: the perf marks' own writer hands its lines to BnLog, so it is flushed
+            // first, with the same bound; when no mark is queued it returns at once.
+            BnPerfMarks.Flush(BnLogQueue.ExitDrainBudget);
             BnLog.Flush(BnLogQueue.ExitDrainBudget);
         }
     }
@@ -433,6 +436,7 @@ public static class Exports
     {
         try
         {
+            BnPerfMarks.Mark("dispatch.enter", handlerId);
             string? argsJson = argsJsonUtf8 == IntPtr.Zero
                 ? null
                 : Marshal.PtrToStringUTF8(argsJsonUtf8);
