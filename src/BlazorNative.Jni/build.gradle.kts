@@ -2,7 +2,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import java.time.Duration
 
 plugins {
-    id("com.android.application") version "9.5.2"
+    id("com.android.application") version "9.5.3"
 }
 
 // AGP 9 ships built-in Kotlin (KGP 2.2.10) and the org.jetbrains.kotlin.android plugin is
