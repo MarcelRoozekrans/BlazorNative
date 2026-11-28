@@ -149,7 +149,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Setup JDK 25 (Temurin — sdkmanager)
         uses: actions/setup-java@v6
@@ -369,7 +369,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ matrix.dir }}/global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Write meta.json
         working-directory: ${{ matrix.dir }}
@@ -545,7 +545,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Enable KVM group perms
         run: |
@@ -634,7 +634,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Download head's build
         uses: actions/download-artifact@v8

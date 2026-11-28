@@ -295,7 +295,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       # ── The door's own logic, proven on every PR too ─────────────────────
       # The 9-row classifier table with NEGATIVE rows — the same self-test the
@@ -404,7 +404,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Build the release tag (Release)
         run: dotnet build BlazorNative.sln -c Release
