@@ -65,7 +65,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Setup JDK 25 (Temurin — sdkmanager)
         uses: actions/setup-java@v6
