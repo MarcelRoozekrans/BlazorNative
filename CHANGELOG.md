@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.22.2...v0.23.0) (2026-11-28)
+
+
+### Features
+
+* **m19:** phase 19.2 measurement harness ([#740](https://github.com/MarcelRoozekrans/BlazorNative/issues/740)) ([7a7ff8a](https://github.com/MarcelRoozekrans/BlazorNative/commit/7a7ff8aa4a1b6b19e8f1545ef34c3fb85a3796ad))
+
 ## [0.22.2](https://github.com/MarcelRoozekrans/BlazorNative/compare/v0.22.1...v0.22.2) (2026-11-17)
 
 
